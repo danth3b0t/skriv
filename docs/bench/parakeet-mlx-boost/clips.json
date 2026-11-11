@@ -1,0 +1,16 @@
+{
+  "_comment": "TTS clips for the parakeet_mlx decode-time bias bench. `say` reads `spoken` (identifiers written the way a developer would say them); `ref` is the text the user wants pasted. `terms` are the ids from terms.json that are relevant to the clip.",
+  "voices": ["Samantha", "Daniel"],
+  "clips": [
+    {"id": "rename", "spoken": "Rename parse args to parse CLI args.", "ref": "Rename parse_args to parse_cli_args.", "terms": ["parse_args", "parse_cli_args"]},
+    {"id": "superwhisper", "spoken": "I switched from Superwhisper to hark on Hyprland.", "ref": "I switched from Superwhisper to hark on Hyprland.", "terms": ["Superwhisper", "Hyprland", "hark"]},
+    {"id": "pyright", "spoken": "Run basedpyright and ruff before you push the branch.", "ref": "Run basedpyright and ruff before you push the branch.", "terms": ["basedpyright", "ruff"]},
+    {"id": "refactor", "spoken": "Please refactor use session store in session store dot ts and run cargo clippy.", "ref": "Please refactor useSessionStore in session_store.ts and run cargo clippy.", "terms": ["useSessionStore", "session_store.ts", "cargo clippy"]},
+    {"id": "kubectl", "spoken": "Please run kubectl get pods in the default namespace.", "ref": "Please run kubectl get pods in the default namespace.", "terms": ["kubectl"]},
+    {"id": "effect", "spoken": "Add a use effect hook and update ts config dot json.", "ref": "Add a useEffect hook and update tsconfig.json.", "terms": ["useEffect", "tsconfig.json"]},
+    {"id": "lefthook", "spoken": "Install lefthook with uv sync and run pytest.", "ref": "Install lefthook with uv sync and run pytest.", "terms": ["lefthook", "uv sync", "pytest"]},
+    {"id": "torch", "spoken": "Train it with PyTorch on the desktop and connect over Tailscale.", "ref": "Train it with PyTorch on the desktop and connect over Tailscale.", "terms": ["PyTorch", "Tailscale"]},
+    {"id": "ten", "spoken": "Please refactor use session store in session store dot ts, then run cargo clippy and basedpyright, and rename parse args to parse CLI args in the probe.", "ref": "Please refactor useSessionStore in session_store.ts, then run cargo clippy and basedpyright, and rename parse_args to parse_cli_args in the probe.", "terms": ["useSessionStore", "session_store.ts", "cargo clippy", "basedpyright", "parse_args", "parse_cli_args"]},
+    {"id": "twenty", "spoken": "Open the hark repository and check the parakeet backend. Rename parse args to parse CLI args in the probe, refactor use session store in session store dot ts, run cargo clippy and basedpyright, and then tell me whether Superwhisper on Hyprland still pastes into the terminal over Tailscale. After that, install lefthook and run pytest.", "ref": "Open the hark repository and check the parakeet backend. Rename parse_args to parse_cli_args in the probe, refactor useSessionStore in session_store.ts, run cargo clippy and basedpyright, and then tell me whether Superwhisper on Hyprland still pastes into the terminal over Tailscale. After that, install lefthook and run pytest.", "terms": ["hark", "parakeet", "parse_args", "parse_cli_args", "useSessionStore", "session_store.ts", "cargo clippy", "basedpyright", "Superwhisper", "Hyprland", "Tailscale", "lefthook", "pytest"]}
+  ]
+}
