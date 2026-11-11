@@ -1,0 +1,144 @@
+"""Assemble and run the grpc.aio server: Asr, TextCleanup (optional), Health."""
+
+from __future__ import annotations
+
+import logging
+import time
+from dataclasses import dataclass
+
+import grpc
+from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+
+from hark.v1 import hark_pb2_grpc as pb_grpc
+
+from .asr import AsrServicer
+from .backends import Backend, create_backend
+from .cleanup import CleanupServicer
+from .config import Config
+from .session import AsrCore, CoreSettings
+
+log = logging.getLogger("hark_server")
+
+MAX_MESSAGE_BYTES = 32 * 1024 * 1024
+ASR_SERVICE = "hark.v1.Asr"
+CLEANUP_SERVICE = "hark.v1.TextCleanup"
+SERVING = health_pb2.HealthCheckResponse.SERVING
+NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
+
+
+@dataclass
+class Running:
+    server: grpc.aio.Server
+    port: int
+    core: AsrCore
+    health: health.aio.HealthServicer
+    cleanup: CleanupServicer | None
+
+    async def stop(self, grace: float | None = 1.0) -> None:
+        await self.health.enter_graceful_shutdown()
+        await self.server.stop(grace)
+        if self.cleanup is not None:
+            await self.cleanup.close()
+        self.core.backend.close()
+
+
+class _Asr(AsrServicer):
+    """AsrServicer that flips health to SERVING once Warmup made the model ready."""
+
+    def __init__(self, core: AsrCore, health_servicer: health.aio.HealthServicer) -> None:
+        super().__init__(core)
+        self._health = health_servicer
+
+    async def Warmup(self, request, context):
+        response = await super().Warmup(request, context)
+        await set_asr_health(self._health, True)
+        return response
+
+
+async def set_asr_health(h: health.aio.HealthServicer, ready: bool) -> None:
+    for name in ("", ASR_SERVICE):
+        await h.set(name, SERVING if ready else NOT_SERVING)
+
+
+def _credentials(cfg: Config) -> grpc.ServerCredentials | None:
+    tls = cfg.server.tls
+    if not tls.cert:
+        return None
+
+    def read(path: str) -> bytes:
+        with open(path, "rb") as f:
+            return f.read()
+
+    return grpc.ssl_server_credentials(
+        [(read(tls.key), read(tls.cert))],
+        root_certificates=read(tls.client_ca) if tls.client_ca else None,
+        require_client_auth=bool(tls.client_ca),
+    )
+
+
+async def start(cfg: Config, backend: Backend | None = None) -> Running:
+    """Bind, start, and (if configured) load + warm the model before SERVING."""
+    backend = backend or create_backend(
+        cfg.backend.kind, cfg.backend.model, cfg.backend.model_id, dict(cfg.backend.options)
+    )
+    core = AsrCore(
+        backend,
+        CoreSettings(
+            name=cfg.server.name,
+            accelerator=cfg.server.accelerator,
+            backend_kind=cfg.backend.kind,
+            max_concurrent_sessions=cfg.server.max_concurrent_sessions,
+            max_audio_ms=cfg.server.max_audio_ms,
+            default_finalize_budget_ms=cfg.server.default_finalize_budget_ms,
+            eager_end=cfg.server.eager_end,
+            max_message_bytes=MAX_MESSAGE_BYTES,
+        ),
+    )
+    server = grpc.aio.server(
+        options=[
+            ("grpc.keepalive_permit_without_calls", 1),
+            ("grpc.http2.min_ping_interval_without_data_ms", 15_000),
+            ("grpc.max_receive_message_length", MAX_MESSAGE_BYTES),
+            ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
+        ]
+    )
+    health_servicer = health.aio.HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    pb_grpc.add_AsrServicer_to_server(_Asr(core, health_servicer), server)
+    cleanup = None
+    if cfg.cleanup.base_url:
+        cleanup = CleanupServicer(cfg.cleanup, core.privacy)
+        pb_grpc.add_TextCleanupServicer_to_server(cleanup, server)
+        core.cleanup_profiles = list(cleanup.profiles.values())
+
+    creds = _credentials(cfg)
+    if creds is None:
+        port = server.add_insecure_port(cfg.server.listen)
+    else:
+        port = server.add_secure_port(cfg.server.listen, creds)
+    await set_asr_health(health_servicer, False)
+    if cleanup is not None:
+        await health_servicer.set(CLEANUP_SERVICE, SERVING)
+    await server.start()
+    log.info(
+        "listening on %s (port %d, %s), backend=%s model_id=%s",
+        cfg.server.listen, port, "TLS" + (" mTLS" if cfg.server.tls.client_ca else "")
+        if creds else "plaintext", cfg.backend.kind, backend.model_id,
+    )  # fmt: skip
+
+    running = Running(server, port, core, health_servicer, cleanup)
+    if cfg.server.warmup_on_start:
+        t0 = time.perf_counter()
+        try:
+            await backend.load()
+            load_ms = int((time.perf_counter() - t0) * 1000)
+            warm_ms = await backend.warmup()
+        except Exception:
+            await running.stop(0)
+            raise
+        log.info(
+            "model ready: load %d ms, warmup decodes %d ms, perf rtfx=%.1f finalize_ms_10s=%d",
+            load_ms, warm_ms, backend.perf.rtfx, backend.perf.finalize_ms_10s,
+        )  # fmt: skip
+        await set_asr_health(health_servicer, True)
+    return running
