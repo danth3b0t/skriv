@@ -18,13 +18,37 @@ up (and pricing the beam + a separate greedy anchor) is a follow-up.
 
 from __future__ import annotations
 
+import importlib
 import time
+from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
 
 from hark.v1 import hark_pb2 as pb
 
 from . import SAMPLE_RATE, Backend, BackendUnavailable, BiasPlan, DecodeOut, WordOut
+
+if TYPE_CHECKING:
+    import mlx.core as mx
+    from parakeet_mlx import AlignedToken, DecodingConfig  # pyright: ignore[reportMissingTypeStubs]
+    from parakeet_mlx.audio import PreprocessArgs  # pyright: ignore[reportMissingTypeStubs]
+
+    from . import Pcm
+
+
+class _Model(Protocol):
+    """The part of parakeet_mlx.BaseParakeet (0.7) used here. parakeet-mlx ships no
+    type information, and `decode` is only defined on its TDT/RNNT/CTC subclasses."""
+
+    @property
+    def preprocessor_config(self) -> PreprocessArgs: ...
+    @property
+    def time_ratio(self) -> float: ...
+    def encoder(self, mel: mx.array, /) -> tuple[mx.array, mx.array]: ...
+    def decode(
+        self, features: mx.array, lengths: mx.array, *, config: DecodingConfig
+    ) -> tuple[list[list[AlignedToken]], object] | list[list[AlignedToken]]: ...
+
 
 # Parakeet-TDT-0.6B-v3 model card: 25 European languages, auto-detected.
 V3_LANGUAGES = [
@@ -44,9 +68,9 @@ class ParakeetMlxBackend(Backend):
         dtype: str = "bfloat16",
         languages: list[str] | None = None,
     ) -> None:
-        try:
-            import mlx.core  # noqa: F401
-            import parakeet_mlx  # noqa: F401
+        try:  # mlx and parakeet-mlx are imported lazily: macOS on Apple Silicon only
+            importlib.import_module("mlx.core")
+            importlib.import_module("parakeet_mlx")
         except ImportError as e:  # pragma: no cover - platform dependent
             raise BackendUnavailable(
                 "parakeet_mlx backend needs macOS on Apple Silicon and "
@@ -59,7 +83,7 @@ class ParakeetMlxBackend(Backend):
         if languages is None:
             languages = V3_LANGUAGES if "v3" in model else ["en"]
         self.languages = languages
-        self._model = None
+        self._model: _Model | None = None
         self._time_ratio = 0.08
 
     def capabilities(self) -> pb.ModelCapabilities:
@@ -99,11 +123,13 @@ class ParakeetMlxBackend(Backend):
         return None  # mechanism NONE: the decoder never sees bias terms
 
     def _load_sync(self) -> None:
-        import mlx.core as mx
-        from parakeet_mlx import from_pretrained
+        import mlx.core as mx  # noqa: PLC0415 - platform-specific, see __init__
+        from parakeet_mlx import from_pretrained  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
 
-        self._model = from_pretrained(self.hf_model, dtype=getattr(mx, self.dtype))
-        self._time_ratio = self._model.time_ratio
+        dtype = cast("mx.Dtype", getattr(mx, self.dtype))  # e.g. "bfloat16" -> mx.bfloat16
+        model = cast("_Model", from_pretrained(self.hf_model, dtype=dtype))
+        self._model = model
+        self._time_ratio = model.time_ratio
 
     def _warmup_sync(self) -> None:
         rng = np.random.default_rng(0)
@@ -115,10 +141,10 @@ class ParakeetMlxBackend(Backend):
         self.perf.finalize_ms_10s = int(ms)
         self.perf.rtfx = 10_000 / ms if ms > 0 else 0.0
 
-    def _decode_sync(self, pcm: np.ndarray, plan: BiasPlan | None) -> DecodeOut:
-        import mlx.core as mx
-        from parakeet_mlx import DecodingConfig
-        from parakeet_mlx.audio import get_logmel
+    def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
+        import mlx.core as mx  # noqa: PLC0415 - platform-specific, see __init__
+        from parakeet_mlx import DecodingConfig  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+        from parakeet_mlx.audio import get_logmel  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
 
         model = self._model
         if model is None:
@@ -130,7 +156,7 @@ class ParakeetMlxBackend(Backend):
         audio = mx.array(pcm).astype(mx.float32) / 32768.0
         mel = get_logmel(audio, model.preprocessor_config)
         features, lengths = model.encoder(mel)
-        mx.eval(features, lengths)
+        mx.eval(features, lengths)  # pyright: ignore[reportUnknownMemberType] - mlx stub: untyped *args
         t1 = time.perf_counter()
         out = model.decode(features, lengths, config=DecodingConfig())
         hyps = out[0] if isinstance(out, tuple) else out
@@ -148,7 +174,7 @@ class ParakeetMlxBackend(Backend):
                 w.text += tok.text
                 w.end_ms = max(w.end_ms, int(tok.end * 1000))
                 conf[-1].append(tok.confidence)
-        for w, c in zip(words, conf):
+        for w, c in zip(words, conf, strict=True):
             w.confidence = float(min(c))
         words = [w for w in words if w.text]
         text = "".join(t.text for t in tokens).strip()

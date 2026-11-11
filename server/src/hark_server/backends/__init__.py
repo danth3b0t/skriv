@@ -14,14 +14,19 @@ import asyncio
 import inspect
 import threading
 import time
-from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any
-
-import numpy as np
+from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
+
+if TYPE_CHECKING:
+    from collections.abc import Callable, Mapping
+
+    import numpy as np
+    import numpy.typing as npt
+
+    type Pcm = npt.NDArray[np.int16]  # mono 16 kHz samples
 
 SAMPLE_RATE = 16000
 
@@ -54,7 +59,7 @@ class BiasPlan:
     backend_params: dict[str, str] = field(default_factory=dict)
 
 
-class BackendUnavailable(RuntimeError):
+class BackendUnavailable(RuntimeError):  # noqa: N818 - public name, imported by __main__ and tests
     """The backend cannot run on this host (missing runtime, wrong platform)."""
 
 
@@ -92,19 +97,19 @@ class Backend(abc.ABC):
         bias = self.capabilities().bias
         if not terms or strength <= 0:
             return None
-        boosts = {}
+        boosts: dict[str, float] = {}
         for t in terms:
             w = t.weight if t.HasField("weight") else 1.0
             boosts[t.id] = strength * (bias.boost_min + w * (bias.boost_max - bias.boost_min))
         return BiasPlan(terms=list(terms), term_boosts=boosts)
 
     # ----- work (async wrappers around the worker thread) ----------------
-    async def run(self, fn: Callable[..., Any], *args: Any) -> Any:
+    async def run[*Ts, T](self, fn: Callable[[*Ts], T], *args: *Ts) -> T:
         submitted = time.perf_counter()
         with self._lock:
             self._pending += 1
 
-        def job():
+        def job() -> T:
             started = time.perf_counter()
             try:
                 out = fn(*args)
@@ -139,11 +144,11 @@ class Backend(abc.ABC):
         await self.run(self._warmup_sync)
         return int((time.perf_counter() - t0) * 1000)
 
-    async def decode(self, pcm: np.ndarray, plan: BiasPlan | None) -> DecodeOut:
+    async def decode(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
         """Primary (plan) or unbiased (plan=None) decode of int16 mono 16 kHz audio."""
         return await self.run(self._decode_sync, pcm, plan)
 
-    async def n_best(self, pcm: np.ndarray, plan: BiasPlan | None, n: int) -> list[DecodeOut]:
+    async def n_best(self, pcm: Pcm, plan: BiasPlan | None, n: int) -> list[DecodeOut]:
         """Entries 1..n-1 (origin BEAM). Only called if capabilities().n_best.max_n > 1."""
         return await self.run(self._n_best_sync, pcm, plan, n)
 
@@ -164,24 +169,27 @@ class Backend(abc.ABC):
     def _warmup_sync(self) -> None: ...
 
     @abc.abstractmethod
-    def _decode_sync(self, pcm: np.ndarray, plan: BiasPlan | None) -> DecodeOut: ...
+    def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut: ...
 
-    def _n_best_sync(self, pcm: np.ndarray, plan: BiasPlan | None, n: int) -> list[DecodeOut]:
+    def _n_best_sync(self, pcm: Pcm, plan: BiasPlan | None, n: int) -> list[DecodeOut]:
         raise NotImplementedError
 
 
-def create_backend(kind: str, model: str, model_id: str, options: dict[str, Any]) -> Backend:
+def create_backend(kind: str, model: str, model_id: str, options: Mapping[str, object]) -> Backend:
     """Raises ValueError for an unknown kind or invalid [backend.options]."""
+    # Backend modules import this package, so they are imported here, lazily.
+    cls: Callable[..., Backend]  # options are only checked at runtime, by bind() below
+    args: tuple[str, ...]
     if kind == "mock":
-        from .mock import MockBackend
+        from .mock import MockBackend  # noqa: PLC0415 - import cycle
 
         cls, args = MockBackend, (model_id or "mock",)
     elif kind == "parakeet_mlx":
-        from .parakeet_mlx import ParakeetMlxBackend
+        from .parakeet_mlx import ParakeetMlxBackend  # noqa: PLC0415 - import cycle
 
         cls, args = ParakeetMlxBackend, (model, model_id)
     elif kind == "nemo_gpupb":
-        from .nemo_gpupb import NemoGpuPbBackend
+        from .nemo_gpupb import NemoGpuPbBackend  # noqa: PLC0415 - import cycle
 
         cls, args = NemoGpuPbBackend, (model, model_id)
     else:
@@ -190,4 +198,5 @@ def create_backend(kind: str, model: str, model_id: str, options: dict[str, Any]
         inspect.signature(cls).bind(*args, **options)
     except TypeError as e:
         raise ValueError(f"invalid [backend.options] for {kind}: {e}") from None
-    return cls(*args, **options)
+    # ty narrows `cls` and `args` to unions and pairs them crosswise; option values are untyped TOML.
+    return cls(*args, **options)  # ty: ignore[invalid-argument-type, too-many-positional-arguments]

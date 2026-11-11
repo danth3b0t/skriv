@@ -52,11 +52,15 @@ RNN-T/TDT only) is:
 
 from __future__ import annotations
 
-import numpy as np
+import importlib
+from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
 
 from . import SAMPLE_RATE, Backend, BackendUnavailable, BiasPlan, DecodeOut
+
+if TYPE_CHECKING:
+    from . import Pcm
 
 DEFAULT_MODEL = "nvidia/parakeet-tdt-0.6b-v3"
 ALPHA_MODEL = 2.0  # NeMo docs example boosting_model_alpha; to be tuned on hark data
@@ -64,9 +68,11 @@ _SPOKEN_ALIAS_KINDS = {pb.TERM_KIND_IDENTIFIER, pb.TERM_KIND_COMMAND, pb.TERM_KI
 
 
 class NemoGpuPbBackend(Backend):
-    def __init__(self, model: str = "", model_id: str = "", *, alpha_model: float = ALPHA_MODEL):
-        try:
-            import nemo.collections.asr  # noqa: F401
+    def __init__(
+        self, model: str = "", model_id: str = "", *, alpha_model: float = ALPHA_MODEL
+    ) -> None:
+        try:  # availability probe; NeMo (Linux + CUDA) is not a declared dependency
+            importlib.import_module("nemo.collections.asr")
         except ImportError as e:
             raise BackendUnavailable(
                 "nemo_gpupb needs NVIDIA NeMo (Linux + CUDA GPU): "
@@ -119,7 +125,8 @@ class NemoGpuPbBackend(Backend):
     def plan_bias(self, terms: list[pb.BiasTerm], strength: float) -> BiasPlan | None:
         if not terms or strength <= 0:
             return None
-        boosts, phrases = {}, 0
+        boosts: dict[str, float] = {}
+        phrases = 0
         for t in terms:
             w = t.weight if t.HasField("weight") else 1.0
             boosts[t.id] = strength * self.alpha_model * (0.5 + w)
@@ -146,5 +153,5 @@ class NemoGpuPbBackend(Backend):
     def _warmup_sync(self) -> None:
         raise NotImplementedError("see module docstring")
 
-    def _decode_sync(self, pcm: np.ndarray, plan: BiasPlan | None) -> DecodeOut:
+    def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
         raise NotImplementedError("see module docstring")
