@@ -52,7 +52,7 @@ def test_extract_terms_from_agent_reply():
 
 
 def test_extract_terms_ignores_plain_words():
-    assert extract_terms("The store is OK and Hello there. Store it.", prose=True) == []
+    assert extract_terms("The store is OK and Hello there. Store it WHERE?", prose=True) == []
 
 
 # The real dictation that failed: the previous agent reply contained all of these.

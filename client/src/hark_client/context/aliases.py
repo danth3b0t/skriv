@@ -445,7 +445,8 @@ def extract_terms(text: str, *, prose: bool = False) -> list[tuple[str, TermKind
         tok = m.group()
         # file names such as ``types.py`` were captured as paths above
         # names (Terminal.app, Qwen3, H100s) are collected by _names below
-        if prose and _name_kind(tok) is not None:
+        # shouted words (WHERE, WHICH) are not acronyms
+        if prose and (_name_kind(tok) is not None or tok.lower() in COMMON_WORDS):
             continue
         if not _PATH_RE.fullmatch(tok) and is_interesting_identifier(tok):
             add(tok, TermKind.IDENTIFIER)
