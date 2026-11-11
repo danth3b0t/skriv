@@ -24,6 +24,18 @@ uv run hark-server --config hark-server.example.toml    # TOML config; CLI flags
 ../tools/hark-probe/hark-probe some.wav --caps                     # print Capabilities
 ```
 
+Text cleanup with a local LLM (from the repo root; everything lands in the gitignored `models/`):
+
+```sh
+scripts/fetch-llama                 # pinned llama.cpp release (macOS arm64 Metal; linux-x64: cpu | vulkan | cuda)
+scripts/fetch-models                # default cleanup model (qwen3-1.7b-q4_k_m); `all` for the eval set of four
+scripts/llama-up &                  # llama-server on 127.0.0.1:8080
+(cd server && uv run hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model qwen3-1.7b-q4_k_m)
+scripts/eval-cleanup --model qwen3-1.7b-q4_k_m -v     # 44-case eval through the real Cleanup RPC
+```
+
+See [the cleanup bench](../docs/bench/2026-11-11-cleanup.md) for how the model and flags were chosen.
+
 `hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`, `--warmup`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
 
@@ -80,7 +92,15 @@ eager finalize are handled by the server (`session.py`), not by backends.
 - Finalize budget: the primary decode is never shed. Then the anchor and then N-best are run if their estimated cost fits; otherwise they are marked `SKIPPED_BUDGET`. `required_features` are never shed. `finalize_budget_exceeded` is set when end_to_final > budget.
 - Every optional field reports a `FieldStatus`. Bias hits are derived by matching the output against the anchor (APPLIED / ALREADY_IN_ANCHOR).
 - Privacy: this server retains, logs and caches nothing, so every `allow_*` flag is rejected with `PRIVACY_UNSATISFIABLE`. Logs contain only ids, sizes and timings.
-- Cleanup: unique-quote edits are resolved to UTF-8 byte ranges and validated: unique find, overlap, protected spans, allowed kinds, per-kind invariants, plus the >50% invalid / negation / digit / changed-bytes rules. If the budget runs out, the response is `truncated` with no edits.
+- Cleanup profiles: `terminal` (terminal or coding-agent prompt, single line), `chat` (light touch, single line) and `prose` (email/documents; full punctuation, paragraph breaks; the default). All three allow punctuation, capitalization, spacing, filler_removal and self_correction. The prompt is a static prefix (shared policy, then profile rules, then few-shot turns) followed by the request, so llama-server's prompt cache reuses the prefix. The JSON schema's `kind` enum is limited to the profile's kinds.
+- Cleanup validation: unique-quote edits are resolved to UTF-8 byte ranges and validated: unique find, overlap, protected spans, allowed kinds, per-kind invariants, plus the >50% invalid / negation / digit / changed-bytes rules. If the budget runs out, the response is `truncated` with no edits. Additions:
+  - A mislabelled edit takes the first allowed kind whose invariant it passes.
+  - A quote that combines kinds (e.g. a whole sentence re-cased and re-punctuated) is split into minimal token-level edits. It is accepted only if every part passes an allowed kind and stays off protected spans.
+  - `self_correction` has a mechanical check: `find` = kept words + 1–8 retracted words + a cue (`no wait`, `I mean`, `scratch that`, …) set off by punctuation + the correction; `replace` = kept words + the correction. The negation and digit rules compare against the text with the self-corrections applied.
+  - Single-line profiles reject added line breaks.
+  - No-op echoes don't count towards the >50% rule.
+  - Changed bytes exclude quoted context, filler removal and self-corrections.
+  - The result may not gain double spaces, doubled punctuation, a comma glued to a word, or a lowercase word after a sentence end.
 
 ## Tests
 
@@ -103,5 +123,5 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 - nemo_gpupb is a stub.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, Opus, gRPC reflection, `SUPERSEDED` handling of retried attempts, server-side session expiry, hit scores, and REJECTED hits for `bias_diagnostics`.
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.
-- Cleanup: one built-in profile (`prose`), no in-budget retry, non-streaming upstream call. `number_format`, `self_correction` and `grammar` have no server-side mechanical check, so they are not enabled.
+- Cleanup: no in-budget retry, non-streaming upstream call. `number_format` and `grammar` have no mechanical check, so no profile enables them. The `self_correction` check and the stricter rules above exist only on the server; the client validator (authoritative) must mirror them or reject `self_correction`. A cue word inside a span the client marks as a protected negation (`no` in `no wait`) blocks that self-correction.
 - grpcio's *Python* client replaces the server's status with `INTERNAL` if it is still writing when the server ends the call. Clients should rely on the in-band `session_ended`/`final_result` and stop writing after it (tonic does not have this problem).

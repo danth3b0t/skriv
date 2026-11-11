@@ -13,6 +13,15 @@ import pytest
 from conftest import dig
 
 from hark.v1 import hark_pb2 as pb
+from hark_server.cleanup import (
+    KIND_NAMES,
+    KINDS,
+    POLICY,
+    PROFILES,
+    ProfileSpec,
+    ProposedEdit,
+    resolve_edits,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
@@ -49,6 +58,12 @@ class CleanupFields(TypedDict, total=False):
     profile_id: str
     budget_ms: int
     privacy: pb.PrivacyFlags
+    context: pb.CleanupContext
+
+
+def span(text: str, part: str) -> tuple[int, int]:
+    start = text.encode().index(part.encode())
+    return start, start + len(part.encode())
 
 
 class FakeLLM:
@@ -120,7 +135,7 @@ async def test_cleanup_resolves_unique_quotes_to_byte_ranges(
 ):
     caps = await cleanup_client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
     assert "hark.cleanup" in caps.features
-    assert [p.id for p in caps.cleanup_profiles] == ["prose"]
+    assert [p.id for p in caps.cleanup_profiles] == ["terminal", "chat", "prose"]
 
     fake_llm.respond_edits(
         [
@@ -200,6 +215,140 @@ async def test_cleanup_rejects_invalid_edits(
     assert resp is not None
     assert [e.find for e in resp.edits] == accepted
     assert [r.reason for r in resp.rejections] == reasons
+
+
+@pytest.mark.parametrize(
+    ("profile", "text", "protected", "proposed", "accepted", "reasons"),
+    [
+        (  # kept prefix + retracted words + cue + correction; retracted digits may go
+            "terminal", "Run it on port 8080, sorry, I mean port 8081.", [],
+            [edit("Run it on port 8080, sorry, I mean port 8081", "Run it on port 8081", "self_correction")],
+            [("Run it on port 8080, sorry, I mean port 8081", "Run it on port 8081", "self_correction")],
+            [],
+        ),
+        (  # quoting from the cue retracts nothing: "Open the config file, the env file."
+            "terminal", "Open the config file, no wait, the env file.", [],
+            [edit("no wait, the env file", "the env file", "self_correction")],
+            [], [R.EDIT_REJECTION_REASON_INVARIANT],
+        ),
+        (  # "no wait" not set off by punctuation is not a cue
+            "chat", "There is no wait time for the build.", [],
+            [edit("There is no wait time", "time", "self_correction")],
+            [], [R.EDIT_REJECTION_REASON_INVARIANT],
+        ),
+        (  # mislabelled kind: relabelled by the invariant it passes
+            "prose", "Also, um, translate it.", [],
+            [edit("Also, um, translate", "Also, translate", "punctuation")],
+            [("Also, um, translate", "Also, translate", "filler_removal")],
+            [],
+        ),
+        (  # case + punctuation in one quote over an unchanged protected span: split
+            "prose", "i think kubectl works", ["kubectl"],
+            [edit("i think kubectl works", "I think kubectl works.", "punctuation")],
+            [("i think", "I think", "capitalization"), ("works", "works.", "punctuation")],
+            [],
+        ),
+        (  # a rewrite that also changes a word is rejected whole
+            "prose", "i think it works", [],
+            [edit("i think it works", "I think it fails.", "punctuation")],
+            [], [R.EDIT_REJECTION_REASON_INVARIANT],
+        ),
+        (  # terminal is single-line ...
+            "terminal", "Thanks. Next topic.", [],
+            [edit("Thanks. Next", "Thanks.\n\nNext", "spacing")],
+            [], [R.EDIT_REJECTION_REASON_INVARIANT],
+        ),
+        (  # ... prose may start a paragraph
+            "prose", "Thanks. Next topic.", [],
+            [edit("Thanks. Next", "Thanks.\n\nNext", "spacing")],
+            [("Thanks. Next", "Thanks.\n\nNext", "spacing")],
+            [],
+        ),
+        (  # valid alone, but the result reads "Sure,, I'll look."
+            "chat", "Sure, I'll look.", [],
+            [edit("Sure", "Sure,", "punctuation")],
+            [], [R.EDIT_REJECTION_REASON_GLOBAL],
+        ),
+        (  # echoed text (no-ops) does not count towards the >50% invalid rule
+            "terminal", "um, run it", [],
+            [edit("um, run", "Run", "filler_removal"), edit("it", "it", "punctuation"),
+             edit("um", "um", "spacing")],
+            [("um, run", "Run", "filler_removal")],
+            [R.EDIT_REJECTION_REASON_NO_OP] * 2,
+        ),
+    ],
+)  # fmt: skip
+async def test_cleanup_profiles_and_validator(
+    cleanup_client: Client,
+    fake_llm: FakeLLM,
+    profile: str,
+    text: str,
+    protected: list[str],
+    proposed: list[dict[str, str]],
+    accepted: list[tuple[str, str, str]],
+    reasons: list[pb.EditRejectionReason.ValueType],
+):
+    fake_llm.respond_edits(proposed)
+    spans = [
+        pb.ProtectedSpan(byte_start=s, byte_end=e) for s, e in (span(text, p) for p in protected)
+    ]
+    resp, code, _ = await call(cleanup_client, text=text, profile_id=profile, protected_spans=spans)
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    raw = text.encode()
+    assert [(e.find, e.replace, KIND_NAMES[e.kind]) for e in resp.edits] == accepted
+    assert all(raw[e.byte_start : e.byte_end] == e.find.encode() for e in resp.edits)
+    assert all(text.count(e.find) == 1 for e in resp.edits)
+    assert [r.reason for r in resp.rejections] == reasons
+
+
+async def test_cleanup_prompt_is_static_prefix_then_request(
+    cleanup_client: Client, fake_llm: FakeLLM
+):
+    for text in ("first, um, request", "second request"):
+        fake_llm.respond_edits([])
+        resp, code, _ = await call(
+            cleanup_client, text=text, protected_spans=[], profile_id="terminal",
+            context=pb.CleanupContext(app_category="terminal"),
+        )  # fmt: skip
+        assert code == grpc.StatusCode.OK
+        assert resp is not None
+    first, second = (
+        cast("list[dict[str, str]]", dig(r["json"], "messages")) for r in fake_llm.requests
+    )
+    assert first[:-1] == second[:-1]  # identical prefix: the LLM server's prompt cache reuses it
+    assert first[0]["role"] == "system"
+    assert first[0]["content"].startswith(POLICY)  # shared by every profile, so first
+    assert len(first) > 3  # few-shot turns
+    request = cast("object", json.loads(second[-1]["content"]))
+    assert dig(request, "text") == "second request"
+    assert dig(request, "app") == "terminal"
+    kinds = dig(fake_llm.requests[0]["json"], "response_format", "json_schema", "schema",
+                "properties", "edits", "items", "properties", "kind", "enum")  # fmt: skip
+    assert kinds == [
+        "punctuation",
+        "capitalization",
+        "spacing",
+        "filler_removal",
+        "self_correction",
+    ]
+
+
+@pytest.mark.parametrize("spec", PROFILES, ids=[spec.id for spec in PROFILES])
+def test_few_shot_examples_pass_the_validator(spec: ProfileSpec):
+    """A few-shot edit the validator rejects would teach the model to fail."""
+    for ex in spec.examples:
+        proposed: list[ProposedEdit] = [
+            {"find": f, "replace": r, "kind": k, "reason": why} for f, r, k, why in ex.edits
+        ]
+        edits, rejections = resolve_edits(
+            ex.text, proposed, [span(ex.text, p) for p in ex.protected],
+            [KINDS[k] for k in spec.kinds], single_line=spec.single_line,
+        )  # fmt: skip
+        assert list(rejections) == []
+        assert [(e.find, e.replace, KIND_NAMES[e.kind]) for e in edits] == [
+            (f, r, k) for f, r, k, _ in ex.edits
+        ]
 
 
 @pytest.mark.parametrize("failure", ["slow", "http_500", "malformed"])

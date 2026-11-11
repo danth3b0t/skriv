@@ -1,0 +1,6 @@
+#!/usr/bin/env bash
+# Run the cleanup eval set against a running OpenAI-compatible endpoint (scripts/llama-up).
+#   scripts/eval-cleanup --model qwen3-1.7b-q4_k_m [-v] [--json out.json]
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+exec uv run --quiet --project "$here/.." python "$here/eval_cleanup.py" "$@"

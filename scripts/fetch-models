@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# Download pinned cleanup GGUFs into ./models (sha256-verified).
+#
+#   scripts/fetch-models                 # the default cleanup model
+#   scripts/fetch-models all             # every model below (eval)
+#   scripts/fetch-models qwen3-0.6b-q8_0 qwen3-1.7b-q4_k_m
+#
+# Q8_0 comes from the official Qwen repos; Qwen does not publish Q4_K_M for
+# these sizes, so Q4_K_M comes from unsloth. Revisions are pinned commits.
+set -euo pipefail
+
+# Default chosen in docs/bench/2026-11-11-cleanup.md (scripts/llama-up reads this line).
+DEFAULT=qwen3-1.7b-q4_k_m
+KEYS=(qwen3-0.6b-q8_0 qwen3-0.6b-q4_k_m qwen3-1.7b-q8_0 qwen3-1.7b-q4_k_m)
+
+# key -> "repo revision file sha256"
+spec() {
+  case "$1" in
+    qwen3-0.6b-q8_0) echo "Qwen/Qwen3-0.6B-GGUF 23749fefcc72300e3a2ad315e1317431b06b590a Qwen3-0.6B-Q8_0.gguf 9465e63a22add5354d9bb4b99e90117043c7124007664907259bd16d043bb031" ;;
+    qwen3-1.7b-q8_0) echo "Qwen/Qwen3-1.7B-GGUF 90862c4b9d2787eaed51d12237eafdfe7c5f6077 Qwen3-1.7B-Q8_0.gguf 061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a" ;;
+    qwen3-0.6b-q4_k_m) echo "unsloth/Qwen3-0.6B-GGUF 50968a4468ef4233ed78cd7c3de230dd1d61a56b Qwen3-0.6B-Q4_K_M.gguf ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a" ;;
+    qwen3-1.7b-q4_k_m) echo "unsloth/Qwen3-1.7B-GGUF d7f544eead698dbd1f15126ef60b45a1e1933222 Qwen3-1.7B-Q4_K_M.gguf b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897" ;;
+    *) return 1 ;;
+  esac
+}
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+models="$root/models"
+mkdir -p "$models"
+
+keys=("$@")
+[[ ${#keys[@]} -eq 0 ]] && keys=("$DEFAULT")
+[[ ${keys[0]} == all ]] && keys=("${KEYS[@]}")
+
+for key in "${keys[@]}"; do
+  if ! line="$(spec "$key")"; then
+    echo "fetch-models: unknown model '$key' (known: ${KEYS[*]})" >&2
+    exit 2
+  fi
+  read -r repo rev file want <<<"$line"
+  out="$models/$key.gguf"
+  if [[ -f $out ]]; then
+    echo "fetch-models: $out already present"
+    continue
+  fi
+  echo "fetch-models: downloading $repo/$file@${rev:0:8}"
+  curl -fL --retry 3 --progress-bar -o "$out.part" "https://huggingface.co/$repo/resolve/$rev/$file"
+  got="$(sha256 "$out.part")"
+  if [[ $got != "$want" ]]; then
+    echo "fetch-models: sha256 mismatch for $file: got $got, want $want" >&2
+    rm -f "$out.part"
+    exit 1
+  fi
+  mv "$out.part" "$out"
+  echo "fetch-models: $out"
+done
