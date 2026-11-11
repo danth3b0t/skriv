@@ -1,0 +1,17 @@
+Loaded 726 sessions; 2065 targets
+Replayed 0 / 726
+Replayed 50 / 726
+Replayed 100 / 726
+Replayed 150 / 726
+Replayed 200 / 726
+Replayed 250 / 726
+Replayed 300 / 726
+Replayed 350 / 726
+Replayed 400 / 726
+Replayed 450 / 726
+Replayed 500 / 726
+Replayed 550 / 726
+Replayed 600 / 726
+Replayed 650 / 726
+Replayed 700 / 726
+DONE. Selected on development: {'split': 'dev', 'cohort': 'primary', 'strategy': 'tune_n8_d0.9', 'k': 40, 'targets': 206, 'gold_targets': 88, 'gold': 177, 'micro_recall': 0.3163841807909605, 'macro_recall': 0.35653532073986616, 'precision': 0.01383495145631068, 'macro_precision_nonempty': 0.013834951456310671, 'mean_terms': 40.0, 'mean_distractors': 39.44660194174757, 'oracle_macro_recall': 0.6522530499803225}

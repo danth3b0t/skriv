@@ -1,0 +1,15 @@
+kind,metric,value
+name,unique_gold,195
+name,nonempty,195
+name,heuristic_plausible,195
+identifier,unique_gold,204
+identifier,nonempty,204
+identifier,heuristic_plausible,191
+path,unique_gold,130
+path,nonempty,130
+path,heuristic_plausible,92
+identifier,has_digit_alias,35
+path,has_digit_alias,55
+flag,unique_gold,3
+flag,nonempty,3
+flag,heuristic_plausible,3

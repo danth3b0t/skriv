@@ -1,0 +1,224 @@
+{
+  "AX_trusted": false,
+  "screen_recording": true,
+  "timeout_s": 0.1,
+  "repeats": 20,
+  "flags_written": false,
+  "apps": [
+    {
+      "app": "Ghostty",
+      "version": "1.4.0",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.014,
+          "p95_ms": 0.037,
+          "max_ms": 3.017,
+          "first_ms": 3.017
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.016,
+          "p95_ms": 0.033,
+          "max_ms": 0.033,
+          "first_ms": 0.032
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.011,
+          "p95_ms": 0.013,
+          "max_ms": 0.016,
+          "first_ms": 0.016
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.017,
+          "p95_ms": 0.026,
+          "max_ms": 0.03,
+          "first_ms": 0.014
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_count": 0,
+      "tree": {
+        "nodes": 1,
+        "roles": {
+          "unavailable": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 0.042,
+        "text_candidates": []
+      },
+      "total_ms": 6.394
+    },
+    {
+      "app": "Helium",
+      "version": "0.21.2.1",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.023,
+          "p95_ms": 0.035,
+          "max_ms": 1.184,
+          "first_ms": 1.184
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.017,
+          "p95_ms": 0.022,
+          "max_ms": 0.026,
+          "first_ms": 0.017
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.013,
+          "p95_ms": 0.019,
+          "max_ms": 0.022,
+          "first_ms": 0.016
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.017,
+          "p95_ms": 0.028,
+          "max_ms": 0.03,
+          "first_ms": 0.014
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_count": 0,
+      "tree": {
+        "nodes": 1,
+        "roles": {
+          "unavailable": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 0.038,
+        "text_candidates": []
+      },
+      "total_ms": 3.398
+    },
+    {
+      "app": "Terminal",
+      "version": "2.15",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.044,
+          "p95_ms": 0.069,
+          "max_ms": 2.596,
+          "first_ms": 2.596
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.049,
+          "p95_ms": 0.09,
+          "max_ms": 0.09,
+          "first_ms": 0.065
+        },
+        "errors": {
+          "-25211": 20
+        },
+        "boolean": null,
+        "settable_error": -25211,
+        "settable": false
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.038,
+          "p95_ms": 0.046,
+          "max_ms": 0.071,
+          "first_ms": 0.041
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.04,
+          "p95_ms": 0.048,
+          "max_ms": 0.053,
+          "first_ms": 0.045
+        },
+        "errors": {
+          "-25211": 20
+        }
+      },
+      "window_count": 0,
+      "tree": {
+        "nodes": 1,
+        "roles": {
+          "unavailable": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 0.107,
+        "text_candidates": []
+      },
+      "total_ms": 7.004
+    }
+  ],
+  "not_running": [
+    "Code",
+    "Discord",
+    "Notes",
+    "Safari",
+    "Slack",
+    "Visual Studio Code"
+  ]
+}

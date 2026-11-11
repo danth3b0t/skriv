@@ -1,0 +1,885 @@
+{
+  "AX_trusted": true,
+  "screen_recording": false,
+  "timeout_s": 0.1,
+  "repeats": 20,
+  "flags_written": false,
+  "apps": [
+    {
+      "app": "Ghostty",
+      "version": "1.4.0",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.02,
+          "p95_ms": 0.045,
+          "max_ms": 6.479,
+          "first_ms": 6.479
+        },
+        "errors": {
+          "-25205": 20
+        },
+        "boolean": null,
+        "settable_error": -25205,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.016,
+          "p95_ms": 0.027,
+          "max_ms": 0.034,
+          "first_ms": 0.034
+        },
+        "errors": {
+          "0": 20
+        },
+        "boolean": false,
+        "settable_error": 0,
+        "settable": true
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.017,
+          "p95_ms": 0.024,
+          "max_ms": 0.034,
+          "first_ms": 0.034
+        },
+        "errors": {
+          "0": 20
+        }
+      },
+      "focused": {
+        "AXRole": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.016,
+            "p95_ms": 0.019,
+            "max_ms": 0.022,
+            "first_ms": 0.022
+          },
+          "errors": {
+            "0": 20
+          },
+          "role": "AXTextArea"
+        },
+        "AXSubrole": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.017,
+            "p95_ms": 0.02,
+            "max_ms": 0.023,
+            "first_ms": 0.023
+          },
+          "errors": {
+            "-25205": 20
+          },
+          "role": null
+        },
+        "AXValue": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.032,
+            "p95_ms": 0.041,
+            "max_ms": 0.117,
+            "first_ms": 0.117
+          },
+          "errors": {
+            "0": 20
+          },
+          "metrics": {
+            "chars": 3156,
+            "lines": 53,
+            "terms": 7,
+            "kinds": {
+              "path": 1,
+              "identifier": 6
+            }
+          }
+        },
+        "AXSelectedText": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.014,
+            "p95_ms": 0.018,
+            "max_ms": 0.02,
+            "first_ms": 0.02
+          },
+          "errors": {
+            "-25212": 20
+          },
+          "metrics": {
+            "text": false
+          }
+        },
+        "AXNumberOfCharacters": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.029,
+            "p95_ms": 0.047,
+            "max_ms": 0.073,
+            "first_ms": 0.073
+          },
+          "errors": {
+            "0": 20
+          },
+          "count": 3156
+        },
+        "AXStringForRange_visible": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.035,
+            "p95_ms": 0.046,
+            "max_ms": 0.517,
+            "first_ms": 0.517
+          },
+          "errors": {
+            "0": 20
+          },
+          "metrics": {
+            "chars": 3155,
+            "lines": 53,
+            "terms": 7,
+            "kinds": {
+              "path": 1,
+              "identifier": 6
+            }
+          }
+        },
+        "AXVisibleCharacterRange": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.026,
+            "p95_ms": 0.034,
+            "max_ms": 0.036,
+            "first_ms": 0.034
+          },
+          "errors": {
+            "0": 20
+          },
+          "range": {
+            "location": 0,
+            "length": 3156
+          }
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.017,
+          "p95_ms": 0.032,
+          "max_ms": 0.034,
+          "first_ms": 0.034
+        },
+        "errors": {
+          "0": 20
+        }
+      },
+      "window_title": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.016,
+          "p95_ms": 0.026,
+          "max_ms": 0.026,
+          "first_ms": 0.026
+        },
+        "errors": {
+          "0": 20
+        },
+        "metrics": {
+          "chars": 13,
+          "lines": 1,
+          "terms": 1,
+          "kinds": {
+            "identifier": 1
+          }
+        }
+      },
+      "window_count": 3,
+      "tree": {
+        "nodes": 15,
+        "roles": {
+          "AXWindow": 1,
+          "AXGroup": 5,
+          "AXButton": 3,
+          "AXImage": 1,
+          "AXStaticText": 2,
+          "AXScrollArea": 1,
+          "AXTextArea": 1,
+          "AXScrollBar": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 13.162,
+        "text_candidates": [
+          {
+            "AXRole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.017,
+                "p95_ms": 0.021,
+                "max_ms": 0.022,
+                "first_ms": 0.021
+              },
+              "errors": {
+                "0": 20
+              },
+              "role": "AXTextArea"
+            },
+            "AXSubrole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.018,
+                "p95_ms": 0.024,
+                "max_ms": 0.024,
+                "first_ms": 0.024
+              },
+              "errors": {
+                "-25205": 20
+              },
+              "role": null
+            },
+            "AXValue": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.03,
+                "p95_ms": 0.037,
+                "max_ms": 0.045,
+                "first_ms": 0.045
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 3156,
+                "lines": 53,
+                "terms": 7,
+                "kinds": {
+                  "path": 1,
+                  "identifier": 6
+                }
+              }
+            },
+            "AXSelectedText": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.014,
+                "p95_ms": 0.017,
+                "max_ms": 0.018,
+                "first_ms": 0.018
+              },
+              "errors": {
+                "-25212": 20
+              },
+              "metrics": {
+                "text": false
+              }
+            },
+            "AXNumberOfCharacters": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.03,
+                "p95_ms": 0.04,
+                "max_ms": 0.05,
+                "first_ms": 0.05
+              },
+              "errors": {
+                "0": 20
+              },
+              "count": 3156
+            },
+            "AXStringForRange_visible": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.04,
+                "p95_ms": 0.047,
+                "max_ms": 0.048,
+                "first_ms": 0.047
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 3155,
+                "lines": 53,
+                "terms": 7,
+                "kinds": {
+                  "path": 1,
+                  "identifier": 6
+                }
+              }
+            },
+            "AXVisibleCharacterRange": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.025,
+                "p95_ms": 0.029,
+                "max_ms": 0.031,
+                "first_ms": 0.031
+              },
+              "errors": {
+                "0": 20
+              },
+              "range": {
+                "location": 0,
+                "length": 3156
+              }
+            }
+          }
+        ]
+      },
+      "total_ms": 32.793
+    },
+    {
+      "app": "Helium",
+      "version": "0.21.2.1",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.019,
+          "p95_ms": 0.043,
+          "max_ms": 8.081,
+          "first_ms": 8.081
+        },
+        "errors": {
+          "-25205": 20
+        },
+        "boolean": null,
+        "settable_error": -25205,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.018,
+          "p95_ms": 0.03,
+          "max_ms": 0.031,
+          "first_ms": 0.03
+        },
+        "errors": {
+          "0": 20
+        },
+        "boolean": true,
+        "settable_error": 0,
+        "settable": true
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.015,
+          "p95_ms": 0.022,
+          "max_ms": 0.025,
+          "first_ms": 0.025
+        },
+        "errors": {
+          "-25212": 20
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.02,
+          "p95_ms": 0.027,
+          "max_ms": 0.036,
+          "first_ms": 0.027
+        },
+        "errors": {
+          "0": 20
+        }
+      },
+      "window_title": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.022,
+          "p95_ms": 0.038,
+          "max_ms": 0.053,
+          "first_ms": 0.036
+        },
+        "errors": {
+          "0": 20
+        },
+        "metrics": {
+          "chars": 74,
+          "lines": 1,
+          "terms": 2,
+          "kinds": {
+            "identifier": 2
+          }
+        }
+      },
+      "window_count": 1,
+      "tree": {
+        "nodes": 31,
+        "roles": {
+          "AXWindow": 1,
+          "AXGroup": 15,
+          "AXButton": 9,
+          "AXToolbar": 1,
+          "AXPopUpButton": 4,
+          "AXTextField": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 9.896,
+        "text_candidates": [
+          {
+            "AXRole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.019,
+                "p95_ms": 0.022,
+                "max_ms": 0.023,
+                "first_ms": 0.021
+              },
+              "errors": {
+                "0": 20
+              },
+              "role": "AXTextField"
+            },
+            "AXSubrole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.02,
+                "p95_ms": 0.025,
+                "max_ms": 0.03,
+                "first_ms": 0.023
+              },
+              "errors": {
+                "-25212": 20
+              },
+              "role": null
+            },
+            "AXValue": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.021,
+                "p95_ms": 0.028,
+                "max_ms": 0.031,
+                "first_ms": 0.025
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 65,
+                "lines": 1,
+                "terms": 2,
+                "kinds": {
+                  "identifier": 2
+                }
+              }
+            },
+            "AXSelectedText": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.021,
+                "p95_ms": 0.026,
+                "max_ms": 0.027,
+                "first_ms": 0.026
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 0,
+                "lines": 0,
+                "terms": 0,
+                "kinds": {}
+              }
+            },
+            "AXNumberOfCharacters": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.028,
+                "p95_ms": 0.035,
+                "max_ms": 0.045,
+                "first_ms": 0.045
+              },
+              "errors": {
+                "0": 20
+              },
+              "count": 65
+            },
+            "AXStringForRange_visible": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.021,
+                "p95_ms": 0.027,
+                "max_ms": 0.039,
+                "first_ms": 0.039
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 65,
+                "lines": 1,
+                "terms": 2,
+                "kinds": {
+                  "identifier": 2
+                }
+              }
+            },
+            "AXVisibleCharacterRange": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.022,
+                "p95_ms": 0.026,
+                "max_ms": 0.03,
+                "first_ms": 0.03
+              },
+              "errors": {
+                "0": 20
+              },
+              "range": {
+                "location": 0,
+                "length": 65
+              }
+            }
+          }
+        ]
+      },
+      "total_ms": 22.464
+    },
+    {
+      "app": "Terminal",
+      "version": "2.15",
+      "AXManualAccessibility": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.021,
+          "p95_ms": 0.043,
+          "max_ms": 4.124,
+          "first_ms": 4.124
+        },
+        "errors": {
+          "-25205": 20
+        },
+        "boolean": null,
+        "settable_error": -25205,
+        "settable": false
+      },
+      "AXEnhancedUserInterface": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.021,
+          "p95_ms": 0.025,
+          "max_ms": 0.028,
+          "first_ms": 0.028
+        },
+        "errors": {
+          "0": 20
+        },
+        "boolean": false,
+        "settable_error": 0,
+        "settable": true
+      },
+      "focused_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.021,
+          "p95_ms": 0.028,
+          "max_ms": 0.044,
+          "first_ms": 0.044
+        },
+        "errors": {
+          "0": 20
+        }
+      },
+      "focused": {
+        "AXRole": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.021,
+            "p95_ms": 0.03,
+            "max_ms": 0.04,
+            "first_ms": 0.03
+          },
+          "errors": {
+            "0": 20
+          },
+          "role": "AXTextArea"
+        },
+        "AXSubrole": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.021,
+            "p95_ms": 0.027,
+            "max_ms": 0.029,
+            "first_ms": 0.027
+          },
+          "errors": {
+            "-25205": 20
+          },
+          "role": null
+        },
+        "AXValue": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.021,
+            "p95_ms": 0.032,
+            "max_ms": 0.041,
+            "first_ms": 0.041
+          },
+          "errors": {
+            "0": 20
+          },
+          "metrics": {
+            "chars": 458,
+            "lines": 56,
+            "terms": 7,
+            "kinds": {
+              "path": 2,
+              "identifier": 5
+            }
+          }
+        },
+        "AXSelectedText": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.02,
+            "p95_ms": 0.024,
+            "max_ms": 0.028,
+            "first_ms": 0.028
+          },
+          "errors": {
+            "0": 20
+          },
+          "metrics": {
+            "chars": 0,
+            "lines": 0,
+            "terms": 0,
+            "kinds": {}
+          }
+        },
+        "AXNumberOfCharacters": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.027,
+            "p95_ms": 0.037,
+            "max_ms": 0.049,
+            "first_ms": 0.049
+          },
+          "errors": {
+            "0": 20
+          },
+          "count": 458
+        },
+        "AXStringForRange_visible": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.025,
+            "p95_ms": 0.028,
+            "max_ms": 0.057,
+            "first_ms": 0.057
+          },
+          "errors": {
+            "0": 20
+          },
+          "metrics": {
+            "chars": 458,
+            "lines": 56,
+            "terms": 7,
+            "kinds": {
+              "path": 2,
+              "identifier": 5
+            }
+          }
+        },
+        "AXVisibleCharacterRange": {
+          "latency": {
+            "n": 20,
+            "p50_ms": 0.021,
+            "p95_ms": 0.028,
+            "max_ms": 0.034,
+            "first_ms": 0.034
+          },
+          "errors": {
+            "0": 20
+          },
+          "range": {
+            "location": 0,
+            "length": 458
+          }
+        }
+      },
+      "window_lookup": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.019,
+          "p95_ms": 0.025,
+          "max_ms": 0.029,
+          "first_ms": 0.029
+        },
+        "errors": {
+          "0": 20
+        }
+      },
+      "window_title": {
+        "latency": {
+          "n": 20,
+          "p50_ms": 0.018,
+          "p95_ms": 0.02,
+          "max_ms": 0.024,
+          "first_ms": 0.024
+        },
+        "errors": {
+          "0": 20
+        },
+        "metrics": {
+          "chars": 31,
+          "lines": 1,
+          "terms": 2,
+          "kinds": {
+            "path": 1,
+            "identifier": 1
+          }
+        }
+      },
+      "window_count": 2,
+      "tree": {
+        "nodes": 11,
+        "roles": {
+          "AXWindow": 1,
+          "AXSplitGroup": 1,
+          "AXButton": 3,
+          "AXImage": 1,
+          "AXStaticText": 1,
+          "AXScrollArea": 1,
+          "AXGroup": 1,
+          "AXTextArea": 1,
+          "AXScrollBar": 1
+        },
+        "bounded_or_incomplete": false,
+        "scan_ms": 6.739,
+        "text_candidates": [
+          {
+            "AXRole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.02,
+                "p95_ms": 0.027,
+                "max_ms": 0.03,
+                "first_ms": 0.023
+              },
+              "errors": {
+                "0": 20
+              },
+              "role": "AXTextArea"
+            },
+            "AXSubrole": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.021,
+                "p95_ms": 0.028,
+                "max_ms": 0.035,
+                "first_ms": 0.027
+              },
+              "errors": {
+                "-25205": 20
+              },
+              "role": null
+            },
+            "AXValue": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.021,
+                "p95_ms": 0.026,
+                "max_ms": 0.029,
+                "first_ms": 0.025
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 458,
+                "lines": 56,
+                "terms": 7,
+                "kinds": {
+                  "path": 2,
+                  "identifier": 5
+                }
+              }
+            },
+            "AXSelectedText": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.019,
+                "p95_ms": 0.023,
+                "max_ms": 0.026,
+                "first_ms": 0.022
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 0,
+                "lines": 0,
+                "terms": 0,
+                "kinds": {}
+              }
+            },
+            "AXNumberOfCharacters": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.028,
+                "p95_ms": 0.038,
+                "max_ms": 0.042,
+                "first_ms": 0.042
+              },
+              "errors": {
+                "0": 20
+              },
+              "count": 458
+            },
+            "AXStringForRange_visible": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.024,
+                "p95_ms": 0.029,
+                "max_ms": 0.031,
+                "first_ms": 0.031
+              },
+              "errors": {
+                "0": 20
+              },
+              "metrics": {
+                "chars": 458,
+                "lines": 56,
+                "terms": 7,
+                "kinds": {
+                  "path": 2,
+                  "identifier": 5
+                }
+              }
+            },
+            "AXVisibleCharacterRange": {
+              "latency": {
+                "n": 20,
+                "p50_ms": 0.024,
+                "p95_ms": 0.027,
+                "max_ms": 0.035,
+                "first_ms": 0.035
+              },
+              "errors": {
+                "0": 20
+              },
+              "range": {
+                "location": 0,
+                "length": 458
+              }
+            }
+          }
+        ]
+      },
+      "total_ms": 17.187
+    }
+  ],
+  "not_running": [
+    "Code",
+    "Discord",
+    "Notes",
+    "Safari",
+    "Slack",
+    "Visual Studio Code"
+  ]
+}

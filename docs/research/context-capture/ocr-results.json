@@ -1,0 +1,170 @@
+{
+  "capture_ms": 74.06306266784668,
+  "height": 1896,
+  "app": "Ghostty",
+  "width": 1512,
+  "modes": {
+    "fast": {
+      "latency": {
+        "n": 5,
+        "p50_ms": 30.695,
+        "p95_ms": 137.165,
+        "max_ms": 137.165,
+        "first_ms": 137.165
+      },
+      "runs": [
+        {
+          "trial": 0,
+          "ms": 137.165,
+          "observations": 61,
+          "metrics": {
+            "chars": 1833,
+            "lines": 61,
+            "terms": 15,
+            "kinds": {
+              "path": 1,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "ms": 27.306,
+          "observations": 61,
+          "metrics": {
+            "chars": 1833,
+            "lines": 61,
+            "terms": 15,
+            "kinds": {
+              "path": 1,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "ms": 27.993,
+          "observations": 61,
+          "metrics": {
+            "chars": 1833,
+            "lines": 61,
+            "terms": 15,
+            "kinds": {
+              "path": 1,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 3,
+          "ms": 30.695,
+          "observations": 61,
+          "metrics": {
+            "chars": 1833,
+            "lines": 61,
+            "terms": 15,
+            "kinds": {
+              "path": 1,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 4,
+          "ms": 31.088,
+          "observations": 61,
+          "metrics": {
+            "chars": 1833,
+            "lines": 61,
+            "terms": 15,
+            "kinds": {
+              "path": 1,
+              "identifier": 14
+            }
+          }
+        }
+      ]
+    },
+    "accurate": {
+      "latency": {
+        "n": 5,
+        "p50_ms": 213.025,
+        "p95_ms": 349.923,
+        "max_ms": 349.923,
+        "first_ms": 349.923
+      },
+      "runs": [
+        {
+          "trial": 0,
+          "ms": 349.923,
+          "observations": 63,
+          "metrics": {
+            "chars": 1830,
+            "lines": 63,
+            "terms": 17,
+            "kinds": {
+              "path": 3,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 1,
+          "ms": 213.025,
+          "observations": 63,
+          "metrics": {
+            "chars": 1830,
+            "lines": 63,
+            "terms": 17,
+            "kinds": {
+              "path": 3,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 2,
+          "ms": 207.838,
+          "observations": 63,
+          "metrics": {
+            "chars": 1830,
+            "lines": 63,
+            "terms": 17,
+            "kinds": {
+              "path": 3,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 3,
+          "ms": 206.066,
+          "observations": 63,
+          "metrics": {
+            "chars": 1830,
+            "lines": 63,
+            "terms": 17,
+            "kinds": {
+              "path": 3,
+              "identifier": 14
+            }
+          }
+        },
+        {
+          "trial": 4,
+          "ms": 216.522,
+          "observations": 63,
+          "metrics": {
+            "chars": 1830,
+            "lines": 63,
+            "terms": 17,
+            "kinds": {
+              "path": 3,
+              "identifier": 14
+            }
+          }
+        }
+      ]
+    }
+  }
+}

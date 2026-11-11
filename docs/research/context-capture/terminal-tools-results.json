@@ -1,0 +1,68 @@
+{
+  "available": {
+    "tmux": true,
+    "kitty": false,
+    "wezterm": false
+  },
+  "app_bundles": {
+    "kitty": false,
+    "WezTerm": false
+  },
+  "tmux_env_present": false,
+  "servers": [
+    {
+      "list_exit": 1,
+      "pane_count": 0,
+      "client_count": 0,
+      "captures": []
+    },
+    {
+      "list_exit": 0,
+      "pane_count": 12,
+      "client_count": 2,
+      "captures": [
+        {
+          "target_source": "client_reported_pane",
+          "exit": 0,
+          "latency": {
+            "n": 20,
+            "p50_ms": 3.995,
+            "p95_ms": 4.243,
+            "max_ms": 4.249,
+            "first_ms": 4.029
+          },
+          "metrics": {
+            "chars": 4300,
+            "lines": 51,
+            "terms": 11,
+            "kinds": {
+              "identifier": 11
+            }
+          }
+        },
+        {
+          "target_source": "client_reported_pane",
+          "exit": 0,
+          "latency": {
+            "n": 20,
+            "p50_ms": 3.853,
+            "p95_ms": 4.216,
+            "max_ms": 4.575,
+            "first_ms": 3.853
+          },
+          "metrics": {
+            "chars": 4048,
+            "lines": 51,
+            "terms": 27,
+            "kinds": {
+              "path": 4,
+              "identifier": 23
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "tmux_version": "tmux 3.8",
+  "socket_count": 2
+}

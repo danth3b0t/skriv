@@ -1,0 +1,13 @@
+split,metric,value
+train,targets,891
+train,with_repo,719
+train,no_history,67
+train,gold_targets,312
+dev,targets,206
+dev,with_repo,196
+dev,no_history,20
+dev,gold_targets,88
+test,targets,217
+test,with_repo,153
+test,no_history,24
+test,gold_targets,65

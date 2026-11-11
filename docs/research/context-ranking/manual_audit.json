@@ -1,0 +1,23 @@
+{
+  "sampling": "experiment.py --audit; seed 719; 80 randomly sampled term occurrences from all short main-session prompts, reviewed as terms, not audio; duplicates intentionally retained",
+  "gold_term_review": {
+    "sample_size": 80,
+    "clear_technical_term_or_name": 70,
+    "ambiguous_task_label_name_or_partial_path": 6,
+    "ordinary_word_or_typographical_fragment": 4,
+    "conservative_acceptance_fraction": 0.875,
+    "acceptance_including_ambiguous_fraction": 0.95
+  },
+  "zero_gold_review": {
+    "sample_size": 12,
+    "messages_with_clear_missed_lowercase_name": 2,
+    "scope": "First 220 characters only; qualitative omission check, not extractor recall measurement"
+  },
+  "limitations": [
+    "Single experimenter, not independent annotators or an ASR confusion study",
+    "Pooled exploratory samples informed extractor debugging; ranking hyperparameters alone were selected on development sessions",
+    "Some unknown capitalized non-English ordinary words remain false positives",
+    "Arbitrary unquoted lowercase product names are missed unless in the fixed technical lexicon",
+    "Sampled terms and raw messages are deliberately not persisted"
+  ]
+}

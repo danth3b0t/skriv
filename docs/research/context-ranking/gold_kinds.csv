@@ -1,0 +1,11 @@
+split,kind,occurrences
+train,name,356
+train,identifier,217
+train,path,107
+train,flag,3
+dev,identifier,43
+dev,name,99
+dev,path,35
+test,name,95
+test,path,17
+test,identifier,38
