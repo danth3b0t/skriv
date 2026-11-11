@@ -15,7 +15,8 @@ Metrics:
   protected    edits rejected for touching a protected span (caught), and
                protected substrings missing from the output (leaked; must be 0)
   invalid      rejected edits / proposed edits, by rejection reason
-  client       edit sets the client validator rejected after the server passed them
+  client       edits the client validator dropped after the server passed them
+  partial      cases where some edits were applied and others dropped
   latency      client wall time per Cleanup RPC (p50/p95), and generation_ms
 """
 
@@ -69,7 +70,7 @@ class Result:
     words: bool
     clean: bool
     error: str = ""
-    client_rejected: str = ""
+    client_dropped: list[tuple[str, str, str]] = field(default_factory=list[tuple[str, str, str]])
     truncated: bool = False
     proposed: int = 0
     rejections: dict[str, int] = field(default_factory=dict[str, int])
@@ -150,10 +151,8 @@ async def run_case(stub: pb_grpc.TextCleanupAsyncStub, case: Case, budget_ms: in
             latency_ms=(time.perf_counter() - t0) * 1000,
         )  # fmt: skip
     latency = (time.perf_counter() - t0) * 1000
-    try:
-        output, client_rejected = validate_edits(text, resp.edits, protected), ""
-    except ValueError as e:
-        output, client_rejected = text, str(e)
+    checked = validate_edits(text, resp.edits, protected)
+    output = checked.text
     reasons = Counter(pb.EditRejectionReason.Name(r.reason) for r in resp.rejections)
     return Result(
         id=case["id"],
@@ -164,14 +163,14 @@ async def run_case(stub: pb_grpc.TextCleanupAsyncStub, case: Case, budget_ms: in
         exact=output in case["expected"],
         words=norm(output) in [norm(e) for e in case["expected"]],
         clean=clean,
-        client_rejected=client_rejected,
+        client_dropped=[(e.find, e.replace, why) for e, why in checked.dropped],
         truncated=resp.truncated,
         proposed=len(resp.edits) + len(resp.rejections),
         rejections=dict(reasons),
         leaked=[p for p in case["protected"] if p not in output],
         latency_ms=latency,
         generation_ms=resp.generation_ms,
-        edits=[(e.find, e.replace, pb.EditKind.Name(e.kind)) for e in resp.edits],
+        edits=[(e.find, e.replace, pb.EditKind.Name(e.kind)) for e in checked.accepted],
         rejected=[
             (r.find, r.replace, pb.EditRejectionReason.Name(r.reason)) for r in resp.rejections
         ],
@@ -209,7 +208,15 @@ def report(results: list[Result], cases: list[Case], target_ms: int) -> dict[str
         "proposed_edits": proposed,
         "rejected_edits": rejected,
         "rejections": dict(reasons.most_common()),
-        "client_rejected": sum(bool(r.client_rejected) for r in results),
+        "client_dropped": sum(len(r.client_dropped) for r in results),
+        "partial": sum(
+            bool(r.edits)
+            and (
+                bool(r.client_dropped)
+                or any(x[2] != "EDIT_REJECTION_REASON_NO_OP" for x in r.rejected)
+            )
+            for r in results
+        ),
         "errors": sum(bool(r.error) for r in results),
         "truncated": sum(r.truncated for r in results),
         "latency_ms_p50": round(pct(lat, 0.5)),
@@ -225,7 +232,8 @@ def report(results: list[Result], cases: list[Case], target_ms: int) -> dict[str
     print(f"protected          {summary['protected_caught']} caught, "
           f"{summary['protected_leaked']} leaked")  # fmt: skip
     print(f"invalid edits      {rate(rejected, proposed)}  {dict(reasons.most_common())}")
-    print(f"client rejected    {summary['client_rejected']}")
+    print(f"client dropped     {summary['client_dropped']}")
+    print(f"partial            {summary['partial']}")
     print(f"errors/truncated   {summary['errors']}/{summary['truncated']}")
     print(f"latency ms         p50 {summary['latency_ms_p50']}  p95 {summary['latency_ms_p95']}"
           f"  (generation p50 {summary['generation_ms_p50']}  p95 {summary['generation_ms_p95']});"
@@ -246,7 +254,7 @@ def report(results: list[Result], cases: list[Case], target_ms: int) -> dict[str
 
 def show_failure(r: Result, case: Case) -> None:
     print(f"\n✗ {r.id} [{r.profile}] {r.error or ''}"
-          f"{' client rejected: ' + r.client_rejected if r.client_rejected else ''}")  # fmt: skip
+          f"{' client dropped: ' + str(r.client_dropped) if r.client_dropped else ''}")  # fmt: skip
     print(f"  text:     {r.text!r}")
     print(f"  output:   {r.output!r}")
     print(f"  expected: {case['expected'][0]!r}")
