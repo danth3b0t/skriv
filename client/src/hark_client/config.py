@@ -89,6 +89,20 @@ class PasteConfig:
     # one, which ended with a non-space character, gets a leading space.
     join_space: bool = True
     join_window_ms: int = 60_000
+    # Read the target field back after pasting (macOS AX, Linux AT-SPI): landed | missing |
+    # not_text | unknown in history; "missing" puts the text back on the clipboard.
+    verify: bool = True
+
+
+@dataclass
+class LearnConfig:
+    """Correction learning from edits right after a paste (opt-in; see hark_client.learn)."""
+
+    enabled: bool = False
+    window_ms: int = 30_000  # watch the pasted span this long (clamped to 30 s)
+    poll_ms: int = 500
+    promote_after: int = 2  # occurrences before a correction becomes a shortlist term (min 2)
+    max_terms: int = 20  # learned terms added to every shortlist
 
 
 @dataclass
@@ -150,6 +164,7 @@ class Config:
     paste: PasteConfig = field(default_factory=PasteConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
+    learn: LearnConfig = field(default_factory=LearnConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     log_level: str = "INFO"
 
@@ -238,6 +253,8 @@ def validate(cfg: Config) -> None:
         ("audio.preroll_ms", cfg.audio.preroll_ms),
         ("paste.join_window_ms", cfg.paste.join_window_ms),
         ("audio.min_speech_ms", cfg.audio.min_speech_ms),
+        ("learn.window_ms", cfg.learn.window_ms),
+        ("learn.max_terms", cfg.learn.max_terms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
@@ -245,6 +262,10 @@ def validate(cfg: Config) -> None:
         raise ConfigError("server.tls_cert and server.tls_key must be set together")
     if cfg.server.tls_cert and not cfg.server.tls_ca:
         raise ConfigError("server.tls_cert needs server.tls_ca")
+    if cfg.learn.poll_ms < 100:
+        raise ConfigError("learn.poll_ms must be >= 100")
+    if cfg.learn.promote_after < 2:
+        raise ConfigError("learn.promote_after must be >= 2")
 
 
 def load(path: str | Path | None = None) -> Config:

@@ -8,7 +8,7 @@ audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
-    focus re-check -> paste -> history.
+    focus re-check -> paste -> read-back (verdict; correction learning, opt-in) -> history.
 """
 
 from __future__ import annotations
@@ -17,13 +17,13 @@ import logging
 import threading
 import time
 from concurrent.futures import Future
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from google.protobuf import json_format
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, cleanup, context, guardrails, history, symbols
+from hark_client import asr, cleanup, context, fields, guardrails, history, learn, symbols
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
@@ -38,7 +38,9 @@ if TYPE_CHECKING:
 
     from hark_client.config import Config
     from hark_client.feedback import Feedback
+    from hark_client.fields import FieldReader
     from hark_client.inject import Injector
+    from hark_client.learn import LearnedStore, Learner
 
 log = logging.getLogger("hark")
 
@@ -83,6 +85,9 @@ class Services:
     injector: Injector
     feedback: Feedback
     out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
+    field_reader: FieldReader | None = None  # paste read-back; None = verdict "unknown"
+    learned: LearnedStore | None = None  # promoted corrections join every shortlist
+    learner: Learner | None = None  # watches edits after a paste (learn.enabled)
 
 
 @dataclass
@@ -102,6 +107,7 @@ class Result:
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
     joined: bool = False  # pasted with a leading space (join_prefix)
     pasted_as: LastPaste | None = None  # set when the paste went through
+    paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -151,6 +157,13 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
+        if self.svc.learned is not None:
+            try:
+                learned = self.svc.learned.terms()
+            except OSError as e:
+                learned = ()
+                log.warning("learned vocabulary unreadable: %s", e)
+            snap = replace(snap, terms=learn.merge_terms(snap.terms, learned, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)
 
@@ -380,7 +393,29 @@ class Utterance:
         )
         self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
         svc.feedback.sound("done" if res.paste.ok else "error")
+        if res.status == "pasted" and not prof.terminal:
+            self._read_back(res, snap.focus)
         return res
+
+    def _read_back(self, res: Result, focus: FocusInfo) -> None:
+        """After the paste (off the latency path): verdict, then hand the field to the learner."""
+        svc = self.svc
+        reader = svc.field_reader
+        if reader is None or not (svc.cfg.paste.verify or svc.learner is not None):
+            return
+        t1 = time.perf_counter()
+        verdict, field_text = fields.verify(reader, focus, res.final_text)
+        res.timings["verify_ms"] = _ms(t1)
+        res.paste_verdict = verdict
+        self._report("verify", f"{verdict} ({res.timings['verify_ms']:.1f} ms)")
+        if verdict == "missing" and svc.cfg.paste.verify:
+            ok = svc.injector.copy(res.final_text)
+            svc.feedback.notify(
+                "The paste did not show up in the field; the text is in the clipboard"
+                if ok else "The paste did not show up in the field; see history"
+            )  # fmt: skip
+        if verdict == "landed" and svc.learner is not None:
+            svc.learner.after_paste(focus, res.final_text, field_text.value, _focus_token)
 
     def _cleanup(self, text: str, snap: ContextSnapshot, profile_name: str) -> CleanupOutcome:
         cfg = self.svc.cfg
@@ -438,6 +473,7 @@ class Utterance:
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
+            "paste_verdict": res.paste_verdict,
             "timings_ms": res.timings,
             "client_unix_us": {"keyup": self.keyup_unix_us, **self.stream.unix_us},
             "context": {

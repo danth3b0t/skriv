@@ -21,7 +21,7 @@ if TYPE_CHECKING:
 
     from hark_client.hotkey import PushToTalk
     from hark_client.mic import Mic
-    from hark_client.pipeline import Services
+    from hark_client.pipeline import Result, Services
 
 log = logging.getLogger("hark")
 
@@ -43,6 +43,7 @@ class Controller:
         self.busy = 0  # utterances still finishing
         self._max_hit = False
         self.last_paste: LastPaste | None = None
+        self.last_result: tuple[float, Result] | None = None  # (unix time, result)
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -65,6 +66,8 @@ class Controller:
                 return "ok already recording"
             self.current = Utterance(self.svc, preroll=self.preroll.take())
             self._max_hit = False
+        if self.svc.learner is not None:
+            self.svc.learner.cancel()  # the next paste changes the field: stop watching the last
         if self.mic is not None and not self.keep_open:
             self.mic.start()
         self.svc.feedback.sound("start")
@@ -94,6 +97,7 @@ class Controller:
                 )
                 if res.pasted_as is not None:
                     self.last_paste = res.pasted_as
+                self.last_result = (time.time(), res)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
@@ -134,6 +138,32 @@ class Controller:
         with self._lock:
             state = "recording" if self.current is not None else "idle"
             return f"ok {state} finishing={self.busy}"
+
+    def status_json(self) -> dict[str, object]:
+        """JSON v1 ``status`` fields (docs/protocol/ctl-v1.md). Never includes dictated text."""
+        with self._lock:
+            state = "recording" if self.current is not None else "idle"
+            busy = self.busy
+            last = self.last_result
+        learner = self.svc.learner
+        return {
+            "state": state,
+            "finishing": busy,
+            "last": None
+            if last is None
+            else {
+                "at": round(last[0], 3),
+                "utterance_id": last[1].utterance_id,
+                "status": last[1].status,
+                "profile": last[1].profile,
+                "paste_verdict": last[1].paste_verdict,
+                "keyup_to_paste_ms": last[1].timings.get("keyup_to_paste_ms"),
+            },
+            "learning": {
+                "enabled": learner is not None,
+                "watching": learner is not None and learner.watching,
+            },
+        }
 
     def handle(self, command: str) -> str:
         actions: dict[str, Callable[[], str]] = {
@@ -207,7 +237,7 @@ def run(svc: Services) -> int:
         log.error("%s", e)
         return 1
     controller.mic = mic
-    server = ctl.CtlServer(ctl.socket_path(), controller.handle)
+    server = ctl.CtlServer(ctl.socket_path(), controller.handle, controller.status_json)
     if svc.cfg.audio.keep_open:
         mic.start()
     server.start()

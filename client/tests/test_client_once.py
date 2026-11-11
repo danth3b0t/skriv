@@ -12,6 +12,7 @@ import pytest
 from hark_client import context
 from hark_client.__main__ import main
 from hark_client.context import ContextSnapshot
+from hark_client.learn import LearnedStore
 
 from .conftest import snapshot, write_wav
 
@@ -190,3 +191,18 @@ def test_unreachable_server_fails_without_pasting(
     assert rec["status"] == "error"
     assert "UNAVAILABLE" in cast("str", rec["error"])
     assert "[dry-run]" not in capsys.readouterr().out
+
+
+def test_promoted_corrections_bias_the_recognizer(
+    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+):
+    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]  # no context terms at all
+    store = LearnedStore(tmp_path / "data" / "learned.json")
+    store.record([("cube control", "kubectl")])
+    _, rec = run_once(tmp_path, hark_server.target)
+    assert rec["bias_terms_sent"] == 0  # seen once: not used yet
+    store.record([("cube control", "kubectl")])
+    (tmp_path / "data" / "history.jsonl").unlink()
+    _, rec = run_once(tmp_path, hark_server.target)
+    # The mock server only rewrites "cube control" when the bias term reached it.
+    assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)

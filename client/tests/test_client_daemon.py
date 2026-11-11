@@ -2,73 +2,35 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast
 
-import grpc
 import numpy as np
 import pytest
 
-from hark_client import asr, daemon
+from hark_client import daemon
 from hark_client.audio import speech_ms
-from hark_client.config import Config, FeedbackConfig
-from hark_client.daemon import Controller
-from hark_client.feedback import Feedback, Sound
+from hark_client.fields import FieldText
 from hark_client.inject import DryRunInjector
-from hark_client.pipeline import LastPaste, Services, join_prefix
+from hark_client.learn import LearnedStore, Learner
+from hark_client.pipeline import LastPaste, join_prefix
 
-from .conftest import snapshot, speech
+from .conftest import RecordingFeedback, pcm, snapshot, wait_idle
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
     from pathlib import Path
 
     import numpy.typing as npt
 
-    from .conftest import FakeContext, HarkServer
+    from hark_client.context import FocusInfo
+    from hark_client.daemon import Controller
 
-
-def pcm(seconds: float) -> bytes:
-    return speech(seconds).astype("<i2").tobytes()
-
-
-class RecordingFeedback(Feedback):
-    def __init__(self) -> None:
-        super().__init__(FeedbackConfig(sounds=False, notify=False))
-        self.sounds_played: list[Sound] = []
-
-    @override
-    def sound(self, kind: Sound) -> None:
-        self.sounds_played.append(kind)
-
-
-@pytest.fixture
-def controller(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
-) -> Iterator[tuple[Controller, DryRunInjector]]:
-    fake_context.snapshots = [snapshot("kitty")]
-    cfg = Config()
-    cfg.history.dir = str(tmp_path)
-    cfg.audio.min_ms = 0
-    injector = DryRunInjector(out=lambda _: None)
-    with grpc.insecure_channel(hark_server.target) as channel:
-        caps = asr.Capabilities(channel)
-        yield (
-            Controller(Services(cfg, channel, caps, injector, RecordingFeedback()), None),
-            injector,
-        )
-
-
-def wait_idle(c: Controller) -> None:
-    for _ in range(200):
-        if c.status() == "ok idle finishing=0":
-            return
-        time.sleep(0.01)
-    raise AssertionError(c.status())
+    from .conftest import FakeContext
 
 
 def test_toggle_streams_preroll_and_speech_then_pastes(
@@ -211,3 +173,68 @@ def test_forks_do_not_run_grpc_fork_handlers():
         [sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True
     )
     assert "fork" not in out.stderr, out.stderr
+
+
+class EditableField:
+    """The target app's focused field: shows whatever was pasted after `before`, then `edit()`s."""
+
+    def __init__(self, injector: DryRunInjector, before: str = "Dear Ann, ") -> None:
+        self.injector = injector
+        self.before = before
+        self.edited: str | None = None
+
+    def read(self, focus: FocusInfo) -> FieldText:
+        if self.edited is not None:
+            return FieldText("text", self.edited)
+        return FieldText("text", self.before + "".join(t for t, _ in self.injector.pasted))
+
+
+def test_paste_read_back_feeds_the_learner(
+    tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
+):
+    c, injector = controller
+    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]
+    field = EditableField(injector)
+    c.svc.field_reader = field
+    c.svc.learner = Learner(LearnedStore(tmp_path / "learned.json"), field, window_s=5, poll_s=0.02)
+    c.handle("start")
+    c.on_pcm(pcm(1.0))  # no bias term: the mock says "please run cube control ..."
+    c.handle("stop")
+    wait_idle(c)
+    ((pasted, _),) = injector.pasted
+    assert "cube control" in pasted
+    assert c.svc.learner.watching
+    field.edited = "Dear Ann, " + pasted.replace("cube control", "kubectl")
+    time.sleep(0.1)
+    c.handle("start")  # the next dictation ends the watch
+    c.handle("cancel")
+    c.svc.learner.join(2)
+    assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
+        ("cube control", "kubectl")
+    ]
+    status = c.status_json()
+    assert cast("dict[str, object]", status["last"])["paste_verdict"] == "landed"
+    record = cast(
+        "dict[str, object]", json.loads((tmp_path / "history.jsonl").read_text().splitlines()[0])
+    )
+    assert record["paste_verdict"] == "landed"
+    assert "kubectl" not in json.dumps(record)  # the edit itself is never written to history
+
+
+def test_a_paste_missing_from_the_field_goes_back_to_the_clipboard(
+    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
+):
+    c, injector = controller
+    fake_context.snapshots = [snapshot("com.apple.Notes")]
+    c.svc.field_reader = EditableField(DryRunInjector(out=lambda _: None))  # never shows it
+    c.handle("start")
+    c.on_pcm(pcm(0.4))
+    c.handle("stop")
+    wait_idle(c)
+    ((pasted, _),) = injector.pasted
+    assert injector.copied == [pasted]
+    feedback = c.svc.feedback
+    assert isinstance(feedback, RecordingFeedback)
+    assert any("did not show up" in n for n in feedback.notifications)
+    last = cast("dict[str, object]", c.status_json()["last"])
+    assert (last["status"], last["paste_verdict"]) == ("pasted", "missing")
