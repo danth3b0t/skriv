@@ -71,7 +71,7 @@ Tailscale use.
 |---|---|---|---|
 | Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | Linux + NVIDIA + NeMo. **Stub.** |
 | Streaming | BUFFERED | BUFFERED | BUFFERED (planned) |
-| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | **NONE**: terms are only used for hit detection; a `CONTEXT_IGNORED` warning is sent | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) |
+| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) |
 | Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FULL_PASS (batch of two) |
 | N-best | up to 3 (unbiased, RANK_ONLY) | 1 | unbiased beam (planned) |
 | Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | yes / yes (planned) |
@@ -119,7 +119,7 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 
 - BUFFERED only: no partials and no incremental decoding, so finalize time grows with utterance length (see [bench](../docs/bench/2026-11-11-mac-parakeet-mlx.md)).
 - One model per process. `backend_params` from clients are ignored (none are used yet). Free-text context is ignored by all backends (`CONTEXT_IGNORED`).
-- parakeet_mlx: no decode-time bias, no N-best, `detected_language` is not reported, and confidence is uncalibrated.
+- parakeet_mlx: N-best is 1 (beam result + greedy anchor), boosting costs ~2.3× greedy finalize latency, `detected_language` is not reported, and confidence is uncalibrated.
 - nemo_gpupb is a stub.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, Opus, gRPC reflection, `SUPERSEDED` handling of retried attempts, server-side session expiry, hit scores, and REJECTED hits for `bias_diagnostics`.
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.

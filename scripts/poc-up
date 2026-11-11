@@ -1,0 +1,74 @@
+#!/usr/bin/env bash
+# Start the whole local POC stack: llama-server (cleanup) + hark-server (ASR) [+ hark client].
+#
+#   scripts/poc-up              # servers only; then run `uv run hark run` in another terminal
+#   scripts/poc-up --client     # servers + `hark run` in the foreground (Ctrl+C stops everything)
+#   HARK_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
+#
+# Env: HARK_BACKEND (default parakeet_mlx on macOS arm64, else mock), HARK_CLEANUP_MODEL
+#      (default from scripts/fetch-models), HARK_NO_CLEANUP=1 to skip llama-server.
+# Logs: ${XDG_STATE_HOME:-~/.local/state}/hark/*.log
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+cd "$root"
+logs="${XDG_STATE_HOME:-$HOME/.local/state}/hark"
+mkdir -p "$logs"
+
+if [[ "$(uname -s)-$(uname -m)" == "Darwin-arm64" ]]; then
+  backend="${HARK_BACKEND:-parakeet_mlx}"
+else
+  backend="${HARK_BACKEND:-mock}"
+fi
+cleanup_model="${HARK_CLEANUP_MODEL:-$(sed -n 's/^DEFAULT=//p' scripts/fetch-models)}"
+
+pids=()
+cleanup() {
+  for pid in "${pids[@]}"; do kill "$pid" 2>/dev/null || true; done
+  wait 2>/dev/null || true
+}
+trap cleanup EXIT INT TERM
+
+wait_http() { # url, seconds
+  for _ in $(seq 1 "$2"); do
+    curl -fsS -o /dev/null "$1" 2>/dev/null && return 0
+    sleep 1
+  done
+  return 1
+}
+
+server_args=(--backend "$backend")
+if [[ "${HARK_NO_CLEANUP:-0}" != 1 ]]; then
+  [[ -x models/bin/llama-server ]] || scripts/fetch-llama
+  [[ -f "models/$cleanup_model.gguf" ]] || scripts/fetch-models "$cleanup_model"
+  echo "poc-up: llama-server ($cleanup_model) -> $logs/llama.log"
+  scripts/llama-up "$cleanup_model" >"$logs/llama.log" 2>&1 &
+  pids+=($!)
+  wait_http http://127.0.0.1:8080/health 120 || { echo "poc-up: llama-server did not start (see $logs/llama.log)" >&2; exit 1; }
+  server_args+=(--cleanup-url http://127.0.0.1:8080/v1 --cleanup-model "$cleanup_model")
+fi
+
+echo "poc-up: hark-server ($backend) -> $logs/server.log"
+uv run hark-server "${server_args[@]}" >"$logs/server.log" 2>&1 &
+pids+=($!)
+health_ok() {
+  uv run python - <<'PY' >/dev/null 2>&1
+import grpc
+from grpc_health.v1 import health_pb2, health_pb2_grpc
+ch = grpc.insecure_channel("127.0.0.1:50051")
+r = health_pb2_grpc.HealthStub(ch).Check(health_pb2.HealthCheckRequest(), timeout=1)
+raise SystemExit(0 if r.status == health_pb2.HealthCheckResponse.SERVING else 1)
+PY
+}
+for _ in $(seq 1 180); do
+  health_ok && break
+  sleep 1
+done
+uv run hark doctor || true
+
+if [[ "${1:-}" == --client ]]; then
+  uv run hark run
+else
+  echo "poc-up: servers running. In another terminal: uv run hark run   (Ctrl+C here stops the servers)"
+  wait
+fi

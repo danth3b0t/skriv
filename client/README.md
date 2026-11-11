@@ -164,8 +164,7 @@ fallback against a misbehaving TextCleanup server, config parsing, the ctl socke
 
 ## Limitations
 
-- Context: `hark_client.context` is developed separately; with its placeholder, snapshots are empty, so no bias
-  terms, no focus re-check (no window id) and the profile falls back to `prose` unless `--profile` is given.
+- Context: without Accessibility permission macOS gives no window title/selection; the terminal/repo/agent context still works. `hark once --cwd DIR` pins the repo for testing; with no focused terminal and no `--cwd` there are no repo bias terms.
 - Untested on real hardware: Hyprland/wtype/X11 paste (commands are unit-tested only), the macOS Cmd+V path and the
   pynput hotkey (needs permissions this session did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
