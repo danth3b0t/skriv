@@ -6,8 +6,9 @@ hotkey down -> Utterance():
     empty context then); audio fed meanwhile queues behind it.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
-    EndOfAudio -> FinalResult -> canonicalize -> optional cleanup (deadline, falls back
-    to the canonical text) -> guardrails -> focus re-check -> paste -> history.
+    EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
+    optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
+    focus re-check -> paste -> history.
 """
 
 from __future__ import annotations
@@ -22,7 +23,7 @@ from typing import TYPE_CHECKING
 from google.protobuf import json_format
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, cleanup, context, guardrails, history
+from hark_client import asr, cleanup, context, guardrails, history, symbols
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
@@ -99,6 +100,7 @@ class Result:
     paste: PasteResult | None = None
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
+    symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
     joined: bool = False  # pasted with a leading space (join_prefix)
     pasted_as: LastPaste | None = None  # set when the paste went through
 
@@ -303,6 +305,11 @@ class Utterance:
             "canon", f"{canon!r} ({len(replacements)} replacements, {t['canonicalize_ms']:.1f} ms)"
         )
 
+        if prof.terminal:
+            canon, res.symbols = symbols.apply(canon)
+            if res.symbols:
+                self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
+
         res.cleanup = self._cleanup(canon, snap, profile_name)
         t["cleanup_ms"] = round(res.cleanup.ms, 1)
         detail = f" [{res.cleanup.reason}]" if res.cleanup.reason else ""
@@ -419,6 +426,7 @@ class Utterance:
             "final_text": res.final_text,
             "joined": res.joined,
             "replacements": res.replacements,
+            "symbols": res.symbols,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,

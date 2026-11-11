@@ -6,7 +6,7 @@ Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) serve
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
           └─ Transcribe stream opens; 40 ms PCM16 chunks (+ pre-roll) queue behind SessionStart
-key up ───► EndOfAudio ► FinalResult ► canonicalize ► cleanup (optional, deadline) ► guardrails
+key up ───► EndOfAudio ► FinalResult ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
           ► focus re-check ► paste (or clipboard + notification) ► history.jsonl
 ```
 
@@ -135,6 +135,10 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 - All profiles: escape sequences (CSI incl. the bracketed-paste markers `ESC[200~`/`ESC[201~`, OSC, 8-bit CSI), C0/C1
   control characters and bidi overrides are removed.
 - Terminal profile: every whitespace run, newlines included, becomes one space; no trailing newline. Nothing ever sends Enter.
+- Terminal profile, before cleanup: spoken symbols are written as symbols, conservatively (`hark_client/symbols.py`):
+  "canon dot py" → `canon.py`, "commit dash m fix colon" → `commit -m fix:`, "dash dash verbose" → `--verbose`,
+  "src slash main dot rs" → `src/main.rs`, "cd slash tmp" → `cd /tmp`. A single "slash" between ordinary words
+  ("the slash command") and "dash" after a non-command stay words.
 - Cleanup: protected spans (shortlist identifiers, code-like tokens, numbers, negations) are sent with the request.
   The client re-validates every returned edit (unique quote, byte range, protected spans, per-kind invariant, negation
   and digit preservation). One bad edit discards the whole set; timeouts and RPC errors fall back to the uncleaned text.
