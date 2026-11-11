@@ -27,6 +27,9 @@ keep_open = false
 method = "wtype"
 [history]
 save_recordings = true
+[gate]
+max_distance = 0
+confident_anchor = 0.9
 [profiles.terminal]
 apps = ["my-term"]
 [profiles.agent]
@@ -45,6 +48,9 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     assert (cfg.cleanup.enabled, cfg.cleanup.deadline_ms) == (False, 300)
     assert (cfg.audio.preroll_ms, cfg.audio.keep_open, cfg.paste.method) == (0, False, "wtype")
     assert cfg.history.save_recordings
+    # floats accept TOML integers
+    assert (cfg.gate.max_distance, cfg.gate.confident_anchor) == (0.0, 0.9)
+    assert isinstance(cfg.gate.max_distance, float)
     assert cfg.context.deadline_ms == 150  # untouched default
     # Fields not given keep the built-in profile's values; new profiles are appended.
     assert cfg.profiles["terminal"].apps == ["my-term"]
@@ -75,6 +81,8 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[audio]\nmin_ms = true\n", "audio.min_ms: expected int, got bool"),
         ("[profiles.terminal]\napps = 'kitty'\n", "profiles.terminal.apps: expected list"),
         ("[paste]\nmethod = 'xdotool'\n", "paste.method must be one of"),
+        ("[gate]\nmax_distance = 'near'\n", "gate.max_distance: expected float, got str"),
+        ("[gate]\nmax_distance = 1.5\n", "gate.max_distance must be in"),
         ("[server]\ntls_cert = 'a'\n", "tls_cert and server.tls_key"),
         ("server = 1\n", "server: expected a table"),
         ("[server\n", "c.toml"),
