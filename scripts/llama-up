@@ -1,0 +1,47 @@
+#!/usr/bin/env bash
+# Start llama-server for hark cleanup on 127.0.0.1:8080 (OpenAI-compatible /v1).
+#
+#   scripts/llama-up                         # default model (see scripts/fetch-models)
+#   scripts/llama-up qwen3-0.6b-q8_0         # a key from scripts/fetch-models, or a .gguf path
+#   scripts/llama-up qwen3-0.6b-q8_0 --port 8081 -v   # extra args go to llama-server
+#
+# Then: hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model <key>
+set -euo pipefail
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+server="$root/models/bin/llama-server"
+model="${1:-$(sed -n 's/^DEFAULT=//p' "$root/scripts/fetch-models")}"
+[[ $# -gt 0 ]] && shift
+
+if [[ ! -x $server ]]; then
+  echo "llama-up: $server missing; run scripts/fetch-llama" >&2
+  exit 1
+fi
+if [[ $model == *.gguf ]]; then
+  path="$model"
+  alias="$(basename "$model" .gguf)"
+else
+  path="$root/models/$model.gguf"
+  alias="$model"
+fi
+if [[ ! -f $path ]]; then
+  echo "llama-up: $path missing; run scripts/fetch-models $model" >&2
+  exit 1
+fi
+
+# -ngl 99: all layers on the GPU (Metal/CUDA/Vulkan; ignored by CPU builds).
+# -c 2048 -np 1: one slot holding the whole prompt (policy + few-shots + text, ~1.3k tokens).
+# --cache-prompt: reuse the KV of the static prompt prefix across requests.
+# --reasoning off: Qwen3 is a hybrid thinker; thinking would blow the latency budget.
+# --temp 0: deterministic edits (the hark server also sends temperature 0).
+# --spec-type ngram-simple (n=1, m=4): prompt-lookup speculative decoding. Edits
+#   mostly copy the input, so drafts from it are often accepted; greedy
+#   verification keeps the output identical. ~2x faster on 1.7B (docs/bench).
+exec "$server" \
+  -m "$path" --alias "$alias" \
+  --host 127.0.0.1 --port 8080 \
+  -ngl 99 -c 2048 -np 1 \
+  --cache-prompt --jinja --reasoning off \
+  --temp 0 --no-webui \
+  --spec-type ngram-simple --spec-ngram-simple-size-n 1 --spec-ngram-simple-size-m 4 \
+  "$@"
