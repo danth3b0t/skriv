@@ -2,6 +2,12 @@
 
 pyobjc ships no type information, so the frameworks are loaded with importlib and cast to
 small Protocols describing exactly the calls used here; nothing untyped leaves this module.
+
+The frontmost window comes from the window server (``CGWindowListCopyWindowInfo``): it works
+from any thread without a run loop or permission and never waits on the focused app, unlike
+``NSWorkspace.frontmostApplication`` (stale without an AppKit run loop) and the Accessibility
+API (an IPC round trip to the focused app, which can stall for seconds in Chromium/Electron
+apps). Window titles need the Screen Recording permission there; Accessibility fills them in.
 """
 # ruff: noqa: N802 - Protocol methods mirror Apple's API names
 
@@ -9,26 +15,37 @@ from __future__ import annotations
 
 import importlib
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import TYPE_CHECKING, Protocol, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping, Sequence
 
 _AX_SUCCESS = 0
 # AX attribute names (values of the kAX...Attribute constants)
-_AX_FOCUSED_APPLICATION = "AXFocusedApplication"
 _AX_FOCUSED_WINDOW = "AXFocusedWindow"
 _AX_FOCUSED_UI_ELEMENT = "AXFocusedUIElement"
 _AX_TITLE = "AXTitle"
 _AX_SELECTED_TEXT = "AXSelectedText"
+# CGWindowListOption values and kCGNullWindowID
+_ON_SCREEN_ONLY = 1 << 0
+_EXCLUDE_DESKTOP = 1 << 4
+_NULL_WINDOW = 0
+_MIN_WINDOW_SIDE = 40  # smaller layer-0 windows are helpers/overlays, not the focused window
 
 
 class _ApplicationServices(Protocol):
     def AXIsProcessTrusted(self) -> bool: ...
-    def AXUIElementCreateSystemWide(self) -> object: ...
     def AXUIElementCreateApplication(self, pid: int, /) -> object: ...
     def AXUIElementSetMessagingTimeout(self, element: object, seconds: float, /) -> int: ...
     def AXUIElementCopyAttributeValue(
         self, element: object, attribute: str, out: None, /
     ) -> tuple[int, object]: ...
-    def AXUIElementGetPid(self, element: object, out: None, /) -> tuple[int, int]: ...
+
+
+class _Quartz(Protocol):
+    def CGWindowListCopyWindowInfo(
+        self, option: int, relative_to: int, /
+    ) -> Sequence[Mapping[str, object]] | None: ...
 
 
 class _RunningApplication(Protocol):
@@ -58,6 +75,7 @@ class _AppKit(Protocol):
 
 _AS = cast("_ApplicationServices", importlib.import_module("ApplicationServices"))
 _APPKIT = cast("_AppKit", importlib.import_module("AppKit"))
+_QUARTZ = cast("_Quartz", importlib.import_module("Quartz"))
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,31 +85,44 @@ class FrontApp:
     pid: int
 
 
+@dataclass(frozen=True, slots=True)
+class FrontWindow:
+    pid: int
+    number: int
+    title: str  # "" without the Screen Recording permission
+
+
 def ax_trusted() -> bool:
     """Whether this process has the Accessibility permission."""
     return bool(_AS.AXIsProcessTrusted())
 
 
-def _ax_attr(element: object, attribute: str) -> object | None:
-    err, value = _AS.AXUIElementCopyAttributeValue(element, attribute, None)
-    return value if err == _AX_SUCCESS else None
+def _num(value: object) -> float:
+    return float(value) if isinstance(value, (int, float)) else 0.0
 
 
-def front_app(timeout_s: float) -> FrontApp | None:
-    """Frontmost application.
+def front_window() -> FrontWindow | None:
+    """Front-most normal (layer 0), visible window on screen; ~1 ms."""
+    windows = _QUARTZ.CGWindowListCopyWindowInfo(_ON_SCREEN_ONLY | _EXCLUDE_DESKTOP, _NULL_WINDOW)
+    for w in windows or ():
+        if _num(w.get("kCGWindowLayer")) != 0 or _num(w.get("kCGWindowAlpha")) <= 0:
+            continue
+        bounds = cast("Mapping[str, object] | None", w.get("kCGWindowBounds"))
+        if bounds is None or min(_num(bounds.get("Width")), _num(bounds.get("Height"))) < (
+            _MIN_WINDOW_SIDE
+        ):
+            continue
+        name = w.get("kCGWindowName")
+        return FrontWindow(
+            pid=int(_num(w.get("kCGWindowOwnerPID"))),
+            number=int(_num(w.get("kCGWindowNumber"))),
+            title=str(name) if name else "",
+        )
+    return None
 
-    Prefers the Accessibility API (always current) and falls back to NSWorkspace, whose
-    value only refreshes while the process runs an AppKit run loop.
-    """
-    pid: int | None = None
-    if ax_trusted():
-        system = _AS.AXUIElementCreateSystemWide()
-        _AS.AXUIElementSetMessagingTimeout(system, timeout_s)
-        app_el = _ax_attr(system, _AX_FOCUSED_APPLICATION)
-        if app_el is not None:
-            err, ax_pid = _AS.AXUIElementGetPid(app_el, None)
-            if err == _AX_SUCCESS:
-                pid = int(ax_pid)
+
+def front_app(pid: int | None) -> FrontApp | None:
+    """Application owning ``pid``, or NSWorkspace's (possibly stale) frontmost one if None."""
     app = (
         _APPKIT.NSRunningApplication.runningApplicationWithProcessIdentifier_(pid)
         if pid is not None
@@ -106,18 +137,26 @@ def front_app(timeout_s: float) -> FrontApp | None:
     )
 
 
+def _ax_attr(element: object, attribute: str, timeout_s: float) -> object | None:
+    _AS.AXUIElementSetMessagingTimeout(element, timeout_s)
+    err, value = _AS.AXUIElementCopyAttributeValue(element, attribute, None)
+    return value if err == _AX_SUCCESS else None
+
+
 def window_title_and_selection(pid: int, timeout_s: float) -> tuple[str | None, str | None]:
-    """(focused window title, selected text in the focused element) via Accessibility."""
+    """(focused window title, selected text in the focused element) via Accessibility.
+
+    Every element gets the messaging timeout (it is per element, not inherited).
+    """
     app_el = _AS.AXUIElementCreateApplication(pid)
-    _AS.AXUIElementSetMessagingTimeout(app_el, timeout_s)
     title: str | None = None
-    window = _ax_attr(app_el, _AX_FOCUSED_WINDOW)
+    window = _ax_attr(app_el, _AX_FOCUSED_WINDOW, timeout_s)
     if window is not None:
-        value = _ax_attr(window, _AX_TITLE)
+        value = _ax_attr(window, _AX_TITLE, timeout_s)
         title = str(value) if value is not None else None
     selection: str | None = None
-    focused = _ax_attr(app_el, _AX_FOCUSED_UI_ELEMENT)
+    focused = _ax_attr(app_el, _AX_FOCUSED_UI_ELEMENT, timeout_s)
     if focused is not None:
-        value = _ax_attr(focused, _AX_SELECTED_TEXT)
+        value = _ax_attr(focused, _AX_SELECTED_TEXT, timeout_s)
         selection = str(value) if value else None
     return title, selection

@@ -1,7 +1,10 @@
 """Focused application/window (and selection where the platform exposes it).
 
-- macOS: frontmost app via Accessibility/NSWorkspace; window title and selected text via
-  Accessibility (needs the Accessibility permission; reported as an error otherwise).
+- macOS: front-most window (owner pid, window number, title if permitted) from the window
+  server, app name/bundle id via NSRunningApplication (~1 ms, any thread); window title and
+  selected text via Accessibility (needs the permission; reported as an error otherwise) in
+  a separate thread with a hard wait, so a slow app costs only the title/selection.
+  ``window_id`` = ``"<pid>:<window number>"``.
 - Linux/Hyprland: ``hyprctl -j activewindow`` (class, title, pid, address).
 - Anything else: empty FocusInfo.
 """
@@ -13,6 +16,9 @@ import os
 import shutil
 import subprocess
 import sys
+import threading
+from concurrent.futures import Future, ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass
 from typing import cast
 
@@ -114,33 +120,87 @@ def _hyprland() -> FocusResult:
     return FocusResult(parse_hyprctl(proc.stdout))
 
 
-def get_focus(ax_timeout_s: float = 0.1) -> FocusResult:
+def _on_hyprland() -> bool:
+    return sys.platform.startswith("linux") and bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
+
+
+def get_focus(ax_timeout_s: float = 0.05) -> FocusResult:
     if sys.platform == "darwin":
         return _macos_focus(ax_timeout_s)
-    if sys.platform.startswith("linux") and os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+    if _on_hyprland():
         return _hyprland()
     return FocusResult(FocusInfo())
+
+
+def focus_token() -> str:
+    """Cheap id of the focused window, equal to ``FocusInfo.window_id`` while focus stays.
+
+    Meant for re-checking focus right before pasting (~1 ms on macOS, one ``hyprctl`` call
+    on Hyprland). "" when unknown; never raises.
+    """
+    try:
+        if sys.platform == "darwin" and mac is not None:
+            win = mac.front_window()
+            return f"{win.pid}:{win.number}" if win is not None else ""
+        if _on_hyprland():
+            return _hyprland().focus.window_id
+    except Exception:  # noqa: BLE001 - a failed check must not block pasting
+        return ""
+    return ""
+
+
+class AxWorker:
+    """One Accessibility query at a time; a hung app makes later calls skip, not pile up."""
+
+    def __init__(self) -> None:
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hark-ax")
+        self._lock = threading.Lock()
+        self._job: Future[tuple[str | None, str | None]] | None = None
+
+    def title_and_selection(
+        self, pid: int, timeout_s: float
+    ) -> tuple[tuple[str | None, str | None] | None, str | None]:
+        """((title, selection) or None, error)."""
+        if mac is None:
+            return None, None
+        with self._lock:
+            if self._job is not None and not self._job.done():
+                return None, "focus: accessibility busy with a previous query (skipped)"
+            self._job = job = self._pool.submit(mac.window_title_and_selection, pid, timeout_s)
+        # four AX round trips at most; wait for about two of them
+        try:
+            return job.result(timeout=2 * timeout_s), None
+        except FutureTimeout:
+            return None, f"focus: accessibility timeout after {2 * timeout_s * 1000:.0f} ms"
+
+
+_AX = AxWorker()
 
 
 def _macos_focus(ax_timeout_s: float) -> FocusResult:
     if mac is None:
         return FocusResult(FocusInfo())
-    app = mac.front_app(ax_timeout_s)
+    win = mac.front_window()
+    app = mac.front_app(win.pid if win is not None else None)
     if app is None:
         return FocusResult(FocusInfo(), errors=("focus: no frontmost application",))
     errors: list[str] = []
-    title: str | None = None
+    title = win.title if win is not None else ""
     selection: str | None = None
     if mac.ax_trusted():
-        title, selection = mac.window_title_and_selection(app.pid, ax_timeout_s)
+        ax, error = _AX.title_and_selection(app.pid, ax_timeout_s)
+        if ax is not None:
+            title, selection = ax[0] or title, ax[1]
+        if error is not None:
+            errors.append(error)
     else:
-        errors.append("focus: accessibility permission not granted (no title/selection)")
+        errors.append("focus: accessibility permission not granted (no selection)")
     focus = FocusInfo(
         app=app.name,
         app_id=app.bundle_id,
-        title=title or "",
+        title=title,
         pid=app.pid,
         is_terminal=is_terminal(app.bundle_id),
-        window_id=str(app.pid),
+        window_id=f"{win.pid}:{win.number}" if win is not None else str(app.pid),
     )
     return FocusResult(focus, selection, tuple(errors))

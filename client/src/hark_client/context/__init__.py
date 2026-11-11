@@ -9,12 +9,16 @@ Public API (stable contract; implementations live in submodules):
   Deterministically rewrites spoken aliases to canonical spellings only when the alias
   appears in the transcript (optionally gated on word confidence). Never introduces a
   term that was not acoustically present.
+- ``focus_token() -> str``
+  Cheap (~1 ms on macOS) id of the focused window; equals ``FocusInfo.window_id`` while the
+  same window stays focused, "" when unknown. For re-checking focus right before pasting.
 """
 
 from __future__ import annotations
 
 from hark_client.context.canon import canonicalize
 from hark_client.context.engine import collect
+from hark_client.context.focus import focus_token
 from hark_client.context.types import (
     ContextSnapshot,
     FocusInfo,
@@ -35,4 +39,5 @@ __all__ = [
     "WordInfo",
     "canonicalize",
     "collect",
+    "focus_token",
 ]
