@@ -7,7 +7,7 @@ import pytest
 
 from hark_client.context import TermSource, engine
 from hark_client.context.__main__ import main
-from hark_client.context.agents import AgentSession, Turn
+from hark_client.context.agents import AgentSession, Group
 from hark_client.context.focus import FocusResult
 from hark_client.context.repo import RepoInfo
 from hark_client.context.terminal import TerminalState
@@ -17,8 +17,8 @@ TERMINAL = FocusInfo(app="kitty", app_id="kitty", title="nvim", pid=4242, is_ter
 
 
 def session(confidence: float) -> AgentSession:
-    turns = (Turn("assistant", "Changed `agentTerm`."),)
-    return AgentSession("pi", "/s.jsonl", "/w", 0.0, turns, (), confidence)
+    groups = (Group(0, "Changed `agentTerm`.", ""),)
+    return AgentSession("pi", "/s.jsonl", "/w", 0.0, groups, confidence)
 
 
 def sessions(confidence: float) -> Callable[[str, str | None, float | None], AgentSession]:
@@ -55,17 +55,16 @@ def test_terms_are_ranked_by_source():
 
 @pytest.mark.usefixtures("providers")
 def test_older_agent_turns_contribute_with_lower_weight(monkeypatch: pytest.MonkeyPatch):
-    turns = (
-        Turn("assistant", "Use `newTerm`, key sk-abcdefghijklmnopqrstuv."),
-        Turn("user", "what about `userTerm`?"),
-        Turn("assistant", "Compare `oldTerm` and Parakeet."),
+    groups = (
+        Group(0, "Use `newTerm`, key sk-abcdefghijklmnopqrstuv.", "what about `userTerm`?"),
+        Group(1, "Compare `oldTerm` and Parakeet.", ""),
     )
     monkeypatch.setattr(
-        engine, "find_session", found(AgentSession("pi", "/s", "/w", 0.0, turns, (), 0.95))
+        engine, "find_session", found(AgentSession("pi", "/s", "/w", 0.0, groups, 0.95))
     )
     snap = engine.collect(1.0)
     weight = {t.canonical: t.weight for t in snap.terms if t.source is TermSource.AGENT_SESSION}
-    assert weight["newTerm"] > weight["userTerm"] > weight["oldTerm"] == weight["Parakeet"]
+    assert weight["newTerm"] == weight["userTerm"] > weight["oldTerm"] == weight["Parakeet"]
     assert snap.agent_last_reply == "Use `newTerm`, key [redacted]."
     assert not any("sk-" in t.canonical for t in snap.terms)
 

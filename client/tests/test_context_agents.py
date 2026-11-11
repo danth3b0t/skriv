@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from hark_client.context import agents
-from hark_client.context.agents import Turn
+from hark_client.context.agents import Group
 
 CWD = "/home/u/projects/app"
 
@@ -81,42 +81,40 @@ def test_claude_project_dir_encoding(homes: Path):
 
 
 def test_pi_reader_follows_active_branch(homes: Path):
-    turns, files = agents.read_pi(pi_session(homes))
-    assert turns == [
-        Turn("assistant", "Renamed `useSessionStore`."),
-        Turn("user", "rename the store"),
-        Turn("assistant", "first reply"),
+    assert agents.read_pi(pi_session(homes)) == [
+        Group(0, "Renamed `useSessionStore`.", "rename the store", ("src/useStore.ts",)),
+        Group(1, "first reply", "hi"),
     ]
-    assert files == ["src/useStore.ts"]
 
 
-def pi_chat(homes: Path, replies: list[str]) -> Path:
-    """Linear pi session: user "q<i>" then assistant replies[i], for each i."""
+def pi_chat(
+    homes: Path, replies: list[str], prompt: str = "q{}", pending: str | None = None
+) -> Path:
+    """Linear pi session: user prompt.format(i) then assistant replies[i], for each i; then
+    ``pending`` as a prompt still waiting for its answer."""
     entries: list[dict[str, object]] = [{"type": "session", "version": 3, "id": "s", "cwd": CWD}]
     parent: str | None = None
     for i, reply in enumerate(replies):
-        entries.append(pi_msg(f"u{i}", parent, "user", f"q{i}"))
+        entries.append(pi_msg(f"u{i}", parent, "user", prompt.format(i)))
         entries.append(pi_msg(f"a{i}", f"u{i}", "assistant", [{"type": "text", "text": reply}]))
         parent = f"a{i}"
+    if pending is not None:
+        entries.append(pi_msg("pending", parent, "user", pending))
     return write_jsonl(agents.pi_session_dir(CWD) / "chat.jsonl", entries)
 
 
-def test_reader_keeps_last_four_assistant_turns_and_last_user_turn(homes: Path):
-    turns, _ = agents.read_pi(pi_chat(homes, [f"reply{i}" for i in range(6)]))
-    assert turns == [
-        Turn("assistant", "reply5"),
-        Turn("user", "q5"),
-        Turn("assistant", "reply4"),
-        Turn("assistant", "reply3"),
-        Turn("assistant", "reply2"),
-    ]
+def test_reader_keeps_the_last_eight_groups_with_their_age(homes: Path):
+    groups = agents.read_pi(pi_chat(homes, [f"reply{i}" for i in range(10)], pending="next?"))
+    assert len(groups) == agents.MAX_GROUPS == 8
+    assert groups[:2] == [Group(0, "", "next?"), Group(1, "reply9", "q9")]
+    assert (groups[-1].age, groups[-1].user) == (7, "q3")
 
 
-def test_reader_clips_turns_to_their_tail_within_the_budget(homes: Path):
-    turns, _ = agents.read_pi(pi_chat(homes, [f"{i}" * 5000 + f" end{i}" for i in range(4)]))
-    assert [t.text[-4:] for t in turns] == ["end3", "q3", "end2", "end1"]
-    assert len(turns[0].text) == agents.MAX_ASSISTANT_TURN_CHARS
-    assert sum(len(t.text) for t in turns) == agents.MAX_CONTEXT_CHARS
+def test_reader_clips_prompts_and_responses_to_their_tail(homes: Path):
+    groups = agents.read_pi(pi_chat(homes, ["r" * 5000 + " end"], prompt="p" * 9000 + " ask"))
+    assert len(groups[0].assistant) == agents.MAX_ASSISTANT_CHARS == 1500
+    assert len(groups[0].user) == agents.MAX_USER_CHARS == 6000
+    assert (groups[0].assistant[-4:], groups[0].user[-4:]) == (" end", " ask")
 
 
 def test_claude_reader_spans_tool_results_and_skips_sidechains_and_commands(homes: Path):
@@ -150,13 +148,10 @@ def test_claude_reader_spans_tool_results_and_skips_sidechains_and_commands(home
             {"type": "last-prompt", "lastPrompt": "do it", "leafUuid": "1"},
         ],
     )
-    turns, files = agents.read_claude(path)
-    assert turns == [
-        Turn("assistant", "Editing `parse_args`.\n\nDone in cli.py."),
-        Turn("user", "do it"),
-        Turn("assistant", "Earlier reply."),
+    assert agents.read_claude(path) == [
+        Group(0, "Editing `parse_args`.\n\nDone in cli.py.", "do it", (f"{CWD}/cli.py",)),
+        Group(1, "Earlier reply.", "start"),
     ]
-    assert files == [f"{CWD}/cli.py"]
 
 
 def codex_msg(role: str, kind: str, text: str) -> dict[str, object]:
@@ -201,10 +196,9 @@ def test_codex_session_is_matched_by_cwd_in_session_meta(homes: Path):
     codex_rollout(homes, "rollout-other.jsonl", "/elsewhere", now)
     session = agents.find_session(CWD, "codex", agent_started=now - 60, now=now)
     assert session is not None
-    assert session.turns == (
-        Turn("assistant", "patched rollout-mine.jsonl"),
-        Turn("user", "go"),
-        Turn("assistant", "earlier"),
+    assert session.groups == (
+        Group(0, "patched rollout-mine.jsonl", "go", ("src/a.py",)),
+        Group(1, "earlier", ""),  # the injected AGENTS.md prompt is not the user's
     )
     assert (session.last_reply, session.files) == ("patched rollout-mine.jsonl", ("src/a.py",))
 
@@ -243,4 +237,4 @@ def test_truncated_and_garbage_lines_are_tolerated(homes: Path):
     path = pi_session(homes)
     with path.open("a") as fh:
         fh.write('{"type": "message", "id": "x9", "parentId": "a4", "mess\n')
-    assert agents.read_pi(path)[0][0] == Turn("assistant", "Renamed `useSessionStore`.")
+    assert agents.read_pi(path)[0].assistant == "Renamed `useSessionStore`."

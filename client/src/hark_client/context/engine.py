@@ -123,13 +123,14 @@ def _snapshot(
     session = diag.session if diag.session and diag.session.confidence >= CONFIDENT else None
     reply = scrub(session.last_reply) if session else None
     if session:
-        # recency: newest turn 1.0, then linearly down
-        for i, turn in enumerate(session.turns):
-            score = 1.0 - i / len(session.turns)
-            cands.extend(
-                Candidate(t, k, TermSource.AGENT_SESSION, score)
-                for t, k in extract_terms(scrub(turn.text), prose=True)
-            )
+        # recency: newest group 1.0, then linearly down
+        for group in session.groups:
+            score = 1.0 - group.age / len(session.groups)
+            for text in (group.assistant, group.user):
+                cands.extend(
+                    Candidate(t, k, TermSource.AGENT_SESSION, score)
+                    for t, k in extract_terms(scrub(text), prose=True)
+                )
         n = max(1, len(session.files))
         for i, path in enumerate(session.files[:30]):
             cands.extend(file_candidates(path, TermSource.AGENT_SESSION, 1.0 - i / n))
