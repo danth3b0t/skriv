@@ -110,8 +110,9 @@ listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
 restore_clipboard = true
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
-join_space = true             # same window within join_window_ms, previous paste ended with a non-space
-join_window_ms = 60000        #   => leading space; a real Enter press (hotkey listener) resets it
+smart_spacing = true          # leading/trailing space + mid-sentence lower case from the caret (see below)
+join_space = true             # older name; false also turns smart spacing off
+join_window_ms = 60000        # shadow buffer (no readable caret) forgets after this long without input
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
@@ -151,11 +152,48 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 - Focus: if the focused window changed between key-down and paste, the text goes to the clipboard and a notification
   says so.
 
+## Smart continuation (spacing)
+
+Right before pasting (after the focus check), hark looks at the text around the caret
+(`hark_client/context/caret.py`, `hark_client/continuation.py`), like Spokenly's smart spacing:
+
+- **Leading space** iff the character before the caret is known, is not whitespace, not an opening character
+  (`(` `[` `{` `"` `'` `` ` `` `/` `-` and curly opening quotes) and the text does not start with closing punctuation (`. , ; : ! ? ) ] } %`).
+- **Lower-case first word** iff the caret is mid-sentence (after a letter/digit or `, ; :`, spaces ignored) and the
+  word is a common function word (And, But, So, The, When, It, ...). Never `I`, acronyms, identifiers or names.
+- **Trailing space** iff the character after the caret is a letter or digit.
+- Unknown context counts as the start of a field: no leading space, nothing lower-cased.
+
+Where the caret comes from, first trusted source wins:
+
+1. macOS Accessibility: focused element of the focused app (system-wide focused element as a fallback),
+   `AXSelectedTextRange` + `AXStringForRange`, 50 ms per round trip, 200 ms overall. Secure text fields are never
+   read. Terminal.app reports a real caret. Ghostty (1.4) exposes its text but the caret is always (0, 0): untrusted.
+2. Linux AT-SPI (optional PyGObject with the Atspi typelib; caret offset + text of the focused accessible).
+   Unit-tested with fakes only, **untested on real hardware**.
+3. tmux: in a terminal whose active tab runs a tmux client, the cursor of that client's pane and its screen row.
+   TUIs that hide the cursor and draw their own (coding agents, editors) or copy mode make it untrusted.
+4. Shadow buffer (daemon only): hark's last paste into that window plus the keys the hotkey listener saw since.
+   Characters append, Backspace pops (past the pasted text: unknown), Option/Ctrl+Backspace pops a word,
+   Cmd+Backspace, Ctrl+U and (Shift+)Enter mean "line start"; arrows, Home/End, Page Up/Down, Tab, Esc, other
+   Cmd/Ctrl shortcuts, mouse clicks, keys reaching another window and `join_window_ms` without input mean unknown.
+   hark's own paste chord is ignored for 0.5 s after it pastes.
+
+The history's `spacing` field records the decision: `before_repr` (last ≤16 chars), `after_repr`, `source`
+(`ax`, `atspi`, `tmux`, `shadow`, `none`), `detail` (why a source was missing/untrusted), `leading`, `trailing`,
+`lowercased`; `joined` = `leading`.
+
+Limitations: Wayland gives clients no global key events, so there the caret comes only from AT-SPI or tmux (no
+shadow buffer). The shadow buffer cannot see autocomplete, IME composition, mouse selection or edits made by the
+app itself; the AX caret in a terminal is the terminal cursor, which a TUI may park elsewhere. Wide/combined
+characters in tmux rows are mapped to columns approximately.
+
 ## History and recordings
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
-`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`),
+`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
+`keyup_to_paste_ms`), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 and the server's `Timings`. Files are created 0600 in a 0700 directory.
