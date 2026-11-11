@@ -1,4 +1,9 @@
-"""`hark run`: mic + hotkey/ctl socket -> Utterance pipeline, until SIGINT/SIGTERM."""
+"""`hark run`: mic + hotkey/ctl socket -> Utterance pipeline, until SIGINT/SIGTERM.
+
+Threads: the main thread runs the recording indicator's UI loop (AppKit / GTK; they want the
+main thread) or just waits for a signal; the mic callback, the hotkey listener, the ctl socket
+and each dictation's finish run on their own threads and drive the indicator from there.
+"""
 
 from __future__ import annotations
 
@@ -11,7 +16,7 @@ import time
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import context
+from hark_client import context, guardrails, history, indicator, retry
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
 from hark_client.config import expand
@@ -24,6 +29,7 @@ if TYPE_CHECKING:
 
     from hark_client.continuation import KeyPress
     from hark_client.hotkey import PushToTalk
+    from hark_client.indicator import Indicator
     from hark_client.mic import Mic
     from hark_client.pipeline import Result, Services
 
@@ -51,6 +57,8 @@ class Controller:
         # hark's pastes + the keys typed since: the caret when the app does not expose it
         self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
+        self.last_text = ""  # newest pasted/copied text (`hark ctl paste-last`)
+        self.indicator: Indicator | None = None
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -63,6 +71,8 @@ class Controller:
             over = utt.audio_ms - utt.preroll_ms >= self.svc.cfg.audio.max_ms and not self._max_hit
             if over:
                 self._max_hit = True
+        if self.indicator is not None:
+            self.indicator.level(pcm)
         if over:
             log.info("max duration reached; stopping")
             threading.Thread(target=self.stop, daemon=True).start()
@@ -71,8 +81,10 @@ class Controller:
         with self._lock:
             if self.current is not None:
                 return "ok already recording"
-            self.current = Utterance(self.svc, preroll=self.preroll.take())
+            self.current = utt = Utterance(self.svc, preroll=self.preroll.take())
             self._max_hit = False
+        if self.indicator is not None:
+            self.indicator.recording(utt.id)
         if self.svc.learner is not None:
             self.svc.learner.cancel()  # the next paste changes the field: stop watching the last
         if self.mic is not None and not self.keep_open:
@@ -94,21 +106,30 @@ class Controller:
         if utt is None:
             return "ok idle"
         self.svc.feedback.sound("stop")
+        if self.indicator is not None:
+            self.indicator.stage(utt.id, "transcribing")
         with self._lock:
             self.busy += 1
 
         def work() -> None:
+            status = "error"
             try:
                 res = utt.finish(
                     min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow
                 )
+                status = res.status
                 self.last_result = (time.time(), res)
+                if res.final_text and res.status != "empty":
+                    self.last_text = res.final_text
+                self._keep(utt, res)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
                     f" ({timing:.0f} ms key-up->paste)" if timing is not None else "",
                 )  # fmt: skip
             finally:
+                if self.indicator is not None:
+                    self.indicator.finished(utt.id, status)
                 with self._lock:
                     self.busy -= 1
 
@@ -125,9 +146,51 @@ class Controller:
         if utt is None:
             return "ok idle"
         utt.cancel(pb.CANCEL_REASON_USER_ABORT)
+        if self.indicator is not None:
+            self.indicator.finished(utt.id, "cancelled")
         self.svc.feedback.sound("error")
         log.info("cancelled")
         return "ok cancelled"
+
+    def _keep(self, utt: Utterance, res: Result) -> None:
+        """Recovery ring for `hark retry` (not for presses under min_ms)."""
+        if res.status == "too_short":
+            return
+        focus = utt.snapshot_at_start.focus
+        meta = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(utt.created_unix)),
+            "utterance_id": utt.id,
+            "status": res.status,
+            "error": res.error,
+            "profile": res.profile,
+            "app": focus.app,
+            "app_id": focus.app_id,
+            "audio_ms": utt.audio_ms,
+        }
+        base = expand(self.svc.cfg.history.dir)
+        try:
+            retry.save(base, self.svc.cfg.retry.keep, bytes(utt.pcm), utt.snapshot_at_start, meta)
+        except OSError as e:
+            log.warning("could not keep the recording for `hark retry`: %s", e)
+
+    def paste_last(self) -> str:
+        """Re-insert the newest dictated text into the focused window (guardrails re-applied
+        for it: a prose result pasted into a terminal loses its newlines)."""
+        text = self.last_text
+        if not text and self.svc.cfg.history.enabled:
+            text = history.last_text(expand(self.svc.cfg.history.dir))
+        if not text:
+            return "error nothing to paste yet"
+        cfg = self.svc.cfg
+        focus = context.collect(cfg.context.deadline_ms / 1000, 0).focus
+        terminal = cfg.profile(cfg.profile_for(focus)).terminal
+        text, _ = guardrails.apply(text, terminal=terminal)
+        self.shadow.pasted(focus.window_id, text)
+        res = self.svc.injector.paste(text, terminal=terminal, target=focus.window_id)
+        if not res.ok:
+            self.shadow.forget()
+            return f"error paste failed: {res.detail}"
+        return f"ok pasted {len(text)} chars"
 
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current and
@@ -175,6 +238,7 @@ class Controller:
             "cancel": self.cancel,
             "status": self.status,
             "ping": lambda: "ok pong",
+            "paste-last": self.paste_last,
         }
         action = actions.get(command)
         return action() if action else f"error unknown command {command!r}"
@@ -241,6 +305,10 @@ def run(svc: Services) -> int:
     controller.mic = mic
     # Warm per-window term pools in the background so key-down only refreshes cheap sources.
     context.start_prefetch(str(expand(svc.cfg.history.dir)))
+    ui = indicator.make(svc.cfg.indicator, retry_hint=svc.cfg.retry.keep > 0)
+    if ui is not None:
+        controller.indicator = ui
+        svc.on_stage = ui.stage
     server = ctl.CtlServer(ctl.socket_path(), controller.handle, controller.status_json)
     if svc.cfg.audio.keep_open:
         mic.start()
@@ -257,8 +325,11 @@ def run(svc: Services) -> int:
     signal.signal(signal.SIGTERM, on_signal)
     log.info("hark ready (paste: %s)", svc.injector.name)
     try:
-        while not stop.wait(0.5):
-            pass
+        if ui is not None:
+            ui.run(stop)  # the toolkit's loop on this (main) thread until a signal
+        else:
+            while not stop.wait(0.5):
+                pass
     finally:
         if hotkey is not None:
             hotkey.stop()

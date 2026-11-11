@@ -1,5 +1,6 @@
-"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `doctor`,
-`learned` (inspect/delete the learned vocabulary).
+"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
+(pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
+learned vocabulary).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -17,6 +18,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from hark_client.config import Config
+    from hark_client.context import ContextSnapshot
     from hark_client.pipeline import Services
 
 
@@ -36,6 +38,10 @@ class Args(argparse.Namespace):
     json: bool
     learned_action: str
     text: str | None
+    id: str | None
+    copy: bool
+    history_action: str
+    n: int
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -46,7 +52,11 @@ def parse_args(argv: list[str] | None = None) -> Args:
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
-    c.add_argument("action", choices=["start", "stop", "toggle", "cancel", "status", "ping"])
+    c.add_argument(
+        "action",
+        choices=["start", "stop", "toggle", "cancel", "status", "ping", "paste-last"],
+        help="paste-last: paste the last dictated text again into the focused window",
+    )
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
     )
@@ -65,6 +75,21 @@ def parse_args(argv: list[str] | None = None) -> Args:
     o.add_argument(
         "--cwd", help="pretend the focused terminal is in this directory (repo/agent context)"
     )
+    r = sub.add_parser(
+        "retry", help="re-run the pipeline on a kept recording (after a server error or timeout)"
+    )
+    r.add_argument(
+        "id", nargs="?", default="last", help="last (default) or an id from `hark history`"
+    )
+    r.add_argument("--dry-run", action="store_true", help="print instead of pasting")
+    r.add_argument("--copy", action="store_true", help="copy the result instead of pasting it")
+    h = sub.add_parser("history", help="recent dictations; `history show ID` for every stage")
+    h.add_argument("history_action", nargs="?", default="list", choices=["list", "show"])
+    h.add_argument("id", nargs="?", help="show: an id (or its last 8 characters)")
+    h.add_argument("-n", type=int, default=20, help="list: how many (default 20)")
+    h.add_argument("--json", action="store_true", help="list: the full records as a JSON array")
+    la = sub.add_parser("last", help="print the last dictated text")
+    la.add_argument("--copy", action="store_true", help="copy it to the clipboard instead")
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
     lp = sub.add_parser("learned", help="corrections learned from your edits (learn.enabled)")
     lp.add_argument(
@@ -98,10 +123,33 @@ def cmd_ctl(args: Args) -> int:
     return 0 if reply.startswith("ok") else 1
 
 
-def cmd_once(args: Args, services: Services) -> int:
+def run_pcm(
+    services: Services,
+    pcm: bytes,
+    *,
+    profile: str | None = None,
+    realtime: bool = False,
+    replay: ContextSnapshot | None = None,
+) -> int:
+    """Stream 16 kHz PCM16 through one Utterance (as fast as possible unless ``realtime``)."""
     from hark_client.asr import CHUNK_SAMPLES, SAMPLE_RATE  # noqa: PLC0415
-    from hark_client.audio import read_wav  # noqa: PLC0415
     from hark_client.pipeline import Utterance  # noqa: PLC0415
+
+    utt = Utterance(services, profile=profile, replay=replay)
+    step = CHUNK_SAMPLES * 2
+    t0 = time.perf_counter()
+    for i in range(0, len(pcm), step):
+        if realtime:
+            time.sleep(max(0.0, t0 + (i + step) / 2 / SAMPLE_RATE - time.perf_counter()))
+        utt.feed(pcm[i : i + step])
+    res = utt.finish()
+    print(f"{'result':<9} {res.status}{': ' + res.error if res.error else ''}")
+    return 0 if res.status in ("pasted", "focus_changed") else 1
+
+
+def cmd_once(args: Args, services: Services) -> int:
+    from hark_client.asr import SAMPLE_RATE  # noqa: PLC0415
+    from hark_client.audio import read_wav  # noqa: PLC0415
 
     if args.profile:
         services.cfg.profile(args.profile)  # raises ConfigError on unknown names
@@ -109,16 +157,34 @@ def cmd_once(args: Args, services: Services) -> int:
         os.environ["HARK_CONTEXT_CWD"] = str(Path(args.cwd).resolve())
     pcm = read_wav(Path(args.wav))
     print(f"{'wav':<9} {args.wav}: {len(pcm) // 2 / SAMPLE_RATE:.2f} s at 16 kHz mono")
-    utt = Utterance(services, profile=args.profile)
-    step = CHUNK_SAMPLES * 2
-    t0 = time.perf_counter()
-    for i in range(0, len(pcm), step):
-        if args.realtime:
-            time.sleep(max(0.0, t0 + (i + step) / 2 / SAMPLE_RATE - time.perf_counter()))
-        utt.feed(pcm[i : i + step])
-    res = utt.finish()
-    print(f"{'result':<9} {res.status}{': ' + res.error if res.error else ''}")
-    return 0 if res.status in ("pasted", "focus_changed") else 1
+    return run_pcm(services, pcm, profile=args.profile, realtime=args.realtime)
+
+
+def cmd_retry(args: Args, services: Services) -> int:
+    """Re-run a kept recording with the context captured at its key-down: biased like the
+    original and pasted only if that window is focused again (else copied)."""
+    from hark_client import retry  # noqa: PLC0415
+    from hark_client.audio import read_wav  # noqa: PLC0415
+    from hark_client.config import expand  # noqa: PLC0415
+    from hark_client.inject import ClipboardOnlyInjector  # noqa: PLC0415
+
+    try:
+        entry = retry.find(expand(services.cfg.history.dir), args.id or "last")
+    except LookupError as e:
+        print(f"hark retry: {e}", file=sys.stderr)
+        return 1
+    snap = retry.load_snapshot(entry)
+    meta = entry.meta
+    error = f": {meta['error']}" if meta.get("error") else ""
+    app = snap.focus.app or snap.focus.app_id or "?"
+    print(f"{'retry':<9} {entry.id} (was {meta.get('status', '?')}{error}; app {app!r})")
+    if services.injector.name not in ("dry-run", "clipboard") and not (
+        snap.focus.window_id and services.cfg.paste.check_focus
+    ):
+        # cannot tell whether the original window is focused: never paste into this one
+        services.injector = ClipboardOnlyInjector(services.injector)
+        print(f"{'retry':<9} original window unknown: the result is copied, not pasted")
+    return run_pcm(services, read_wav(entry.audio), replay=snap)
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -150,10 +216,8 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
-    if args.command == "learned":
-        return cmd_learned(args, cfg)
-
-    return cmd_pipeline(args, cfg)
+    offline = {"learned": cmd_learned, "history": cmd_history, "last": cmd_last}
+    return offline.get(args.command, cmd_pipeline)(args, cfg)
 
 
 def cmd_learned(args: Args, cfg: Config) -> int:
@@ -183,6 +247,60 @@ def cmd_learned(args: Args, cfg: Config) -> int:
     return 0
 
 
+def cmd_history(args: Args, cfg: Config) -> int:
+    import json  # noqa: PLC0415
+
+    from hark_client import history, historyview, retry  # noqa: PLC0415
+    from hark_client.config import expand  # noqa: PLC0415
+
+    base = expand(cfg.history.dir)
+    kept = {e.id for e in retry.entries(base)}
+    if args.history_action == "show":
+        if not args.id:
+            print("hark history show: give an id (see `hark history`)", file=sys.stderr)
+            return 2
+        found = history.find(base, args.id)
+        ids = {str(r.get("utterance_id")) for r in found}
+        if len(ids) != 1:
+            what = "no dictation" if not ids else f"{len(ids)} dictations"
+            print(f"hark history show: {what} match {args.id!r}", file=sys.stderr)
+            return 1
+        uid = ids.pop()
+        print(historyview.show(found[-1], kept=uid in kept))
+        return 0
+    if args.n < 1:
+        print("hark history: -n must be >= 1", file=sys.stderr)
+        return 2
+    records = history.recent(base, args.n)
+    if args.json:
+        print(json.dumps(records, ensure_ascii=False))
+    elif not records:
+        print(f"no history in {base}")
+    else:
+        print(historyview.table(records, kept))
+    return 0
+
+
+def cmd_last(args: Args, cfg: Config) -> int:
+    from hark_client import history  # noqa: PLC0415
+    from hark_client.config import expand  # noqa: PLC0415
+
+    text = history.last_text(expand(cfg.history.dir))
+    if not text:
+        print("hark last: no dictated text in the history", file=sys.stderr)
+        return 1
+    if not args.copy:
+        print(text)
+        return 0
+    from hark_client.inject import make_injector  # noqa: PLC0415
+
+    if not make_injector(cfg.paste).copy(text):
+        print("hark last: could not write the clipboard", file=sys.stderr)
+        return 1
+    print(f"copied {len(text)} characters")
+    return 0
+
+
 def cmd_pipeline(args: Args, cfg: Config) -> int:
     from hark_client import asr, ctl, daemon, fields  # noqa: PLC0415
     from hark_client.config import ConfigError, FeedbackConfig, expand  # noqa: PLC0415
@@ -197,9 +315,13 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
         store_path(expand(cfg.history.dir)), cfg.learn.promote_after, cfg.learn.max_terms
     )
     try:
-        if args.command == "once":
-            if args.no_history:
-                cfg.history.enabled = False
+        if args.command in ("once", "retry"):
+            if args.command == "once":
+                cfg.retry.keep = 0  # nothing kept for `hark retry`: the WAV is the recording
+                if args.no_history:
+                    cfg.history.enabled = False
+            elif args.copy:
+                cfg.paste.method = "clipboard"
             caps.refresh()
             svc = Services(
                 cfg, channel, caps,
@@ -209,7 +331,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 learned=learned,
             )  # fmt: skip
             try:
-                return cmd_once(args, svc)
+                return cmd_once(args, svc) if args.command == "once" else cmd_retry(args, svc)
             except ConfigError as e:
                 print(f"hark: {e}", file=sys.stderr)
                 return 2

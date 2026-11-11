@@ -7,7 +7,7 @@ Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) serve
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
           └─ Transcribe stream opens; 40 ms PCM16 chunks (+ pre-roll) queue behind SessionStart
 key up ───► EndOfAudio ► FinalResult ► anchor gate ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
-          ► focus re-check ► paste (or clipboard + notification) ► history.jsonl
+          ► focus re-check ► paste (or clipboard + notification) ► history.jsonl (+ audio kept for `hark retry`)
 ```
 
 ## Quickstart
@@ -87,7 +87,7 @@ the clipboard, notification); with hyprlang (≤ 0.54) `dispatch sendshortcut CT
 worked is remembered. Unknown target: an untargeted shortcut; neither syntax works: `wtype`.
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
-Control protocol: one line in (`start|stop|toggle|cancel|status|ping`), one line out (`ok …` or `error …`).
+Control protocol: one line in (`start|stop|toggle|cancel|status|ping|paste-last`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
 the last dictation's status/paste verdict/latency (never its text) and whether learning is watching.
@@ -155,6 +155,13 @@ notify = true
 dir = "~/.local/share/hark"
 save_recordings = false       # opt-in dataset seeding, see below
 
+[retry]
+keep = 10                     # audio of the last N dictations for `hark retry` (0 = off), see below
+
+[indicator]
+enabled = true                # small passive overlay: recording/level, transcribing, cleaning, done/error
+position = "bottom"           # bottom | top, centred on the screen with the pointer (macOS)
+
 [profiles.terminal]           # built-ins: terminal, chat, prose (fallback); table order = match order
 apps = ["com.mitchellh.ghostty", "kitty", "*terminal*"]   # globs on app id / name, case-insensitive
 terminal = true               # single line, Ctrl+Shift+V on Linux, never Enter
@@ -163,6 +170,51 @@ cleanup_profile = "prose"     # server CleanupProfile.id
 ```
 
 A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`.
+
+## Recording indicator
+
+While `hark run` works, a small pill shows its state: **Listening** with the live input level, **Transcribing…**,
+**Cleaning up…**, then **Pasted** / **Copied** / **No speech** / **Cancelled** / **Failed: hark retry** for a moment.
+It never takes focus or clicks, so the paste still goes to the window you dictated into.
+
+- macOS: a borderless `NSPanel` with `NSWindowStyleMaskNonactivatingPanel`, click-through, status-window level, on
+  every Space; the process is an accessory app (no Dock icon) that is never activated, and the panel is shown with
+  `orderFrontRegardless`, never made key. `indicator/macos.py:is_passive` checks this (the backend refuses a panel
+  that fails it; `test_client_indicator.py` pins it). AppKit needs the main thread, so `hark run` pumps the AppKit
+  event loop there; mic, hotkey listener, ctl socket and each dictation's finish run on their own threads.
+- Linux: GTK 4 + gtk4-layer-shell via PyGObject, if importable: an overlay layer surface anchored to the bottom (or
+  top) edge, `KeyboardMode.NONE`, empty input region (Hyprland, sway, KDE). Needs `gtk4 gtk4-layer-shell` plus
+  PyGObject and pycairo visible to hark's Python (e.g. `uv pip install PyGObject pycairo` with the introspection
+  headers). Without them, or without layer-shell (GNOME), there is no indicator. **Untested on real hardware.**
+
+## Recovery, history and re-insertion
+
+The daemon keeps the audio of the last `retry.keep` (10) dictations in `<history.dir>/retry/<id>/` (0700/0600; also
+with `save_recordings = false`; older ones are deleted after each dictation, all of them with `keep = 0`): the WAV,
+the key-down context without selection, window title or agent reply, and the outcome. After a server error or
+timeout the notification says `hark retry`:
+
+```sh
+hark retry                    # re-run the newest kept dictation against the server
+hark retry 9f3c1a2b --copy    # by id (from `hark history`); copy the result instead of pasting
+hark retry last --dry-run     # print only
+```
+
+A retry uses the original context (bias terms, profile, target window) and pastes only if that window is focused
+again; otherwise the text goes to the clipboard (also when the window is unknown or `paste.check_focus = false`).
+It is a new history entry; the kept audio stays.
+
+```sh
+hark history                  # last 20: time, id, app, status, key-up->paste latency, text preview
+hark history -n 100 --json    # the full records
+hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup edits/dropped,
+                              # gate decisions (if recorded), final, spacing decision, paste, timings
+hark last                     # print the last dictated text; --copy puts it on the clipboard
+hark ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
+```
+
+`paste-last` re-applies the guardrails for the window it goes to (a prose result pasted into a terminal loses its
+newlines); its reply gives only the length, never the text.
 
 ## Guardrails
 
@@ -288,7 +340,9 @@ fallback against a misbehaving TextCleanup server, config parsing, the ctl socke
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
 `hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, correction learning
 (diff rules, store, watch window, learned terms reaching the server), the AT-SPI search and the terminal key replay
-(fakes).
+(fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
+(retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
+`paste-last`.
 
 ## Limitations
 
@@ -297,6 +351,6 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
   only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
   pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
-- No VAD, no `EagerEnd`, no partials, no retries/fallback providers, no `ContextUpdate`, no undo/swap-to-raw.
+- No VAD, no `EagerEnd`, no partials, no automatic retries/fallback providers, no `ContextUpdate`, no undo/swap-to-raw.
 - Esc (cancel) is not swallowed: the focused app sees it too. The start sound can leak into the recording.
 - Clipboard restore on Linux restores text only.
