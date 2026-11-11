@@ -403,14 +403,34 @@ def is_opaque(term: str) -> bool:
 
 _SECRET_RE = re.compile(
     r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}"
-    r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-    r"|[A-Za-z0-9+/_-]{40,})\b"
+    r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,})\b"
 )
+_LONG_RUN_RE = re.compile(r"\b[A-Za-z0-9+/_-]{40,}\b")
+
+
+def _opaque_part(part: str) -> bool:
+    """A path component that looks random: an id, or base64 (mixed case with digits)."""
+    mixed = any(c.isupper() for c in part) and any(c.islower() for c in part)
+    return is_opaque(part) or (
+        len(part) >= 12 and mixed and any(c.isdigit() for c in part) and part.isalnum()
+    )
+
+
+def _redact_long(m: re.Match[str]) -> str:
+    """Long runs are tokens or base64 unless they are a path of ordinary components
+    (``tmp/client-portal/design/answers-2026-11-06``)."""
+    run = m.group()
+    parts = [p for p in run.split("/") if p]
+    path = "/" in run and "+" not in run and len(parts) >= 2
+    if path and all(len(p) < 40 and not _opaque_part(p) for p in parts):
+        return run
+    return "[redacted]"
 
 
 def scrub(text: str) -> str:
-    """Redact API keys/tokens and other long opaque strings (before extracting terms)."""
-    return _SECRET_RE.sub("[redacted]", text)
+    """Redact API keys/tokens and other long opaque strings (before extracting terms);
+    long real paths survive."""
+    return _LONG_RUN_RE.sub(_redact_long, _SECRET_RE.sub("[redacted]", text))
 
 
 # word-ish tokens; "/" may separate two names (Hyprland/Omarchy)

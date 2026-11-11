@@ -186,12 +186,18 @@ def read_session(agent: str, path: Path, start: int) -> _Read | None:
     if not subagent:
         lines = data.decode(errors="replace").splitlines()
         for text, cwd in agents.user_prompts(agent, lines):
-            if len(text) > MAX_PROMPT_CHARS:
-                continue  # pasted logs, code or generated task text, not the user's words
             table = found.setdefault(cwd or header_cwd or "", {})
-            for term, kind in extract_terms(scrub(text), prose=True):
+            for term, kind in prompt_terms(text).items():
                 table.setdefault(term, kind)
     return _Read(found, start + len(data), st.st_mtime)
+
+
+def prompt_terms(text: str) -> dict[str, TermKind]:
+    """What one prompt teaches. Prompts longer than ``MAX_PROMPT_CHARS`` teach nothing:
+    pasted logs, code or generated tasks."""
+    if len(text) > MAX_PROMPT_CHARS:
+        return {}
+    return dict(extract_terms(scrub(text), prose=True))
 
 
 def _entry_json(e: Entry) -> list[object]:

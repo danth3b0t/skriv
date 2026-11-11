@@ -139,8 +139,12 @@ def test_failing_provider_is_recorded_not_raised(monkeypatch: pytest.MonkeyPatch
     assert snap.terms == ()
 
 
-def test_scrub_redacts_tokens():
+def test_scrub_redacts_tokens_but_keeps_long_paths():
     assert engine.scrub("key sk-abcdefghijklmnopqrstuv ok") == "key [redacted] ok"
+    path = "tmp/client-portal/design/answers-2026-11-06.md"
+    assert engine.scrub(f"see {path}") == f"see {path}"
+    for opaque in ("aGVsbG8gd29ybGQ/aGVsbG8gd29ybGQ/aGVsbG8gd29ybGQx", "3f9a2b1c" * 6, "x" * 45):
+        assert engine.scrub(f"a {opaque} b") == "a [redacted] b"
 
 
 @pytest.mark.usefixtures("providers")
