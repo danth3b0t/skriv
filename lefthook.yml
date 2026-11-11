@@ -1,0 +1,38 @@
+# Git hooks (https://lefthook.dev). Install: `uv run lefthook install`.
+# Python tooling: ruff (lint+format), basedpyright (strict, blocking), ty (advisory until it leaves 0.0.x).
+pre-commit:
+  parallel: false
+  commands:
+    ruff-lint:
+      glob: "*.{py,pyi}"
+      run: uv run ruff check --fix --force-exclude {staged_files}
+      stage_fixed: true
+      skip: [merge, rebase]
+    ruff-format:
+      glob: "*.{py,pyi}"
+      run: uv run ruff format --force-exclude {staged_files}
+      stage_fixed: true
+      skip: [merge, rebase]
+    basedpyright:
+      glob: "*.{py,pyi}"
+      run: uv run basedpyright
+      skip: [merge, rebase]
+    ty:
+      glob: "*.{py,pyi}"
+      run: uv run ty check --exit-zero
+      skip: [merge, rebase]
+    proto-stubs:
+      glob: "proto/**/*.proto"
+      run: server/scripts/gen-proto && git diff --exit-code -- server/src/hark/v1
+      skip: [merge, rebase]
+
+commit-msg:
+  commands:
+    conventional-commit:
+      run: uv run cz check --allow-abort --commit-msg-file {1}
+
+pre-push:
+  commands:
+    tests:
+      run: uv run pytest -q
+      skip: [merge, rebase]

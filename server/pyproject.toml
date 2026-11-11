@@ -20,12 +20,6 @@ mlx = ["parakeet-mlx>=0.7,<0.8 ; sys_platform == 'darwin' and platform_machine =
 [project.scripts]
 hark-server = "hark_server.__main__:main"
 
-[dependency-groups]
-dev = [
-    "grpcio-tools>=1.85",
-    "pytest>=9.0",
-    "pytest-asyncio>=1.3",
-]
 
 [build-system]
 requires = ["hatchling"]
@@ -34,9 +28,3 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 # `hark` holds the generated hark.v1 stubs (protobuf package == Python package).
 packages = ["src/hark", "src/hark_server"]
-
-[tool.pytest.ini_options]
-asyncio_mode = "auto"
-asyncio_default_fixture_loop_scope = "function"
-asyncio_default_test_loop_scope = "function"
-testpaths = ["tests"]
