@@ -88,7 +88,9 @@ worked is remembered. Unknown target: an untargeted shortcut; neither syntax wor
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
 Control protocol: one line in (`start|stop|toggle|cancel|status|ping`), one line out (`ok …` or `error …`).
-`hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running.
+`hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
+JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
+the last dictation's status/paste verdict/latency (never its text) and whether learning is watching.
 
 ## Configuration
 
@@ -130,6 +132,14 @@ restore_clipboard = true
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
 join_space = true             # same window within join_window_ms, previous paste ended with a non-space
 join_window_ms = 60000        #   => leading space; a real Enter press (hotkey listener) resets it
+verify = true                 # read the field back after pasting: landed | missing | not_text | unknown
+
+[learn]                       # correction learning, see below; off unless enabled
+enabled = false
+window_ms = 30000             # watch the pasted text this long after a paste (max 30 s)
+poll_ms = 500
+promote_after = 2             # a correction is used after this many occurrences (min 2)
+max_terms = 20                # learned terms added to every shortlist
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
@@ -169,11 +179,36 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 - Focus: if the focused window changed between key-down and paste, the text goes to the clipboard and a notification
   says so.
 
+## Paste verification and correction learning
+
+After a paste into a non-terminal app, hark reads the focused field of the target app back (macOS: Accessibility;
+Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). History gets `paste_verdict`: `landed`
+(the text is there), `missing` (readable, absent twice; the text goes back on the clipboard and a notification
+says so), `not_text`, or `unknown` (could not look: no permission, terminal, secure field, > 64 KiB). Secure and
+password fields are never read.
+
+With `[learn] enabled = true`, the same read-back watches the pasted text for up to `window_ms` (≤ 30 s), only while
+the same window stays focused, until the next dictation, or until the text around it changes (e.g. the message was
+sent). If you fix a misheard word in it (`cube control` → `kubectl`, `Kerry` → `Carrie`, `github` → `GitHub`),
+the pair is counted in `<history.dir>/learned.json` (0600). Field contents are never stored, only the pairs. Style
+rewrites, negation changes, corrections into ordinary English words and edits touching more than 3 places or half
+the words are ignored. A pair seen `promote_after` (≥ 2) times becomes a shortlist term with the misheard words as
+its spoken alias, so the recognizer is biased towards it and canonicalization rewrites it.
+
+```sh
+hark learned                  # list (* = in use)
+hark learned forget kubectl   # delete by heard or written form
+hark learned clear
+```
+
+Terminals: no field to read on macOS (learning is off there); on Linux a key-replay fallback
+(`hark_client/keyedits.py`) exists but no key-event source is wired yet (design in ADR-002).
+
 ## History and recordings
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome, guard events, paste result, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
-`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`),
+outcome, guard events, paste result and `paste_verdict`, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`, `verify_ms`),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 and the server's `Timings`. Files are created 0600 in a 0700 directory.
@@ -192,14 +227,18 @@ uv run pytest client/tests -q     # ~60 tests, ~2 s
 `hark once` runs end to end against an in-process hark server (mock backend, on its own event-loop thread) with a
 fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine: biasing, cleanup, terminal profile,
 cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the protected-span
-fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocol, Linux paste commands
-(fake runner) and the daemon controller (pre-roll, cancel, too short).
+fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocols (text + JSON v1
+contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
+`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, correction learning
+(diff rules, store, watch window, learned terms reaching the server), the AT-SPI search and the terminal key replay
+(fakes).
 
 ## Limitations
 
 - Context: without Accessibility permission macOS gives no window title/selection; the terminal/repo/agent context still works. `hark once --cwd DIR` pins the repo for testing; with no focused terminal and no `--cwd` there are no repo bias terms.
-- Untested on real hardware: Hyprland/wtype/X11 paste (commands are unit-tested only), the macOS Cmd+V path and the
-  pynput hotkey (needs permissions this session did not have), long-running daemon use.
+- Untested on real hardware: Hyprland/wtype/X11 paste incl. the `hyprctl repl` re-check (commands are unit-tested
+  only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
+  pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
 - No VAD, no `EagerEnd`, no partials, no retries/fallback providers, no `ContextUpdate`, no undo/swap-to-raw.
 - Esc (cancel) is not swallowed: the focused app sees it too. The start sound can leak into the recording.

@@ -136,6 +136,21 @@ with size + sha256 (signature mandatory, unlike their bootstrap), per-version di
 post-start health check with rollback, systemd user unit with `UMask=0077`, a journal of every system change for
 uninstall. The systemd unit shipped now already follows the unit-level parts.
 
+## Implemented in this ADR's branch (`feat/adopt-sw-ideas`)
+
+| Idea | Files | Tests | Real-hardware status |
+|---|---|---|---|
+| X correction learning | `client/src/hark_client/learn.py`, `fields.py`, `context/_macos.py` (`focused_field`), `atspi.py`, `keyedits.py`; wiring in `pipeline.py`, `daemon.py`, `config.py` (`[learn]`), `__main__.py` (`hark learned`) | `test_client_learn.py`, `test_client_fields.py`, `test_client_keyedits.py`, daemon + `hark once` integration | macOS AX path not exercised (the dev session had no Accessibility permission); AT-SPI and key replay: fakes only; key-event source: design only |
+| 5 Omarchy contract | `packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-hark`, `packaging/systemd/hark.service` | `test_omarchy_adapter.py` (fake `hark`/`systemctl`) | not run on Omarchy |
+| 4 Hyprland paste | `inject.py` (`hypr_lua_paste`, `LinuxInjector._hypr_targeted`), `pipeline.py` | `test_client_inject.py` (fake runner) | not run on Hyprland; `hyprctl repl` output format assumed (quotes stripped) |
+| 8 paste verification | `fields.py`, `pipeline.py` (`_read_back`), history `paste_verdict` | `test_client_fields.py`, daemon tests | as X |
+| 9 ctl JSON v1 | `ctl.py`, `daemon.py` (`status_json`), `hark ctl --json`, `docs/protocol/ctl-v1.md` | `test_client_ctl.py::test_json_v1_contract` (real controller) | n/a |
+| doctor | `doctor.py` (`check_read_back`) | — | — |
+
+Needs the user: grant Accessibility to the terminal running `hark run` on macOS and set `[learn] enabled = true` to
+try learning; on Omarchy run `uv tool install --editable ./client` then
+`packaging/omarchy/omarchy-install-dictation-hark`; for AT-SPI read-back install PyGObject into hark's environment.
+
 ## Rejected / avoided (from §10)
 - A global keystroke stream to the daemon: the terminal fallback above is armed only for the learning window and the
   target window, keeps events in memory, persists derived pairs only.
