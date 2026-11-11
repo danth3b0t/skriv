@@ -87,7 +87,7 @@ def _tpgid(pid: int) -> int | None:
     return int(out) if out.lstrip("-").isdigit() and int(out) > 0 else None
 
 
-def _tty_activity(tty: str) -> tuple[float, float]:
+def tty_activity(tty: str) -> tuple[float, float]:
     try:
         st = Path(tty).stat()
     except OSError:
@@ -127,7 +127,7 @@ def _newest(procs: list[psutil.Process]) -> psutil.Process | None:
     return best[1] if best else None
 
 
-def _name(p: psutil.Process) -> str:
+def process_name(p: psutil.Process) -> str:
     try:
         return p.name()
     except psutil.Error:
@@ -148,13 +148,19 @@ def _cwd(p: psutil.Process) -> str | None:
         return None
 
 
-def _tmux_target(client: psutil.Process) -> TmuxPane | None:
-    """The pane shown by the tmux client ``client``."""
+def tmux_socket_args(client: psutil.Process) -> list[str]:
+    """``-S path`` / ``-L name`` of a tmux client's command line, to reach the same server."""
     cmd = _cmdline(client)
     sock: list[str] = []
     for flag in ("-S", "-L"):
         if flag in cmd[:-1]:
             sock = [flag, cmd[cmd.index(flag) + 1]]
+    return sock
+
+
+def _tmux_target(client: psutil.Process) -> TmuxPane | None:
+    """The pane shown by the tmux client ``client``."""
+    sock = tmux_socket_args(client)
     client_tty, _ = _info(client)
     try:
         out = subprocess.run(  # noqa: S603 - fixed argv
@@ -194,7 +200,7 @@ def parse_tmux_clients(out: str, client_tty: str | None) -> TmuxPane | None:
     return None
 
 
-def _by_tty(procs: list[psutil.Process]) -> dict[str, list[psutil.Process]]:
+def by_tty(procs: list[psutil.Process]) -> dict[str, list[psutil.Process]]:
     groups: dict[str, list[psutil.Process]] = {}
     for p in procs:
         tty, _ = _info(p)
@@ -234,12 +240,12 @@ def resolve(terminal_pid: int) -> TerminalState:
         procs = root.children(recursive=True)
     except psutil.Error:
         return TerminalState()
-    groups = _by_tty(procs)
+    groups = by_tty(procs)
     tty: str | None = None
     fg: psutil.Process | None
     peers: list[psutil.Process] = []
     if groups:
-        tty = max(groups, key=_tty_activity)
+        tty = max(groups, key=tty_activity)
         peers = groups[tty]
         fg = _foreground(peers)
     else:
@@ -248,8 +254,14 @@ def resolve(terminal_pid: int) -> TerminalState:
         return TerminalState()
     via_tmux = False
     fallback_cwd: str | None = None
-    if _name(fg) == "tmux" or any(_name(p) == "tmux" for p in peers if _info(p)[1] == _info(fg)[1]):
-        client = fg if _name(fg) == "tmux" else next(p for p in peers if _name(p) == "tmux")
+    if process_name(fg) == "tmux" or any(
+        process_name(p) == "tmux" for p in peers if _info(p)[1] == _info(fg)[1]
+    ):
+        client = (
+            fg
+            if process_name(fg) == "tmux"
+            else next(p for p in peers if process_name(p) == "tmux")
+        )
         pane = _tmux_target(client)
         if pane is not None:
             via_tmux = True

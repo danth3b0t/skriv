@@ -21,6 +21,7 @@ if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
 _AX_SUCCESS = 0
+_AX_VALUE_CF_RANGE = 4  # kAXValueCFRangeType
 # AX attribute names (values of the kAX...Attribute constants)
 _AX_FOCUSED_WINDOW = "AXFocusedWindow"
 _AX_FOCUSED_UI_ELEMENT = "AXFocusedUIElement"
@@ -36,6 +37,13 @@ _MIN_WINDOW_SIDE = 40  # smaller layer-0 windows are helpers/overlays, not the f
 class _ApplicationServices(Protocol):
     def AXIsProcessTrusted(self) -> bool: ...
     def AXUIElementCreateApplication(self, pid: int, /) -> object: ...
+    def AXUIElementCreateSystemWide(self) -> object: ...
+    def AXUIElementGetPid(self, element: object, out: None, /) -> tuple[int, int]: ...
+    def AXUIElementCopyParameterizedAttributeValue(
+        self, element: object, attribute: str, parameter: object, out: None, /
+    ) -> tuple[int, object]: ...
+    def AXValueCreate(self, kind: int, value: tuple[int, int], /) -> object: ...
+    def AXValueGetValue(self, value: object, kind: int, out: None, /) -> tuple[bool, object]: ...
     def AXUIElementSetMessagingTimeout(self, element: object, seconds: float, /) -> int: ...
     def AXUIElementCopyAttributeValue(
         self, element: object, attribute: str, out: None, /
@@ -141,6 +149,53 @@ def _ax_attr(element: object, attribute: str, timeout_s: float) -> object | None
     _AS.AXUIElementSetMessagingTimeout(element, timeout_s)
     err, value = _AS.AXUIElementCopyAttributeValue(element, attribute, None)
     return value if err == _AX_SUCCESS else None
+
+
+# Caret primitives (``hark_client.context.caret`` holds the logic). Errors are AXError codes.
+
+
+def ax_focused_element(pid: int | None, timeout_s: float) -> tuple[int, object | None]:
+    """Focused UI element of the application ``pid``, or system-wide if None."""
+    root = _AS.AXUIElementCreateApplication(pid) if pid is not None else (
+        _AS.AXUIElementCreateSystemWide()
+    )  # fmt: skip
+    _AS.AXUIElementSetMessagingTimeout(root, timeout_s)  # system-wide: the global default
+    err, value = _AS.AXUIElementCopyAttributeValue(root, _AX_FOCUSED_UI_ELEMENT, None)
+    return err, value if err == _AX_SUCCESS else None
+
+
+def ax_element_pid(element: object) -> int | None:
+    err, pid = _AS.AXUIElementGetPid(element, None)
+    return int(pid) if err == _AX_SUCCESS else None
+
+
+def ax_attribute(element: object, name: str, timeout_s: float) -> tuple[int, object | None]:
+    _AS.AXUIElementSetMessagingTimeout(element, timeout_s)
+    err, value = _AS.AXUIElementCopyAttributeValue(element, name, None)
+    return err, value if err == _AX_SUCCESS else None
+
+
+def ax_range_value(value: object) -> tuple[int, int] | None:
+    """(location, length) of an AXValue holding a CFRange."""
+    ok, rng = _AS.AXValueGetValue(value, _AX_VALUE_CF_RANGE, None)
+    if not ok:
+        return None
+    if isinstance(rng, tuple):
+        loc, length = cast("tuple[int, int]", rng)
+        return int(loc), int(length)
+    return int(_num(getattr(rng, "location", 0))), int(_num(getattr(rng, "length", 0)))
+
+
+def ax_string_for_range(
+    element: object, location: int, length: int, timeout_s: float
+) -> tuple[int, str | None]:
+    """``AXStringForRange`` (UTF-16 units)."""
+    _AS.AXUIElementSetMessagingTimeout(element, timeout_s)
+    param = _AS.AXValueCreate(_AX_VALUE_CF_RANGE, (location, length))
+    err, value = _AS.AXUIElementCopyParameterizedAttributeValue(
+        element, "AXStringForRange", param, None
+    )
+    return err, str(value) if err == _AX_SUCCESS and value is not None else None
 
 
 def window_title_and_selection(pid: int, timeout_s: float) -> tuple[str | None, str | None]:

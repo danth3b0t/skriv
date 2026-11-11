@@ -12,11 +12,16 @@ Public API (stable contract; implementations live in submodules):
 - ``focus_token() -> str``
   Cheap (~1 ms on macOS) id of the focused window; equals ``FocusInfo.window_id`` while the
   same window stays focused, "" when unknown. For re-checking focus right before pasting.
+- ``caret_context(focus: FocusInfo) -> CaretContext``
+  Text just before/after the caret of the focused field (Accessibility, AT-SPI, tmux), with
+  whether it can be trusted; for smart spacing right before pasting. Never raises; ~200 ms
+  hard deadline.
 """
 
 from __future__ import annotations
 
 from hark_client.context.canon import canonicalize
+from hark_client.context.caret import CaretContext, caret_context
 from hark_client.context.engine import collect
 from hark_client.context.focus import focus_token
 from hark_client.context.types import (
@@ -30,6 +35,7 @@ from hark_client.context.types import (
 )
 
 __all__ = [
+    "CaretContext",
     "ContextSnapshot",
     "FocusInfo",
     "Replacement",
@@ -38,6 +44,7 @@ __all__ = [
     "TermSource",
     "WordInfo",
     "canonicalize",
+    "caret_context",
     "collect",
     "focus_token",
 ]
