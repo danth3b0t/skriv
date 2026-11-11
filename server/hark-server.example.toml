@@ -34,6 +34,7 @@ dtype = "bfloat16"
 [cleanup]
 base_url = ""                     # e.g. "http://127.0.0.1:8080/v1" (llama-server); "" disables TextCleanup
 model = ""
+engine = "s1"                     # s1: "S1-mini" by "Superwhisper" rewrites, aligned into edits; edits: JSON edit list (Qwen3)
 api_key_env = ""                  # name of an env var holding the LLM server's bearer token
 default_budget_ms = 400
 max_input_bytes = 4000

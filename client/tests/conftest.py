@@ -83,21 +83,23 @@ class HarkServer:
 
 
 class FakeLLM:
-    """OpenAI-compatible /v1/chat/completions returning queued edit lists."""
+    """OpenAI-compatible /v1/chat/completions for the server's default (S1) engine:
+    returns queued rewrites, else the transcript unchanged."""
 
     def __init__(self) -> None:
         self.requests: list[dict[str, object]] = []
-        self.queue: list[tuple[list[dict[str, str]], float]] = []
+        self.queue: list[tuple[str, float]] = []
         fake = self
 
         class Handler(BaseHTTPRequestHandler):
             def do_POST(self) -> None:
                 body = self.rfile.read(int(self.headers["Content-Length"]))
                 fake.requests.append(cast("dict[str, object]", json.loads(body)))
-                edits, delay = fake.queue.pop(0) if fake.queue else ([], 0.0)
+                transcript = fake.user_message(-1).split("\n", 1)[1]  # after the control line
+                content, delay = fake.queue.pop(0) if fake.queue else (transcript, 0.0)
                 time.sleep(delay)
-                content = json.dumps({"edits": edits})
-                data = json.dumps({"choices": [{"message": {"content": content}}]}).encode()
+                choice = {"message": {"content": content}, "finish_reason": "stop"}
+                data = json.dumps({"choices": [choice]}).encode()
                 try:
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
@@ -115,16 +117,12 @@ class FakeLLM:
         self.url = f"http://127.0.0.1:{self.httpd.server_port}/v1"
         threading.Thread(target=self.httpd.serve_forever, args=(0.02,), daemon=True).start()
 
-    def respond(self, edits: list[dict[str, str]], delay: float = 0.0) -> None:
-        self.queue.append((edits, delay))
+    def respond(self, rewrite: str, delay: float = 0.0) -> None:
+        self.queue.append((rewrite, delay))
 
-    def user_payload(self, i: int = 0) -> dict[str, object]:
+    def user_message(self, i: int = 0) -> str:
         messages = cast("list[dict[str, str]]", self.requests[i]["messages"])
-        return cast("dict[str, object]", json.loads(messages[-1]["content"]))
-
-
-def edit(find: str, replace: str, kind: str) -> dict[str, str]:
-    return {"find": find, "replace": replace, "kind": kind, "reason": "test"}
+        return messages[-1]["content"]
 
 
 @pytest.fixture

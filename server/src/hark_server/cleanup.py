@@ -1,5 +1,10 @@
-"""hark.v1.TextCleanup: proxy to an OpenAI-compatible /v1/chat/completions with a
-JSON-schema constrained edit list (ADR-001 #6).
+"""hark.v1.TextCleanup: proxy to an OpenAI-compatible /v1/chat/completions (ADR-001 #6).
+
+Two engines:
+- `s1`: "S1-mini" by "Superwhisper" (a Qwen3-0.6B text normalizer) rewrites the
+  whole transcript; the rewrite is aligned with the input word by word and turned
+  into edits. Any edit the validator rejects drops the whole rewrite.
+- `edits`: a general instruction model returns a JSON-schema constrained edit list.
 
 Edits are quoted-text anchored: `find` must occur exactly once in the text.
 The server resolves edits to UTF-8 byte ranges and runs the same validator as
@@ -16,6 +21,7 @@ import re
 import time
 from dataclasses import dataclass
 from difflib import SequenceMatcher
+from functools import cache
 from typing import TYPE_CHECKING, NamedTuple, TypedDict, TypeGuard, cast
 
 import grpc
@@ -27,6 +33,8 @@ from hark.v1 import hark_pb2_grpc as pb_grpc
 from .errors import E, HarkError, check_privacy, protocol_violation
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from .config import CleanupConfig
 
 log = logging.getLogger("hark_server.cleanup")
@@ -44,6 +52,11 @@ KINDS = {
 }
 KIND_NAMES = {v: k for k, v in KINDS.items()}
 FILLERS = {"um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm"}
+# Discourse fillers: deletable like FILLERS, but only the model decides where
+# they are fillers ("I want to like test") and where they are words ("I like it").
+DISCOURSE_FILLERS = {"like", "basically", "literally"}
+# Not "I mean": "I mean it, ..." is not a filler (as a correction cue it is handled there).
+FILLER_PHRASES = {("you", "know"), ("kind", "of"), ("sort", "of")}
 NEGATIONS = {
     "not", "no", "never", "nothing", "none", "nobody", "cannot", "dont", "don't",
     "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't", "won't", "wouldn't",
@@ -58,7 +71,11 @@ CORRECTION_CUES = (
     ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),
 )  # fmt: skip
 MAX_RETRACTED_WORDS = 8
-_UNBUDGETED = (K.EDIT_KIND_FILLER_REMOVAL, K.EDIT_KIND_SELF_CORRECTION)
+# At most this share of the words may be removed (fillers + self-corrections).
+MAX_REMOVED_SHARE = 0.5
+_UNBUDGETED = (K.EDIT_KIND_FILLER_REMOVAL, K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
+# Marks a punctuation edit may add or remove (no quotes, brackets, $, %, ...).
+PUNCTUATION = set(".,;:?!'\u2019-")
 # Result patterns an edit set may not add: "  ", "Sure,,", "Smith,thank", "draft. tomorrow".
 _SLOPPY = (
     re.compile(r"  "),
@@ -66,6 +83,27 @@ _SLOPPY = (
     re.compile(r"[,;][^\s\d]"),
     re.compile(r"[.!?] +[a-z]"),
 )
+
+# Spoken numbers (number_format): "twenty three" -> "23", "ten percent" -> "10%",
+# "fifth" -> "5th". Anything else (times, dates, years, decimals) is not checked.
+_UNITS = {w: i for i, w in enumerate((
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "nineteen",
+))}  # fmt: skip
+_TENS = {w: 10 * i for i, w in enumerate(
+    ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"), 2
+)}  # fmt: skip
+_SCALES = {"hundred": 100, "thousand": 1000, "million": 10**6, "billion": 10**9}
+_ORDINALS = {
+    **{w: i for i, w in enumerate((
+        "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+        "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth",
+        "seventeenth", "eighteenth", "nineteenth",
+    ), 1)},
+    **{w.removesuffix("y") + "ieth": v for w, v in _TENS.items()},
+}  # fmt: skip
+_NUMERAL = re.compile(r"\$?\d[\d,]*(?:st|nd|rd|th|%)?|[^\W\d_][\w']*")
 
 # Static policy, shared by every profile. The prompt is built as
 #   POLICY + profile rules (system) -> profile few-shots -> request (user)
@@ -97,6 +135,19 @@ class Example(NamedTuple):
     edits: tuple[tuple[str, str, str, str], ...]  # (find, replace, kind, reason)
 
 
+# "S1-mini" by "Superwhisper": the exact system prompt and control-line values it
+# was trained on (https://huggingface.co/superwhisper/s1-mini). Anything else can
+# make it hallucinate.
+S1_SYSTEM = (
+    "You are a text normalizer for speech-to-text transcripts. The input begins "
+    "with a control line specifying the styling, structure, and context settings; "
+    "clean the transcript to match those settings and output only the cleaned text."
+)
+# semi-formal for every profile: ASR output arrives cased and punctuated, and
+# casual/semi-casual lowercase sentence starts and drop final periods.
+S1_CONTROL = "[Styling: semi-formal] [Structure: prose] [Context: general]"
+
+
 @dataclass(frozen=True)
 class ProfileSpec:
     id: str
@@ -105,6 +156,8 @@ class ProfileSpec:
     rules: str
     examples: tuple[Example, ...]
     single_line: bool  # reject edits that insert line breaks
+    s1_control: str = S1_CONTROL
+    s1_final_period: bool = True  # False: drop a final period S1-mini adds
 
 
 _ALL_KINDS = ("punctuation", "capitalization", "spacing", "filler_removal", "self_correction")
@@ -186,6 +239,7 @@ PROFILES = (
             Example("Sounds good, see you then!", (), ()),
         ),
         single_line=True,
+        s1_final_period=False,  # the chat profile keeps the writer's casual style
     ),
     ProfileSpec(
         id="prose",
@@ -244,6 +298,7 @@ class _ChatMessage(TypedDict):
 
 class _ChatChoice(TypedDict):
     message: _ChatMessage
+    finish_reason: str
 
 
 class _ChatCompletion(TypedDict):
@@ -281,11 +336,13 @@ def _words(s: str) -> list[str]:
     return _WORDS.findall(s)
 
 
-def _self_correction_ok(find: str, replace: str) -> bool:
+def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
     """find = kept words + 1..MAX_RETRACTED_WORDS retracted words + cue +
     correction; replace = kept words + correction (case and punctuation may
     differ). The cue must be set off by punctuation ("Tuesday, no wait,
-    Wednesday"), so "there is no wait time" is not a cue."""
+    Wednesday"), so "there is no wait time" is not a cue.
+    Returns the character range of `find` that is dropped (retracted words +
+    cue), or None if `find` -> `replace` is not such a correction."""
     tokens = [(m.group().lower(), m.start(), m.end()) for m in _WORDS.finditer(find)]
     before, after = [t[0] for t in tokens], _words(replace.lower())
     for i in range(1, len(before)):
@@ -304,25 +361,163 @@ def _self_correction_ok(find: str, replace: str) -> bool:
                     and find[tokens[i + n - 1][2] : tokens[i + n][1]].isspace()
                 )
             ):
-                return True
-    return False
+                return tokens[j][1], tokens[i + n][1]
+    return None
+
+
+def _only_fillers_removed(before: list[str], after: list[str]) -> bool:
+    """`after` is `before` minus some fillers, filler phrases ("you know") and
+    repeated words ("the the", "etc etc")."""
+
+    @cache
+    def ok(i: int, j: int) -> bool:
+        if i == len(before):
+            return j == len(after)
+        w = before[i]
+        return (
+            (j < len(after) and w == after[j] and ok(i + 1, j + 1))
+            or ((w in FILLERS or w in DISCOURSE_FILLERS) and ok(i + 1, j))
+            or (tuple(before[i : i + 2]) in FILLER_PHRASES and ok(i + 2, j))
+            or (i + 1 < len(before) and before[i + 1] == w and ok(i + 1, j))
+        )
+
+    return len(after) < len(before) and ok(0, 0)
+
+
+def _spoken_numbers(words: list[str]) -> list[str]:
+    """Replace runs of number words with their digits: ["twenty", "three",
+    "percent"] -> ["23%"]. A run ends where the next word cannot continue it
+    ("one two" is two numbers, "twenty twenty" too)."""
+    out: list[str] = []
+    total = current = 0
+    last = ""  # "unit" | "ten" | "teen" | "hundred" | "scale" | ""
+
+    def flush() -> None:
+        nonlocal total, current, last
+        if last:
+            out.append(str(total + current))
+        total = current = 0
+        last = ""
+
+    for w in words:
+        if w in _UNITS:
+            v = _UNITS[w]
+            if last in ("unit", "teen") or (last == "ten" and v >= 10) or (last and v == 0):
+                flush()
+            current += v
+            last = "teen" if v >= 10 else "unit"
+        elif w in _TENS:
+            if last in ("unit", "teen", "ten"):
+                flush()
+            current += _TENS[w]
+            last = "ten"
+        elif w == "hundred" and last in ("unit", "teen", "ten") and current < 100:
+            current *= 100
+            last = "hundred"
+        elif w in _SCALES and w != "hundred" and last in ("unit", "teen", "ten", "hundred"):
+            total += current * _SCALES[w]
+            current = 0
+            last = "scale"
+        elif w == "and" and last == "hundred":
+            continue
+        elif w in _ORDINALS and last in ("", "ten", "hundred", "scale"):
+            n = total + current + _ORDINALS[w]
+            total = current = 0
+            last = ""
+            suffix = (
+                "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+            )
+            out.append(f"{n}{suffix}")
+        elif w == "percent" and last:
+            flush()
+            out[-1] += "%"
+        elif w in ("dollar", "dollars") and last:
+            flush()
+            out[-1] = "$" + out[-1]
+        else:
+            flush()
+            out.append(w)
+    flush()
+    return out
+
+
+def _number_format_ok(find: str, replace: str) -> bool:
+    """Spoken numbers become digits with the same value; other words keep
+    their letters (case and punctuation may change)."""
+    spoken = _words(find.lower())
+    written = [t.replace(",", "") for t in cast("list[str]", _NUMERAL.findall(replace.lower()))]
+    converted = _spoken_numbers(spoken)
+    return converted != spoken and converted == written
+
+
+def _is_word_char(c: str) -> bool:
+    return c.isalnum() or c == "_"
+
+
+def _span_kept(find: str, replace: str, s: int, e: int, prefix: str) -> bool:
+    """find[s:e] (a protected span) reappears unchanged in `replace` and gains
+    no letters or digits on either side: "main.py" -> "main.py." is fine,
+    "8080" -> "8081" or "80 80" -> "8080" is not. A negation may change case
+    where it starts a sentence of the result ("never" -> "Never"). `prefix`:
+    the text before the edit."""
+    fold = find[s:e].lower() in NEGATIONS  # may change case at a sentence start
+    a, b = (find.lower(), replace.lower()) if fold else (find, replace)
+    new_s = new_e = -1
+    for tag, i1, i2, j1, _ in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            if i1 <= s < i2:
+                new_s = j1 + s - i1
+            if i1 < e <= i2:
+                new_e = j1 + e - i1
+        elif (i1 < e and s < i2) or (i1 == i2 and s < i1 < e):
+            return False
+    if new_s < 0 or new_e - new_s != e - s:
+        return False
+    lead = (prefix + replace[:new_s]).rstrip()  # the result before the span
+    if replace[new_s:new_e] != find[s:e] and lead and not lead.endswith((".", "!", "?")):
+        return False
+    before = (
+        new_s == 0
+        or not _is_word_char(replace[new_s - 1])
+        or (s > 0 and replace[new_s - 1] == find[s - 1])
+    )
+    after = (
+        new_e == len(replace)
+        or not _is_word_char(replace[new_e])
+        or (e < len(find) and replace[new_e] == find[e])
+    )
+    return before and after
+
+
+def _punctuation_ok(find: str, replace: str) -> bool:
+    if [c for c in find if c.isalnum()] != [c for c in replace if c.isalnum()]:
+        return False
+    marks = SequenceMatcher(None, find, replace, autojunk=False)
+    changed = "".join(
+        find[i1:i2] + replace[j1:j2]
+        for tag, i1, i2, j1, j2 in marks.get_opcodes()
+        if tag != "equal"
+    )
+    return all(c in PUNCTUATION or c.isspace() for c in changed)
+
+
+_INVARIANTS: dict[pb.EditKind.ValueType, Callable[[str, str], bool]] = {
+    K.EDIT_KIND_PUNCTUATION: _punctuation_ok,
+    K.EDIT_KIND_CAPITALIZATION: lambda f, r: f.casefold() == r.casefold(),
+    K.EDIT_KIND_SPACING: lambda f, r: "".join(f.split()) == "".join(r.split()),
+    K.EDIT_KIND_FILLER_REMOVAL: lambda f, r: _only_fillers_removed(
+        _words(f.lower()), _words(r.lower())
+    ),
+    K.EDIT_KIND_SELF_CORRECTION: lambda f, r: self_correction_cut(f, r) is not None,
+    K.EDIT_KIND_NUMBER_FORMAT: _number_format_ok,
+}
 
 
 def _invariant_ok(kind: pb.EditKind.ValueType, find: str, replace: str) -> bool:
-    """Mechanical check per kind. Kinds without one (number_format, grammar)
-    pass here; no profile enables them."""
-    if kind == K.EDIT_KIND_PUNCTUATION:
-        return [c for c in find if c.isalnum()] == [c for c in replace if c.isalnum()]
-    if kind == K.EDIT_KIND_CAPITALIZATION:
-        return find.casefold() == replace.casefold()
-    if kind == K.EDIT_KIND_SPACING:
-        return "".join(find.split()) == "".join(replace.split())
-    if kind == K.EDIT_KIND_FILLER_REMOVAL:
-        before, after = _words(find.lower()), _words(replace.lower())
-        return len(after) < len(before) and [w for w in before if w not in FILLERS] == after
-    if kind == K.EDIT_KIND_SELF_CORRECTION:
-        return _self_correction_ok(find, replace)
-    return kind in KIND_NAMES
+    """Mechanical check per kind. `grammar` has none and passes here; no
+    profile enables it."""
+    check = _INVARIANTS.get(kind)
+    return check(find, replace) if check else kind in KIND_NAMES
 
 
 def _split(find: str, replace: str) -> list[tuple[int, int, int, int]]:
@@ -396,12 +591,14 @@ def _changed_bytes(e: pb.Edit) -> int:
 
 def _global_ok(text: str, edits: list[pb.Edit]) -> bool:
     """Negations and digits must survive every edit except what a spoken
-    self-correction retracts. Punctuation, capitalization and spacing edits
-    may change few bytes in total (filler removal and self-correction are
-    bounded by their invariants). Stricter than proposal-a: the result may not
-    gain double spaces, doubled punctuation or a lowercase sentence start."""
-    corrections = [e for e in edits if e.kind == K.EDIT_KIND_SELF_CORRECTION]
-    meant, after = apply_edits(text, corrections), apply_edits(text, edits)
+    self-correction retracts (and digits a number_format edit writes).
+    Punctuation, capitalization and spacing edits may change few bytes in
+    total; fillers may make up at most MAX_REMOVED_SHARE of the words. Stricter
+    than proposal-a: the result may not gain double spaces, doubled
+    punctuation or a lowercase sentence start, nor lose an exclamation mark."""
+    meaning = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
+    meant = apply_edits(text, [e for e in edits if e.kind in meaning])
+    after = apply_edits(text, edits)
 
     def negations(s: str) -> int:
         return sum(w in NEGATIONS for w in _words(s.lower()))
@@ -411,10 +608,14 @@ def _global_ok(text: str, edits: list[pb.Edit]) -> bool:
 
     size = len(text.encode())
     changed = sum(_changed_bytes(e) for e in edits if e.kind not in _UNBUDGETED)
+    words = len(_words(meant))  # self-corrections are bounded by MAX_RETRACTED_WORDS
+    removed = words - len(_words(after))
     return (
         negations(meant) == negations(after)
         and digits(meant) == digits(after)
         and changed <= max(8, 0.15 * size)
+        and removed <= max(2, MAX_REMOVED_SHARE * words)
+        and after.count("!") >= meant.count("!")
         and all(len(p.findall(after)) <= len(p.findall(text)) for p in _SLOPPY)
     )
 
@@ -425,9 +626,31 @@ class _Request(NamedTuple):
     allowed_kinds: list[pb.EditKind.ValueType]
     single_line: bool
 
-    def is_protected(self, start: int, end: int) -> bool:  # character offsets
-        bs, be = len(self.text[:start].encode()), len(self.text[:end].encode())
-        return any(bs < pe and ps < be for ps, pe in self.protected)
+    def edit_protected(
+        self, start: int, find: str, replace: str, kind: pb.EditKind.ValueType
+    ) -> bool:
+        """Whether the edit at character offset `start` changes protected text.
+        Protected spans inside the edit must survive it (see _span_kept). A
+        self-correction may instead drop them with the words it retracts
+        ("port 8080, sorry, I mean port 8081"; the "no" of "no wait"); the
+        others must reappear in `replace`."""
+        cut = self_correction_cut(find, replace) if kind == K.EDIT_KIND_SELF_CORRECTION else None
+        raw = self.text.encode()
+        b = [len(self.text[: start + i].encode()) for i in (0, len(find))]
+        drop = [len(self.text[: start + i].encode()) for i in cut] if cut is not None else [-1, -1]
+        for ps, pe in self.protected:
+            if not (ps < b[1] and b[0] < pe) or (drop[0] <= ps and pe <= drop[1]):
+                continue
+            if ps < b[0] or pe > b[1]:  # the edit cuts through the span
+                return True
+            if cut is not None:
+                if raw[ps:pe].decode() not in replace:
+                    return True
+                continue
+            s = len(raw[b[0] : ps].decode())
+            if not _span_kept(find, replace, s, s + len(raw[ps:pe].decode()), self.text[:start]):
+                return True
+        return False
 
     def classify(
         self, find: str, replace: str, proposed_kind: pb.EditKind.ValueType
@@ -461,20 +684,20 @@ def _resolve_one(
     text, find, replace = req.text, p["find"], p["replace"]
     proposed_kind = KINDS.get(p["kind"], K.EDIT_KIND_UNSPECIFIED)
     kind = req.classify(find, replace, proposed_kind)
-    if kind is not None and not req.is_protected(at, at + len(find)):
+    if kind is not None and not req.edit_protected(at, find, replace, kind):
         return [req.edit(at, find, replace, kind, p["reason"])]
     parts: list[pb.Edit] = []
     for i1, i2, j1, j2 in _split(find, replace):
         start, end = _unique_context(text, at + i1, at + i2)
         part_find = text[start:end]
         part_replace = text[start : at + i1] + replace[j1:j2] + text[at + i2 : end]
-        if req.is_protected(start, end):
+        if req.edit_protected(start, part_find, part_replace, K.EDIT_KIND_UNSPECIFIED):
             return R.EDIT_REJECTION_REASON_PROTECTED_SPAN
         part_kind = req.classify(part_find, part_replace, proposed_kind)
         if part_kind is None:
             return (
                 R.EDIT_REJECTION_REASON_INVARIANT
-                if proposed_kind in req.allowed_kinds
+                if proposed_kind in (*req.allowed_kinds, K.EDIT_KIND_UNSPECIFIED)
                 else R.EDIT_REJECTION_REASON_KIND_NOT_ALLOWED
             )
         parts.append(req.edit(start, part_find, part_replace, part_kind, p["reason"]))
@@ -538,6 +761,146 @@ def resolve_edits(
     return edits, rejections
 
 
+class _Unit(NamedTuple):
+    """Aligned tokens: text tokens [a1, a2) became output tokens [b1, b2)."""
+
+    a1: int
+    a2: int
+    b1: int
+    b2: int
+    changed: bool
+
+
+_TOKEN = re.compile(r"\S+")
+_MAX_CORRECTION_CONTEXT = 10  # tokens a self-correction region may grow by
+
+
+def _has_cue(words: list[str]) -> bool:
+    return any(
+        tuple(words[i : i + len(cue)]) == cue for cue in CORRECTION_CUES for i in range(len(words))
+    )
+
+
+def _align(a: list[str], b: list[str]) -> list[_Unit]:
+    """Align tokens on their words, ignoring case and punctuation. Equal words
+    pair up one to one (changed if case or punctuation differ); the rest are
+    changed blocks."""
+
+    def key(token: str) -> str:
+        return "".join(_words(token.lower()))
+
+    units: list[_Unit] = []
+    matcher = SequenceMatcher(None, [key(t) for t in a], [key(t) for t in b], autojunk=False)
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            units += [
+                _Unit(i, i + 1, j, j + 1, a[i] != b[j])
+                for i, j in zip(range(i1, i2), range(j1, j2), strict=True)
+            ]
+        else:
+            units.append(_Unit(i1, i2, j1, j2, changed=True))
+    return units
+
+
+def rewrite_edits(text: str, output: str, *, single_line: bool = False) -> list[ProposedEdit]:
+    """Turn a full rewrite of `text` into quoted edits (S1 engine).
+
+    Whitespace tokens are aligned on their words (case and punctuation
+    ignored). Every changed stretch becomes one edit; a pure deletion or
+    insertion takes a neighbouring token along, a stretch whose `find` is not
+    unique grows by a token on each side, and a stretch containing a
+    correction cue grows until it holds kept words + retracted words + cue +
+    correction. Overlapping stretches merge. The kinds are left to the
+    validator. `single_line`: line breaks in the rewrite become spaces."""
+    out = re.sub(r"\s*\n\s*", " ", output.strip()) if single_line else output.strip()
+    a, b = list(_TOKEN.finditer(text)), list(_TOKEN.finditer(out))
+
+    units = _align([m.group() for m in a], [m.group() for m in b])
+
+    def quote(r: tuple[int, int]) -> tuple[str, str]:
+        first, last = units[r[0]], units[r[1] - 1]
+        find = text[a[first.a1].start() : a[last.a2 - 1].end()] if first.a1 < last.a2 else ""
+        replace = out[b[first.b1].start() : b[last.b2 - 1].end()] if first.b1 < last.b2 else ""
+        return find, replace
+
+    def grow(r: tuple[int, int], left: int, right: int) -> tuple[int, int]:
+        return max(0, r[0] - left), min(len(units), r[1] + right)
+
+    def correction(r: tuple[int, int]) -> tuple[int, int]:
+        """The smallest growth of `r` that is a valid self-correction, else `r`."""
+        find, replace = quote(r)
+        if not _has_cue(_words(find.lower())) or self_correction_cut(find, replace):
+            return r
+        for total in range(1, _MAX_CORRECTION_CONTEXT + 1):
+            for left in range(total + 1):
+                grown = grow(r, left, total - left)
+                if self_correction_cut(*quote(grown)):
+                    return grown
+        return r
+
+    regions: list[tuple[int, int]] = []
+    for i, u in enumerate(units):
+        if u.changed:
+            r = (i, i + 1)
+            if u.a1 == u.a2 or u.b1 == u.b2:  # anchor on a kept neighbour
+                r = grow(r, 1, 0) if i > 0 else grow(r, 0, 1)
+            regions.append(correction(r))
+    while True:
+        merged: list[tuple[int, int]] = []
+        for r in sorted(regions):
+            if merged and r[0] < merged[-1][1]:
+                merged[-1] = (merged[-1][0], max(merged[-1][1], r[1]))
+            else:
+                merged.append(r)
+        unique = [grow(r, 1, 1) if len(_occurrences(text, quote(r)[0])) > 1 else r for r in merged]
+        if unique == regions:
+            break
+        regions = unique
+    proposed: list[ProposedEdit] = []
+    for r in regions:
+        find, replace = quote(r)
+        if find != replace:
+            proposed.append({"find": find, "replace": replace, "kind": "", "reason": "s1"})
+    return proposed
+
+
+# Language guard: S1-mini is English-only, and the edit-list model re-cased
+# Czech. Stopwords that are not also English words.
+_EN_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be", "been", "to", "of",
+    "in", "on", "at", "for", "with", "it", "this", "that", "i", "you", "we", "they", "he", "she",
+    "not", "do", "does", "did", "can", "will", "would", "what", "how", "why", "my", "your", "me",
+    "so", "if", "have", "has", "just", "there", "from", "by", "as",
+}  # fmt: skip
+_FOREIGN_STOPWORDS = {
+    # cs/sk
+    "je", "jsem", "jsi", "jsme", "jste", "jsou", "tohle", "toto", "tento", "tato", "tady", "že",
+    "se", "si", "na", "ve", "v", "z", "ze", "k", "ke", "s", "ale", "nebo", "jak", "kde", "co",
+    "proč", "když", "už", "taky", "také", "není", "bude", "byl", "bylo", "mám", "máme", "ještě",
+    "jen", "tak", "aby", "který", "která", "které", "protože", "prosím", "děkuji", "ano", "ne",
+    "mi", "mě", "tam", "teď", "som", "sa", "nie", "áno", "aj", "ako",
+    # de
+    "der", "das", "und", "ist", "nicht", "ich", "du", "wir", "ein", "eine", "mit", "auf", "für",
+    "zu", "dem", "sie", "von", "nein", "dass", "sind", "auch", "oder", "aber",
+    # fr / es / it / pl / pt
+    "le", "la", "les", "et", "est", "une", "des", "tu", "nous", "vous", "pas", "que", "qui",
+    "avec", "dans", "ce", "sur", "el", "los", "las", "y", "es", "por", "para", "con", "una", "lo",
+    "pero", "como", "il", "che", "di", "sono", "è", "się", "não", "você",
+}  # fmt: skip
+
+
+def likely_non_english(text: str) -> bool:
+    """At least two foreign stopwords and more than English ones, or over a
+    quarter of the words have non-ASCII letters (diacritics, other scripts)."""
+    words = _words(text.lower())
+    if not words:
+        return False
+    english = sum(w in _EN_STOPWORDS for w in words)
+    foreign = sum(w in _FOREIGN_STOPWORDS for w in words)
+    accented = sum(any(c.isalpha() and not c.isascii() for c in w) for w in words)
+    return foreign > max(1, english) or accented > 0.25 * len(words)
+
+
 def _is_proposed_edit(e: object) -> TypeGuard[ProposedEdit]:
     if not isinstance(e, dict):
         return False
@@ -564,6 +927,18 @@ def _parse_edits(body: object, max_edits: int) -> list[ProposedEdit]:
             raise TypeError("malformed edit")
         edits.append(e)
     return edits
+
+
+def _parse_rewrite(body: object) -> str | None:
+    """The S1 rewrite, or None if it was cut off by max_tokens. Raises
+    ValueError, TypeError, KeyError or IndexError."""
+    choice = cast("_ChatCompletion", body)["choices"][0]
+    content = cast("object", choice["message"]["content"])
+    if not isinstance(content, str):
+        raise TypeError("no text")
+    if "<think>" in content:
+        raise ValueError("thinking output; the template must disable thinking")
+    return None if cast("object", choice.get("finish_reason")) == "length" else content
 
 
 def user_message(text: str, protected: list[str], extra: dict[str, str] | None = None) -> str:
@@ -593,11 +968,13 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
         self.privacy = privacy
         self.http = http or httpx.AsyncClient(base_url=cfg.base_url.rstrip("/") + "/")
         self.specs = {spec.id: spec for spec in PROFILES}
+        # S1-mini writes numbers as digits; number_format has a mechanical check.
+        extra_kinds = ("number_format",) if cfg.engine == "s1" else ()
         self.profiles = {
             spec.id: pb.CleanupProfile(
                 id=spec.id,
                 description=spec.description,
-                allowed_kinds=[KINDS[k] for k in spec.kinds],
+                allowed_kinds=[KINDS[k] for k in (*spec.kinds, *extra_kinds)],
                 max_input_bytes=cfg.max_input_bytes,
                 typical_ms=cfg.default_budget_ms,
                 model=cfg.model,
@@ -644,6 +1021,10 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
             response = pb.CleanupResponse(model=self.cfg.model)
             if not request.text.strip():
                 return response
+            language = request.language.lower()
+            if (language and not language.startswith("en")) or likely_non_english(request.text):
+                log.info("cleanup: skipped, not English (%d bytes)", len(raw))
+                return response
             t_gen = time.perf_counter()
             try:
                 async with asyncio.timeout(budget_s):
@@ -657,6 +1038,15 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 request.text, proposed, protected, list(profile.allowed_kinds),
                 single_line=self.specs[profile.id].single_line,
             )  # fmt: skip
+            if self.cfg.engine == "s1" and edits and (rejections or len(edits) > max_edits):
+                # A rewrite is all or nothing: one bad edit and the raw text stays.
+                rejections += [
+                    pb.EditRejection(
+                        find=e.find, replace=e.replace, reason=R.EDIT_REJECTION_REASON_GLOBAL
+                    )
+                    for e in edits
+                ]
+                edits = []
             response.edits.extend(edits)
             response.rejections.extend(rejections)
             response.rejected_by_server = len(rejections)
@@ -674,6 +1064,32 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
         protected: list[tuple[int, int]], max_edits: int,
     ) -> list[ProposedEdit]:  # fmt: skip
         raw = request.text.encode()
+        if self.cfg.engine == "s1":
+            spec = self.specs[profile.id]
+            body = await self._complete({
+                "model": self.cfg.model,
+                "temperature": 0,  # the model card: greedy
+                "max_tokens": len(raw) // 2 + 32,  # output length tracks the input
+                "stream": False,
+                "messages": [
+                    {"role": "system", "content": S1_SYSTEM},
+                    {"role": "user", "content": f"{spec.s1_control}\n{request.text}"},
+                ],
+                # The exact training prefix: an empty <think> block (llama.cpp --jinja, vLLM).
+                "chat_template_kwargs": {"enable_thinking": False},
+            })  # fmt: skip
+            try:
+                output = _parse_rewrite(body)
+            except (ValueError, KeyError, IndexError, TypeError) as e:
+                raise HarkError(
+                    E.ERROR_CODE_BACKEND_FAILURE, f"cleanup LLM returned a malformed rewrite ({e})"
+                ) from e
+            if output is None:
+                log.warning("cleanup: rewrite hit max_tokens; keeping the text")
+                return []
+            if not spec.s1_final_period and not request.text.rstrip().endswith((".", "!", "?")):
+                output = output.rstrip().removesuffix(".")
+            return rewrite_edits(request.text, output, single_line=spec.single_line)
         extra: dict[str, str] = {}
         if request.language:
             extra["language"] = request.language
@@ -682,7 +1098,7 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
         if request.context.preceding_text:
             extra["preceding_text"] = request.context.preceding_text
         user = user_message(request.text, [raw[s:e].decode() for s, e in protected], extra)
-        payload = {
+        payload: dict[str, object] = {
             "model": self.cfg.model,
             "temperature": 0,
             "max_tokens": 64 + 64 * max_edits,
@@ -699,6 +1115,14 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 },
             },
         }
+        try:
+            return _parse_edits(await self._complete(payload), max_edits)
+        except (ValueError, KeyError, IndexError, TypeError) as e:
+            raise HarkError(
+                E.ERROR_CODE_BACKEND_FAILURE, f"cleanup LLM returned a malformed edit list ({e})"
+            ) from e
+
+    async def _complete(self, payload: dict[str, object]) -> object:
         headers: dict[str, str] = {}
         token = os.environ.get(self.cfg.api_key_env, "") if self.cfg.api_key_env else ""
         if token:
@@ -716,8 +1140,6 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 retryable=r.status_code >= 500, grpc_code=_UNAVAILABLE,
             )  # fmt: skip
         try:
-            return _parse_edits(cast("object", r.json()), max_edits)
-        except (ValueError, KeyError, IndexError, TypeError) as e:
-            raise HarkError(
-                E.ERROR_CODE_BACKEND_FAILURE, f"cleanup LLM returned a malformed edit list ({e})"
-            ) from e
+            return cast("object", r.json())
+        except ValueError as e:
+            raise HarkError(E.ERROR_CODE_BACKEND_FAILURE, "cleanup LLM returned no JSON") from e
