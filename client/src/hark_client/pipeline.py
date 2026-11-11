@@ -24,6 +24,7 @@ from google.protobuf import json_format
 from hark.v1 import hark_pb2 as pb
 from hark_client import asr, cleanup, context, guardrails, history
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
+from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import ContextSnapshot, FocusInfo, WordInfo
@@ -87,7 +88,7 @@ class Services:
 @dataclass
 class Result:
     utterance_id: str
-    status: str  # pasted | copied | paste_failed | focus_changed | empty | too_short | cancelled | error
+    status: str  # pasted | copied | paste_failed | focus_changed | empty | too_short | no_speech | cancelled | error
     profile: str = ""
     raw_text: str = ""
     canonical_text: str = ""
@@ -216,14 +217,26 @@ class Utterance:
         previous: the last paste, to join this one to it with a space."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
-        if held_ms < min_ms:
+        with self._lock:
+            speech = speech_ms(bytes(self.pcm))
+        if held_ms < min_ms or speech < self.svc.cfg.audio.min_speech_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
-            return Result(self.id, "too_short", timings={"held_ms": held_ms})
+            self.svc.feedback.sound("cancel")
+            res = Result(
+                self.id,
+                "too_short" if held_ms < min_ms else "no_speech",
+                timings={"held_ms": held_ms, "audio_ms": self.audio_ms, "speech_ms": speech},
+            )
+            self._report("gate", f"{res.status}: {res.timings}")
+            if res.status == "no_speech":
+                self._record(res)
+            return res
         with self._lock:
             self._done = True
             self.stream.end(reason)
         t_up = time.perf_counter()
         self.timings["held_ms"] = held_ms
+        self.timings["speech_ms"] = speech
         self.timings["audio_ms"] = self.audio_ms
         try:
             result = self._finish(t_up, previous)

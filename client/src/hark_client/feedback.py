@@ -15,13 +15,14 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("hark.feedback")
 
-type Sound = Literal["start", "stop", "done", "error"]
+type Sound = Literal["start", "stop", "done", "error", "cancel"]
 
 _MAC_SOUNDS: dict[Sound, str] = {
     "start": "/System/Library/Sounds/Tink.aiff",
     "stop": "/System/Library/Sounds/Pop.aiff",
     "done": "/System/Library/Sounds/Bottle.aiff",
     "error": "/System/Library/Sounds/Basso.aiff",
+    "cancel": "/System/Library/Sounds/Morse.aiff",
 }
 _FREEDESKTOP = Path("/usr/share/sounds/freedesktop/stereo")
 _LINUX_SOUNDS: dict[Sound, str] = {
@@ -29,6 +30,7 @@ _LINUX_SOUNDS: dict[Sound, str] = {
     "stop": str(_FREEDESKTOP / "message.oga"),
     "done": str(_FREEDESKTOP / "complete.oga"),
     "error": str(_FREEDESKTOP / "dialog-error.oga"),
+    "cancel": str(_FREEDESKTOP / "audio-volume-change.oga"),
 }
 
 

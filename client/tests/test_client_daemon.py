@@ -2,19 +2,22 @@
 
 from __future__ import annotations
 
+import math
 import os
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, override
 
 import grpc
+import numpy as np
 import pytest
 
 from hark_client import asr
+from hark_client.audio import speech_ms
 from hark_client.config import Config, FeedbackConfig
 from hark_client.daemon import Controller
-from hark_client.feedback import Feedback
+from hark_client.feedback import Feedback, Sound
 from hark_client.inject import DryRunInjector
 from hark_client.pipeline import LastPaste, Services, join_prefix
 
@@ -24,11 +27,23 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
+    import numpy.typing as npt
+
     from .conftest import FakeContext, HarkServer
 
 
 def pcm(seconds: float) -> bytes:
     return speech(seconds).astype("<i2").tobytes()
+
+
+class RecordingFeedback(Feedback):
+    def __init__(self) -> None:
+        super().__init__(FeedbackConfig(sounds=False, notify=False))
+        self.sounds_played: list[Sound] = []
+
+    @override
+    def sound(self, kind: Sound) -> None:
+        self.sounds_played.append(kind)
 
 
 @pytest.fixture
@@ -42,10 +57,10 @@ def controller(
     injector = DryRunInjector(out=lambda _: None)
     with grpc.insecure_channel(hark_server.target) as channel:
         caps = asr.Capabilities(channel)
-        svc = Services(
-            cfg, channel, caps, injector, Feedback(FeedbackConfig(sounds=False, notify=False))
+        yield (
+            Controller(Services(cfg, channel, caps, injector, RecordingFeedback()), None),
+            injector,
         )
-        yield Controller(svc, mic=None), injector
 
 
 def wait_idle(c: Controller) -> None:
@@ -108,18 +123,55 @@ def test_join_prefix(
     assert join_prefix(prev, target, text, now, window_s=60.0) == expected
 
 
-def test_cancel_and_too_short_paste_nothing(controller: tuple[Controller, DryRunInjector]):
+def test_cancelled_too_short_and_silent_dictations_paste_nothing(
+    controller: tuple[Controller, DryRunInjector],
+):
     c, injector = controller
+    feedback = c.svc.feedback
+    assert isinstance(feedback, RecordingFeedback)
     assert c.handle("stop") == "ok idle"
     c.handle("start")
     c.on_pcm(pcm(1.0))
     assert c.handle("cancel") == "ok cancelled"
+    c.handle("start")  # 2 s held, but only 200 ms of it is speech
+    c.on_pcm(bytes(32000) + pcm(0.2) + bytes(32000))
+    c.handle("stop")
+    wait_idle(c)
     c.svc.cfg.audio.min_ms = 10_000
     c.handle("start")
     c.on_pcm(pcm(1.0))
     c.handle("stop")
     wait_idle(c)
     assert injector.pasted == []
+    assert [s for s in feedback.sounds_played if s not in {"start", "stop"}] == [
+        "error",  # Esc
+        "cancel",  # no speech
+        "cancel",  # too short
+    ]
+
+
+def tone(ms: int, dbfs: float) -> npt.NDArray[np.float64]:
+    t = np.arange(ms * 16, dtype=np.float64) / 16000
+    return np.sin(2 * np.pi * 220 * t) * (math.sqrt(2) * 10 ** (dbfs / 20))
+
+
+def noise(ms: int, dbfs: float) -> npt.NDArray[np.float64]:
+    return np.random.default_rng(1).standard_normal(ms * 16) * 10 ** (dbfs / 20)
+
+
+@pytest.mark.parametrize(
+    ("signal", "expected_ms"),
+    [
+        (np.zeros(16000), 0),
+        (noise(1000, -60), 0),
+        (noise(1000, -45), 0),  # noisy room, no speech
+        (np.concatenate([noise(500, -60), tone(280, -20) + noise(280, -60), noise(500, -60)]), 280),
+        (np.concatenate([noise(500, -65), tone(400, -45) + noise(400, -65), noise(500, -65)]), 400),
+        (tone(1000, -25), 1000),  # speech throughout: no quiet frames to take a floor from
+    ],
+)
+def test_speech_ms(signal: npt.NDArray[np.float64], expected_ms: int):
+    assert speech_ms((signal * 32768).astype("<i2").tobytes()) == expected_ms
 
 
 def test_forks_do_not_run_grpc_fork_handlers():

@@ -98,7 +98,8 @@ deadline_ms = 600             # timeout/failure => uncleaned text
 device = ""                   # PortAudio name or index
 preroll_ms = 200              # needs keep_open
 keep_open = true              # mic stream stays open between dictations
-min_ms = 300                  # shorter presses are cancelled
+min_ms = 300                  # shorter presses are cancelled (short "cancel" sound, nothing pasted)
+min_speech_ms = 300           # less speech energy than this is discarded too (status no_speech); 0 = off
 max_ms = 120000
 
 [hotkey]
@@ -142,7 +143,7 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 
 ## History and recordings
 
-`history.jsonl` gets one line per dictation: status, profile, app, raw/canonical/final text, replacements, cleanup
+`history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
