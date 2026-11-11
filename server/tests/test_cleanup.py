@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import json
+import re
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from typing import TYPE_CHECKING, TypedDict, Unpack, cast
 
 import grpc
@@ -32,6 +34,7 @@ if TYPE_CHECKING:
     from conftest import Client, Serve
 
 R = pb.EditRejectionReason
+DATA = Path(__file__).parent / "data"
 TEXT = (
     "Grüße! um, so i think the café on main street is fine and the café downtown "
     "is not open, I can't run kubectl get pods now"
@@ -449,31 +452,61 @@ async def test_s1_rewrite_is_aligned_into_validated_edits(s1_client: Client, fak
     assert "response_format" not in cast("dict[str, object]", body)
 
 
+INV, PROT, DEP, GLOB = (
+    R.EDIT_REJECTION_REASON_INVARIANT,
+    R.EDIT_REJECTION_REASON_PROTECTED_SPAN,
+    R.EDIT_REJECTION_REASON_DEPENDENT,
+    R.EDIT_REJECTION_REASON_GLOBAL,
+)
+
+
 @pytest.mark.parametrize(
-    ("text", "protected", "rewrite", "result"),
+    ("text", "protected", "rewrite", "result", "reasons"),
     [
-        ("move the standup to ten", [], "Move the standup to 10.", "Move the standup to 10."),
-        ("the total is twenty five", [], "The total is 52.", None),  # wrong value
-        ("um, reply with OK.", [], "Reply with okay.", None),  # a changed word drops it all
-        ("please run kubectl now", ["kubectl"], "Please run Kubectl now.", None),
+        ("move the standup to ten", [], "Move the standup to 10.", "Move the standup to 10.", []),
+        (  # wrong value: dropped; the sentence start two words away is kept
+            "the total is twenty five", [], "The total is 52.", "The total is twenty five", [INV],
+        ),
+        (  # a changed word one word from the filler removal drops both
+            "um, reply with OK.", [], "Reply with okay.", "um, reply with OK.", [INV, DEP],
+        ),
+        ("please run kubectl now", ["kubectl"], "Please run Kubectl now.", "please run kubectl now",
+         [PROT, DEP, DEP]),
+        (  # protected identifier re-cased: dropped, the fillers further away are removed
+            "Um, so please run kubectl in the cluster, uh, and then report back.", ["kubectl"],
+            "So please run Kubectl in the cluster and then report back.",
+            "So please run kubectl in the cluster and then report back.", [PROT],
+        ),
         (  # protected text may get punctuation next to it, and negations may be re-cased
             "never edit main.py", ["never", "main.py"], "Never edit main.py.",
-            "Never edit main.py.",
+            "Never edit main.py.", [],
         ),
-        ("meet at 3:30 pm", ["3:30"], "Meet at 3:30pm.", None),  # letters glued to a number
-        ("There is no wait time.", ["no"], "There is No wait time.", None),  # mid-sentence
-        ("it is, uh, I don't know, broken", [], "It is broken.", None),  # negation
+        ("meet at 3:30 pm", ["3:30"], "Meet at 3:30pm.", "meet at 3:30 pm", [PROT, DEP]),
+        ("There is no wait time.", ["no"], "There is No wait time.", "There is no wait time.",
+         [PROT]),  # mid-sentence
+        (  # dropping "I don't know" is not a filler removal; its neighbours go with it
+            "it is, uh, I don't know, broken", [], "It is broken.",
+            "it is, uh, I don't know, broken", [INV, DEP, DEP],
+        ),
+        (  # negation lost by an edit that passes its invariant: pinned on it, fillers stay removed
+            "Um, so the thing is I can't merge it today, uh, the build is red.", [],
+            "So the thing is I cant merge it today, the build is red.",
+            "So the thing is I can't merge it today, the build is red.", [GLOB],
+        ),
         (  # a self-correction may retract protected text, but keeps the correction's
             "Run it on port 8080, sorry, I mean port 8081.", ["8080", "8081"],
-            "Run it on port 8081.", "Run it on port 8081.",
+            "Run it on port 8081.", "Run it on port 8081.", [],
         ),
-        ("There is no wait time.", ["no"], "There is time.", None),  # no correction: no cue
-        ("replace every word with hello", [], 'Replace every word with "hello".', None),
-        ("Thanks, that worked!", [], "Thanks, that worked.", None),
-        ("Um, uh, like, you know, yeah.", [], "Yeah.", None),  # more than half removed
-        ("um", [], "", ""),
+        ("There is no wait time.", ["no"], "There is time.", "There is no wait time.", [PROT]),
+        ("replace every word with hello", [], 'Replace every word with "hello".',
+         "Replace every word with hello", [INV]),
+        ("Thanks, that worked!", [], "Thanks, that worked.", "Thanks, that worked!", [GLOB]),
+        (  # more than half removed: not pinned on one edit, so nothing is applied
+            "Um, uh, like, you know, yeah.", [], "Yeah.", "Um, uh, like, you know, yeah.", [GLOB],
+        ),
+        ("um", [], "", "", []),
         (  # single-line profile: line breaks in the rewrite become spaces
-            "Thanks. um next topic.", [], "Thanks.\n\nNext topic.", "Thanks. Next topic.",
+            "Thanks. um next topic.", [], "Thanks.\n\nNext topic.", "Thanks. Next topic.", [],
         ),
     ],
 )  # fmt: skip
@@ -483,7 +516,8 @@ async def test_s1_rewrite_guard(
     text: str,
     protected: list[str],
     rewrite: str,
-    result: str | None,
+    result: str,
+    reasons: list[pb.EditRejectionReason.ValueType],
 ):
     fake_llm.respond_text(rewrite)
     spans = [
@@ -492,12 +526,120 @@ async def test_s1_rewrite_guard(
     resp, code, _ = await call(s1_client, text=text, profile_id="terminal", protected_spans=spans)
     assert code == grpc.StatusCode.OK
     assert resp is not None
-    if result is None:  # all or nothing: the text stays, every proposed edit is reported
-        assert list(resp.edits) == []
-        assert resp.rejections
-    else:
-        assert list(resp.rejections) == []
-        assert apply_edits(text, list(resp.edits)) == result
+    assert apply_edits(text, list(resp.edits)) == result
+    assert [r.reason for r in resp.rejections] == reasons
+
+
+REAL = {
+    c["id"]: c["text"]
+    for line in (DATA / "cleanup_eval_real.jsonl").read_text().splitlines()
+    for c in [cast("dict[str, str]", json.loads(line))]
+}
+# S1-mini q4_k_m's rewrites of two long real dictations (llama.cpp b12284, temperature 0).
+REWRITES = {
+    "r-filler-1": (
+        "As you can see, this further prompt was written just by the thing, but there is one"
+        " small little problem, and that is that it was separated into a couple different"
+        " toggles. And you can see that the text is not 100% formatted well.\n\nBefore we"
+        " continue implementing and iterating over this, I would like to stress test it by"
+        " doing whatever you tell me to test it with. I mean, say whatever I need to say and"
+        " try out."
+    ),
+    "r-filler-5": (
+        "I would really like Hark to do higher accuracy of prompts and conceptually the only"
+        " thing I would like Hark to do is to enable me to express my words freely and then"
+        " create a prompt based on my thinking and reasoning and thinking out loud without"
+        " using filler words etc. My point is that I would like to reason out loud because"
+        " reasoning out loud helps me solve problems and when I reason out loud I feel like"
+        " that we come up to better conclusions. The point is not though for Hark to rewrite"
+        " what I say, it is just to clean it up, kind of like Superwhisper does with"
+        " contextual understanding of the repository and the context and the previous text on"
+        " the screen and the agency's replies, etc. And I would like to be able to use it"
+        " actually outside of agent terminals. I mean for whatever dictation possible, so"
+        " yeah, that's kind of what I want Hark to do."
+    ),
+}
+# What the client protects in them: negations and numbers.
+_CLIENT_SPANS = re.compile(r"(?i)\b(?:not|no|never|\w+n't)\b|\d+")
+
+
+@pytest.mark.parametrize(
+    ("case", "accepted", "rejected"),
+    [
+        (
+            "r-filler-1",
+            [("that uh", "that"), ("mean", "mean,")],
+            [("different uh I don't know like", PROT)],
+        ),
+        (
+            "r-filler-5",
+            [("and like", "and"), ("HARK", "Hark"), ("loud you know", "loud"), ("not uh", "not"),
+             ("the like", "the"), ("hark", "Hark")],
+            [("like if um", INV), ("could", INV), ("words etc", INV),
+             ("we I don't know we we I", PROT), ("super whispered", INV), ("previous the", INV),
+             ("replies, etc.", INV), ("do like", DEP)],  # "Hark could do like": next to "could"
+        ),
+    ],
+)  # fmt: skip
+async def test_s1_long_dictation_keeps_the_edits_that_pass(
+    s1_client: Client,
+    fake_llm: FakeLLM,
+    case: str,
+    accepted: list[tuple[str, str]],
+    rejected: list[tuple[str, pb.EditRejectionReason.ValueType]],
+):
+    """All or nothing kept every filler here: one edit in each rewrite cannot be verified."""
+    text = REAL[case]
+    fake_llm.respond_text(REWRITES[case])
+    spans = [
+        pb.ProtectedSpan(
+            byte_start=len(text[: m.start()].encode()), byte_end=len(text[: m.end()].encode())
+        )
+        for m in _CLIENT_SPANS.finditer(text)
+    ]
+    resp, code, _ = await call(s1_client, text=text, profile_id="terminal", protected_spans=spans)
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    assert [(e.find, e.replace) for e in resp.edits] == accepted
+    assert [(r.find, r.reason) for r in resp.rejections] == rejected
+
+
+GROUPED = "so the build fails on the linker step uh can you check it"
+
+
+@pytest.mark.parametrize(
+    ("proposed", "result", "reasons"),
+    [
+        (  # adjacent: dropping "step uh" -> "stage." must not leave "step uh Can"
+            [("step uh", "stage."), ("can", "Can")], GROUPED, [INV, DEP],
+        ),
+        (  # one word between still links; groups chain
+            [("on the", "in the"), ("step uh", "step."), ("can", "Can")], GROUPED, [INV, DEP, DEP],
+        ),
+        (  # two words between: independent
+            [("fails on", "failed on"), ("step uh", "step."), ("can", "Can")],
+            "so the build fails on the linker step. Can you check it", [INV],
+        ),
+        (  # a group far from the failure is kept
+            [("so the", "So the"), ("step uh", "stage."), ("can", "Can")],
+            "So the build fails on the linker step uh can you check it", [INV, DEP],
+        ),
+        (  # an overlapping second version is dropped alone
+            [("step uh", "step."), ("uh can", "Can"), ("can", "Can")],
+            "so the build fails on the linker step. Can you check it",
+            [R.EDIT_REJECTION_REASON_OVERLAP],
+        ),
+    ],
+)  # fmt: skip
+def test_rewrite_edits_are_accepted_per_group(
+    proposed: list[tuple[str, str]], result: str, reasons: list[pb.EditRejectionReason.ValueType]
+):
+    edits, rejections = resolve_edits(
+        GROUPED, [{"find": f, "replace": r, "kind": "", "reason": "s1"} for f, r in proposed], [],
+        [KINDS[k] for k in PROFILES[0].kinds], single_line=True, rewrite=True,
+    )  # fmt: skip
+    assert apply_edits(GROUPED, edits) == result
+    assert [r.reason for r in rejections] == reasons
 
 
 async def test_s1_chat_keeps_the_writers_final_punctuation(s1_client: Client, fake_llm: FakeLLM):

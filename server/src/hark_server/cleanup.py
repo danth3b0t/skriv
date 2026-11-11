@@ -3,7 +3,8 @@
 Two engines:
 - `s1`: "S1-mini" by "Superwhisper" (a Qwen3-0.6B text normalizer) rewrites the
   whole transcript; the rewrite is aligned with the input word by word and turned
-  into edits. Any edit the validator rejects drops the whole rewrite.
+  into edits. Edits the validator rejects are dropped with their group (edits at
+  most one word apart); the rest of the rewrite is applied.
 - `edits`: a general instruction model returns a JSON-schema constrained edit list.
 
 Edits are quoted-text anchored: `find` must occur exactly once in the text.
@@ -73,6 +74,9 @@ CORRECTION_CUES = (
 MAX_RETRACTED_WORDS = 8
 # At most this share of the words may be removed (fillers + self-corrections).
 MAX_REMOVED_SHARE = 0.5
+# Edits at most this many words apart form a group that is accepted or rejected
+# whole: dropping "step, uh," -> "step." must also drop "can" -> "Can".
+GROUP_GAP_WORDS = 1
 _UNBUDGETED = (K.EDIT_KIND_FILLER_REMOVAL, K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
 # Marks a punctuation edit may add or remove (no quotes, brackets, $, %, ...).
 PUNCTUATION = set(".,;:?!'\u2019-")
@@ -589,35 +593,72 @@ def _changed_bytes(e: pb.Edit) -> int:
     return max(len(f), len(r)) - p - s
 
 
-def _global_ok(text: str, edits: list[pb.Edit]) -> bool:
-    """Negations and digits must survive every edit except what a spoken
-    self-correction retracts (and digits a number_format edit writes).
+def _negations(s: str) -> int:
+    return sum(w in NEGATIONS for w in _words(s.lower()))
+
+
+def _digits(s: str) -> list[str]:
+    return sorted(c for c in s if c.isdigit())
+
+
+_MEANING = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
+
+
+def _global_blame(text: str, edits: list[pb.Edit]) -> list[int] | None:
+    """None if the result of `edits` passes the global rules, else the indices
+    of the edits a failed rule is pinned on ([] if it cannot be pinned).
+
+    Negations and digits must survive every edit except what a spoken
+    self-correction retracts (and digits a number_format edit writes), and no
+    exclamation mark may be lost: pinned on the edits that change them.
     Punctuation, capitalization and spacing edits may change few bytes in
-    total; fillers may make up at most MAX_REMOVED_SHARE of the words. Stricter
-    than proposal-a: the result may not gain double spaces, doubled
-    punctuation or a lowercase sentence start, nor lose an exclamation mark."""
-    meaning = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
-    meant = apply_edits(text, [e for e in edits if e.kind in meaning])
+    total; fillers may make up at most MAX_REMOVED_SHARE of the words; the
+    result may not gain double spaces, doubled punctuation or a lowercase
+    sentence start (stricter than proposal-a): not pinned."""
+    meant = apply_edits(text, [e for e in edits if e.kind in _MEANING])
     after = apply_edits(text, edits)
-
-    def negations(s: str) -> int:
-        return sum(w in NEGATIONS for w in _words(s.lower()))
-
-    def digits(s: str) -> list[str]:
-        return sorted(c for c in s if c.isdigit())
-
+    if (
+        _negations(meant) != _negations(after)
+        or _digits(meant) != _digits(after)
+        or after.count("!") < meant.count("!")
+    ):
+        return [
+            i
+            for i, e in enumerate(edits)
+            if e.kind not in _MEANING
+            and (
+                _negations(e.find) != _negations(e.replace)
+                or _digits(e.find) != _digits(e.replace)
+                or e.replace.count("!") < e.find.count("!")
+            )
+        ]
     size = len(text.encode())
     changed = sum(_changed_bytes(e) for e in edits if e.kind not in _UNBUDGETED)
     words = len(_words(meant))  # self-corrections are bounded by MAX_RETRACTED_WORDS
     removed = words - len(_words(after))
-    return (
-        negations(meant) == negations(after)
-        and digits(meant) == digits(after)
-        and changed <= max(8, 0.15 * size)
-        and removed <= max(2, MAX_REMOVED_SHARE * words)
-        and after.count("!") >= meant.count("!")
-        and all(len(p.findall(after)) <= len(p.findall(text)) for p in _SLOPPY)
-    )
+    if (
+        changed > max(8, 0.15 * size)
+        or removed > max(2, MAX_REMOVED_SHARE * words)
+        or any(len(p.findall(after)) > len(p.findall(text)) for p in _SLOPPY)
+    ):
+        return []
+    return None
+
+
+def _edit_groups(text: str, ranges: list[tuple[int, int]]) -> list[int]:
+    """A group id per byte range (in any order). Ranges that overlap or have
+    at most GROUP_GAP_WORDS words between them are in one group, transitively."""
+    raw = text.encode()
+    ids = [0] * len(ranges)
+    group, end = -1, -1
+    for i in sorted(range(len(ranges)), key=lambda i: ranges[i]):
+        start = ranges[i][0]
+        between = raw[end:start].decode(errors="ignore") if start > end else ""
+        if group < 0 or len(_words(between)) > GROUP_GAP_WORDS:
+            group += 1
+        ids[i] = group
+        end = max(end, ranges[i][1])
+    return ids
 
 
 class _Request(NamedTuple):
@@ -704,13 +745,14 @@ def _resolve_one(
     return parts
 
 
-def resolve_edits(
+def resolve_edits(  # noqa: PLR0913 - keyword-only flags
     text: str,
     proposed: list[ProposedEdit],
     protected: list[tuple[int, int]],
     allowed_kinds: list[pb.EditKind.ValueType],
     *,
     single_line: bool = False,
+    rewrite: bool = False,
 ) -> tuple[list[pb.Edit], list[pb.EditRejection]]:
     """Resolve quoted `find`s to byte ranges and validate (proposal-a §8.2).
 
@@ -718,10 +760,19 @@ def resolve_edits(
     sentence re-cased and re-punctuated); such an edit is split into minimal
     token-level edits, and accepted only if every part passes an allowed kind
     and stays clear of protected spans.
-    `single_line`: edits may not add line breaks (terminal, chat)."""
+
+    Edits are accepted per group (_edit_groups): an edit that fails a per-edit
+    check takes the valid edits of its group with it (DEPENDENT), so the
+    result never mixes half a change with its neighbour ("step, uh, Can").
+    The global rules then run on the result; a failure pinned on some edits
+    drops their groups and the rules run again, any other failure drops all.
+    `single_line`: edits may not add line breaks (terminal, chat).
+    `rewrite`: the edits come from an aligned rewrite (S1), which changes words
+    no check can verify; rejected edits do not mark the model as misbehaving."""
     req = _Request(text, protected, allowed_kinds, single_line)
     rejections: list[pb.EditRejection] = []
     candidates: list[pb.Edit] = []
+    failed: list[tuple[int, int]] = []  # byte ranges of edits rejected in place
     for p in proposed:
         find, replace = p["find"], p["replace"]
         hits = _occurrences(text, find) if find else []
@@ -733,12 +784,17 @@ def resolve_edits(
             result = R.EDIT_REJECTION_REASON_NOT_UNIQUE
         else:
             result = _resolve_one(req, hits[0], p)
+            if not isinstance(result, list):
+                start = len(text[: hits[0]].encode())
+                failed.append((start, start + len(find.encode())))
         if isinstance(result, list):
             candidates += result
         else:
             rejections.append(pb.EditRejection(find=find, replace=replace, reason=result))
     edits: list[pb.Edit] = []
     for c in sorted(candidates, key=lambda e: e.byte_start):
+        # An overlapping edit is a second version of an accepted one's region:
+        # dropping it leaves that edit whole, so it does not drop its group.
         if edits and c.byte_start < edits[-1].byte_end:
             rejections.append(
                 pb.EditRejection(
@@ -747,18 +803,27 @@ def resolve_edits(
             )
             continue
         edits.append(c)
-    # Global rules: a misbehaving model loses all its edits. No-ops are harmless
+
+    def drop(
+        drop_edits: list[pb.Edit], reason: pb.EditRejectionReason.ValueType
+    ) -> list[pb.EditRejection]:
+        return [pb.EditRejection(find=e.find, replace=e.replace, reason=reason) for e in drop_edits]
+
+    # A misbehaving edit-list model loses all its edits. No-ops are harmless
     # (small models like to echo protected text) and do not count as misbehaving.
     no_ops = sum(r.reason == R.EDIT_REJECTION_REASON_NO_OP for r in rejections)
-    if edits and (
-        2 * (len(rejections) - no_ops) > len(proposed) - no_ops or not _global_ok(text, edits)
-    ):
-        rejections += [
-            pb.EditRejection(find=e.find, replace=e.replace, reason=R.EDIT_REJECTION_REASON_GLOBAL)
-            for e in edits
-        ]
-        edits = []
-    return edits, rejections
+    if edits and not rewrite and 2 * (len(rejections) - no_ops) > len(proposed) - no_ops:
+        return [], rejections + drop(edits, R.EDIT_REJECTION_REASON_GLOBAL)
+    ids = _edit_groups(text, [(e.byte_start, e.byte_end) for e in edits] + failed)
+    tainted = set(ids[len(edits) :])
+    grouped = list(zip(edits, ids[: len(edits)], strict=True))
+    rejections += drop([e for e, g in grouped if g in tainted], R.EDIT_REJECTION_REASON_DEPENDENT)
+    grouped = [(e, g) for e, g in grouped if g not in tainted]
+    while grouped and (blame := _global_blame(text, [e for e, _ in grouped])) is not None:
+        bad = {grouped[i][1] for i in blame} if blame else {g for _, g in grouped}
+        rejections += drop([e for e, g in grouped if g in bad], R.EDIT_REJECTION_REASON_GLOBAL)
+        grouped = [(e, g) for e, g in grouped if g not in bad]
+    return [e for e, _ in grouped], rejections
 
 
 class _Unit(NamedTuple):
@@ -1034,12 +1099,14 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 response.total_ms = int((time.perf_counter() - t0) * 1000)
                 return response
             response.generation_ms = int((time.perf_counter() - t_gen) * 1000)
+            s1 = self.cfg.engine == "s1"
             edits, rejections = resolve_edits(
                 request.text, proposed, protected, list(profile.allowed_kinds),
-                single_line=self.specs[profile.id].single_line,
+                single_line=self.specs[profile.id].single_line, rewrite=s1,
             )  # fmt: skip
-            if self.cfg.engine == "s1" and edits and (rejections or len(edits) > max_edits):
-                # A rewrite is all or nothing: one bad edit and the raw text stays.
+            if s1 and len(edits) > max_edits:
+                # The edit-list engine's schema caps the edits; a rewrite that
+                # needs more is not applied at all.
                 rejections += [
                     pb.EditRejection(
                         find=e.find, replace=e.replace, reason=R.EDIT_REJECTION_REASON_GLOBAL
