@@ -53,7 +53,7 @@ class ServerConfig:
 @dataclass
 class ContextConfig:
     deadline_ms: int = 150  # SessionStart waits at most this long for context
-    max_terms: int = 60
+    max_terms: int = 30  # research: short lists; the acoustic gate guards the rest
 
 
 @dataclass

@@ -531,6 +531,15 @@ class Utterance:
                 "terms": len(snap.terms),
                 "collected_ms": snap.collected_ms,
                 "errors": list(snap.errors),
+                # Why each term was on the list (dataset `shortlist_used`; no raw context text).
+                "provenance": [
+                    {
+                        "term": t.canonical,
+                        "score": round(t.score, 3),
+                        "sources": [e.origin for e in t.evidence[:3]],
+                    }
+                    for t in snap.provenance
+                ],
             },
             "bias_terms_sent": len(self.start_message.context.bias.terms)
             if self.start_message

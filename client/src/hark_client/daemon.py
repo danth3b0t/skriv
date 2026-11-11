@@ -14,6 +14,7 @@ from hark.v1 import hark_pb2 as pb
 from hark_client import context
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
+from hark_client.config import expand
 from hark_client.continuation import ShadowBuffer
 from hark_client.pipeline import Utterance
 
@@ -238,6 +239,8 @@ def run(svc: Services) -> int:
         log.error("%s", e)
         return 1
     controller.mic = mic
+    # Warm per-window term pools in the background so key-down only refreshes cheap sources.
+    context.start_prefetch(str(expand(svc.cfg.history.dir)))
     server = ctl.CtlServer(ctl.socket_path(), controller.handle, controller.status_json)
     if svc.cfg.audio.keep_open:
         mic.start()
@@ -259,6 +262,7 @@ def run(svc: Services) -> int:
     finally:
         if hotkey is not None:
             hotkey.stop()
+        context.stop_prefetch()
         controller.cancel()
         server.close()
         mic.stop()
