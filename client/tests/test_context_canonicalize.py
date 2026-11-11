@@ -1,4 +1,6 @@
 from hark_client.context import Term, TermKind, TermSource, WordInfo, canonicalize
+from hark_client.context.aliases import extract_terms
+from hark_client.context.rank import Candidate, ranked
 
 
 def term(
@@ -80,3 +82,23 @@ def test_already_canonical_text_reports_no_replacement():
 def test_spoken_path_is_rewritten():
     out, _ = canonicalize("open store dot ts please", [], [term("store.ts", "store dot ts")])
     assert out == "open store.ts please"
+
+
+def test_names_from_an_agent_reply_fix_the_real_misrecognitions():
+    reply = (
+        "Compare Qwen3-ASR with Parakeet and the NeMo GPU-PB backend. "
+        "Run `hark doctor` and reopen Terminal.app."
+    )
+    terms = ranked(
+        (Candidate(t, k, TermSource.AGENT_SESSION) for t, k in extract_terms(reply, prose=True)),
+        60,
+    )
+    heard = "Run HarkDoctor, reopen terminal dot app; Qwen three ASR, the Nemo GPU PB parakeet."
+    assert canonicalize(heard, [], terms)[0] == (
+        "Run hark doctor, reopen Terminal.app; Qwen3-ASR, the NeMo GPU-PB parakeet."
+    )
+
+
+def test_rewrite_that_only_lowercases_is_skipped():
+    doctor = term("hark doctor", "hark doctor", kind=TermKind.COMMAND)
+    assert canonicalize("Hark doctor works.", [], [doctor]) == ("Hark doctor works.", [])

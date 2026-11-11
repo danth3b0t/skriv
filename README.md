@@ -2,9 +2,9 @@
 
 Context-aware, local-first dictation: hold a key, speak, and the text is pasted into the focused app.
 Before decoding, hark looks at what you are working on (focused app, terminal working directory,
-git repo vocabulary, the coding agent's last reply read from its session files) and biases the
-speech recognizer toward those identifiers; a small local model ("S1-mini" by "Superwhisper") then tidies
-the text under strict guardrails. **This is a proof of concept.**
+git repo vocabulary, the coding agent's recent turns read from its session files) and biases the
+speech recognizer toward those identifiers and names; a small local model ("S1-mini" by "Superwhisper") then
+tidies the text under strict guardrails. **This is a proof of concept.**
 
 ## Try the POC on macOS (Apple Silicon)
 

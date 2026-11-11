@@ -8,6 +8,7 @@ from pathlib import Path
 import pytest
 
 from hark_client.context import agents
+from hark_client.context.agents import Turn
 
 CWD = "/home/u/projects/app"
 
@@ -80,11 +81,45 @@ def test_claude_project_dir_encoding(homes: Path):
 
 
 def test_pi_reader_follows_active_branch(homes: Path):
-    reply, files = agents.read_pi(pi_session(homes))
-    assert (reply, files) == ("Renamed `useSessionStore`.", ["src/useStore.ts"])
+    turns, files = agents.read_pi(pi_session(homes))
+    assert turns == [
+        Turn("assistant", "Renamed `useSessionStore`."),
+        Turn("user", "rename the store"),
+        Turn("assistant", "first reply"),
+    ]
+    assert files == ["src/useStore.ts"]
 
 
-def test_claude_reader_spans_tool_results_and_skips_sidechains(homes: Path):
+def pi_chat(homes: Path, replies: list[str]) -> Path:
+    """Linear pi session: user "q<i>" then assistant replies[i], for each i."""
+    entries: list[dict[str, object]] = [{"type": "session", "version": 3, "id": "s", "cwd": CWD}]
+    parent: str | None = None
+    for i, reply in enumerate(replies):
+        entries.append(pi_msg(f"u{i}", parent, "user", f"q{i}"))
+        entries.append(pi_msg(f"a{i}", f"u{i}", "assistant", [{"type": "text", "text": reply}]))
+        parent = f"a{i}"
+    return write_jsonl(agents.pi_session_dir(CWD) / "chat.jsonl", entries)
+
+
+def test_reader_keeps_last_four_assistant_turns_and_last_user_turn(homes: Path):
+    turns, _ = agents.read_pi(pi_chat(homes, [f"reply{i}" for i in range(6)]))
+    assert turns == [
+        Turn("assistant", "reply5"),
+        Turn("user", "q5"),
+        Turn("assistant", "reply4"),
+        Turn("assistant", "reply3"),
+        Turn("assistant", "reply2"),
+    ]
+
+
+def test_reader_clips_turns_to_their_tail_within_the_budget(homes: Path):
+    turns, _ = agents.read_pi(pi_chat(homes, [f"{i}" * 5000 + f" end{i}" for i in range(4)]))
+    assert [t.text[-4:] for t in turns] == ["end3", "q3", "end2", "end1"]
+    assert len(turns[0].text) == agents.MAX_ASSISTANT_TURN_CHARS
+    assert sum(len(t.text) for t in turns) == agents.MAX_CONTEXT_CHARS
+
+
+def test_claude_reader_spans_tool_results_and_skips_sidechains_and_commands(homes: Path):
     def entry(uuid: str, parent: str | None, kind: str, content: object, **extra: object):
         return {
             "type": kind,
@@ -98,7 +133,9 @@ def test_claude_reader_spans_tool_results_and_skips_sidechains(homes: Path):
     path = write_jsonl(
         agents.claude_project_dir(CWD) / "abc.jsonl",
         [
-            entry("1", None, "user", "do it"),
+            entry("0a", None, "user", "start"),
+            entry("0b", "0a", "assistant", [{"type": "text", "text": "Earlier reply."}]),
+            entry("1", "0b", "user", "do it"),
             entry("2", "1", "assistant", [{"type": "text", "text": "Editing `parse_args`."}]),
             entry(
                 "3",
@@ -109,11 +146,22 @@ def test_claude_reader_spans_tool_results_and_skips_sidechains(homes: Path):
             entry("4", "3", "user", [{"type": "tool_result", "content": "ok"}]),
             entry("5", "4", "assistant", [{"type": "text", "text": "Done in cli.py."}]),
             entry("6", "5", "assistant", [{"type": "text", "text": "side"}], isSidechain=True),
+            entry("7", "5", "user", "<command-name>/model</command-name>"),  # not the user's words
             {"type": "last-prompt", "lastPrompt": "do it", "leafUuid": "1"},
         ],
     )
-    reply, files = agents.read_claude(path)
-    assert (reply, files) == ("Editing `parse_args`.\n\nDone in cli.py.", [f"{CWD}/cli.py"])
+    turns, files = agents.read_claude(path)
+    assert turns == [
+        Turn("assistant", "Editing `parse_args`.\n\nDone in cli.py."),
+        Turn("user", "do it"),
+        Turn("assistant", "Earlier reply."),
+    ]
+    assert files == [f"{CWD}/cli.py"]
+
+
+def codex_msg(role: str, kind: str, text: str) -> dict[str, object]:
+    payload = {"type": "message", "role": role, "content": [{"type": kind, "text": text}]}
+    return {"type": "response_item", "payload": payload}
 
 
 def codex_rollout(homes: Path, name: str, cwd: str, mtime: float) -> Path:
@@ -122,14 +170,10 @@ def codex_rollout(homes: Path, name: str, cwd: str, mtime: float) -> Path:
         day / name,
         [
             {"type": "session_meta", "payload": {"id": name, "cwd": cwd}},
-            {
-                "type": "response_item",
-                "payload": {
-                    "type": "message",
-                    "role": "user",
-                    "content": [{"type": "input_text", "text": "go"}],
-                },
-            },
+            codex_msg("user", "input_text", "# AGENTS.md instructions for /w"),
+            codex_msg("assistant", "output_text", "earlier"),
+            codex_msg("user", "input_text", "go"),
+            codex_msg("user", "input_text", "<environment_context>cwd</environment_context>"),
             {
                 "type": "response_item",
                 "payload": {
@@ -157,6 +201,11 @@ def test_codex_session_is_matched_by_cwd_in_session_meta(homes: Path):
     codex_rollout(homes, "rollout-other.jsonl", "/elsewhere", now)
     session = agents.find_session(CWD, "codex", agent_started=now - 60, now=now)
     assert session is not None
+    assert session.turns == (
+        Turn("assistant", "patched rollout-mine.jsonl"),
+        Turn("user", "go"),
+        Turn("assistant", "earlier"),
+    )
     assert (session.last_reply, session.files) == ("patched rollout-mine.jsonl", ("src/a.py",))
 
 
@@ -194,4 +243,4 @@ def test_truncated_and_garbage_lines_are_tolerated(homes: Path):
     path = pi_session(homes)
     with path.open("a") as fh:
         fh.write('{"type": "message", "id": "x9", "parentId": "a4", "mess\n')
-    assert agents.read_pi(path)[0] == "Renamed `useSessionStore`."
+    assert agents.read_pi(path)[0][0] == Turn("assistant", "Renamed `useSessionStore`.")

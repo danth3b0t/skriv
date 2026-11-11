@@ -7,7 +7,7 @@ import pytest
 
 from hark_client.context import TermSource, engine
 from hark_client.context.__main__ import main
-from hark_client.context.agents import AgentSession
+from hark_client.context.agents import AgentSession, Turn
 from hark_client.context.focus import FocusResult
 from hark_client.context.repo import RepoInfo
 from hark_client.context.terminal import TerminalState
@@ -17,11 +17,16 @@ TERMINAL = FocusInfo(app="kitty", app_id="kitty", title="nvim", pid=4242, is_ter
 
 
 def session(confidence: float) -> AgentSession:
-    return AgentSession("pi", "/s.jsonl", "/w", 0.0, "Changed `agentTerm`.", (), confidence)
+    turns = (Turn("assistant", "Changed `agentTerm`."),)
+    return AgentSession("pi", "/s.jsonl", "/w", 0.0, turns, (), confidence)
 
 
 def sessions(confidence: float) -> Callable[[str, str | None, float | None], AgentSession]:
-    return lambda cwd, agent, started: session(confidence)
+    return found(session(confidence))
+
+
+def found(s: AgentSession) -> Callable[[str, str | None, float | None], AgentSession]:
+    return lambda cwd, agent, started: s
 
 
 def fake_repo(cwd: str) -> RepoInfo:
@@ -46,6 +51,23 @@ def test_terms_are_ranked_by_source():
     order = [t.canonical for t in snap.terms if t.canonical.endswith("Term")]
     assert order == ["selTerm", "agentTerm", "recentTerm", "repoTerm"]
     assert (snap.cwd, snap.repo_root, snap.agent, snap.errors) == ("/w", "/w", "pi", ())
+
+
+@pytest.mark.usefixtures("providers")
+def test_older_agent_turns_contribute_with_lower_weight(monkeypatch: pytest.MonkeyPatch):
+    turns = (
+        Turn("assistant", "Use `newTerm`, key sk-abcdefghijklmnopqrstuv."),
+        Turn("user", "what about `userTerm`?"),
+        Turn("assistant", "Compare `oldTerm` and Parakeet."),
+    )
+    monkeypatch.setattr(
+        engine, "find_session", found(AgentSession("pi", "/s", "/w", 0.0, turns, (), 0.95))
+    )
+    snap = engine.collect(1.0)
+    weight = {t.canonical: t.weight for t in snap.terms if t.source is TermSource.AGENT_SESSION}
+    assert weight["newTerm"] > weight["userTerm"] > weight["oldTerm"] == weight["Parakeet"]
+    assert snap.agent_last_reply == "Use `newTerm`, key [redacted]."
+    assert not any("sk-" in t.canonical for t in snap.terms)
 
 
 @pytest.mark.usefixtures("providers")
