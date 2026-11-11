@@ -56,6 +56,7 @@ MAX_MARKS = 5000
 MAX_READ_BYTES = 8 * 1024 * 1024
 MAX_FILES_PER_PASS = 40
 MAX_PROMPT_CHARS = 6000
+BACKGROUND_PAUSE_S = 0.02
 
 
 @dataclass(slots=True)
@@ -295,20 +296,23 @@ class VocabStore:
 
     def learn(
         self,
+        *,
         now: float | None = None,
         exclude: Iterable[str] = (),
         priority_cwd: str | None = None,
         max_files: int = MAX_FILES_PER_PASS,
+        stop: threading.Event | None = None,
     ) -> int:
-        """Read ended, unread (parts of) session files, ``priority_cwd``'s first. Returns
-        the number of files read; saves when anything changed."""
+        """Read ended, unread (parts of) session files, ``priority_cwd``'s first. With
+        ``stop`` (a background pass) it pauses ``BACKGROUND_PAUSE_S`` after each file and ends
+        early once ``stop`` is set. Returns the number of files read; saves if any."""
         now = time.time() if now is None else now
         skip = set(exclude)
         with self._lock:
             marks = dict(self._load().marks)
         done = 0
         for agent, path in _ordered_files(priority_cwd):
-            if done >= max_files:
+            if done >= max_files or (stop is not None and stop.is_set()):
                 break
             key = str(path)
             try:
@@ -329,6 +333,8 @@ class VocabStore:
                 for scope, terms in read.terms.items():
                     vocab.add_session(scope, terms.items(), read.mtime, _session_id(path))
                 vocab.marks[key] = marks[key]
+            if stop is not None:
+                stop.wait(BACKGROUND_PAUSE_S)  # leave the GIL to the dictation threads
         if done:
             self._save(now)
         return done
@@ -367,6 +373,14 @@ def _ordered_files(priority_cwd: str | None) -> list[tuple[str, Path]]:
 
     files = sorted(agents.session_files(), key=mtime, reverse=True)
     return sorted(files, key=lambda item: item[1] not in first)  # stable: keeps mtime order
+
+
+def repo_root(cwd: str) -> str:
+    """The nearest ancestor of ``cwd`` with a ``.git`` entry (worktrees too), else ``cwd``."""
+    for d in (Path(cwd), *Path(cwd).parents):
+        if (d / ".git").exists():
+            return str(d)
+    return cwd
 
 
 _store: VocabStore | None = None

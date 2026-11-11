@@ -86,6 +86,7 @@ class ContextSnapshot:
     collected_ms: float = 0.0
     errors: tuple[str, ...] = ()  # provider failures/timeouts (non-fatal)
     provenance: tuple[TermTrace, ...] = ()  # one per term, same order
+    prefetched: bool = False  # repo/agent/vocabulary came from the background prefetch
 
 
 @dataclass(frozen=True, slots=True)

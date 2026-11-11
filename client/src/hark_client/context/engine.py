@@ -20,10 +20,9 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field, replace
-from pathlib import Path
 from typing import TYPE_CHECKING
 
-from hark_client.context import vocab
+from hark_client.context import prefetch, vocab
 from hark_client.context.agents import CONFIDENT, AgentSession, find_session
 from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
@@ -57,6 +56,7 @@ class Diagnostics:
     repo: RepoInfo | None = None
     learned: list[Candidate] = field(default_factory=list[Candidate])  # persistent vocabulary
     screen: ScreenText | None = None
+    prefetched: bool = False
     stage_ms: dict[str, float] = field(default_factory=dict[str, float])
 
 
@@ -99,16 +99,21 @@ def collect_detailed(
         focus = focus_res.focus if focus_res else FocusInfo()
         term_pid = focus.pid
         screen_job = run.start("screen", lambda: screen_text(focus)) if focus.pid else None
-        if focus.is_terminal and term_pid is not None:
-            diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
         # HARK_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
-        cwd = os.environ.get("HARK_CONTEXT_CWD") or (diag.terminal.cwd if diag.terminal else None)
-        if cwd is not None:
+        pinned = os.environ.get("HARK_CONTEXT_CWD")
+        warm = prefetch.lookup(focus.window_id)
+        if warm is not None and pinned in {None, warm.cwd}:
+            diag.terminal, diag.repo, diag.session = warm.terminal, warm.repo, warm.session
+            diag.learned, diag.prefetched = list(warm.learned), True
+        elif focus.is_terminal and term_pid is not None:
+            diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
+        cwd = pinned or (diag.terminal.cwd if diag.terminal else None)
+        if cwd is not None and not diag.prefetched:
             agent_hint = diag.terminal.agent if diag.terminal else None
             started = diag.terminal.agent_started if diag.terminal else None
             repo_job = run.start("repo", lambda: repo_info(cwd))
             agent_job = run.start("agent", lambda: find_session(cwd, agent_hint, started))
-            vocab_job = run.start("vocab", lambda: vocab_candidates(repo_root(cwd)))
+            vocab_job = run.start("vocab", lambda: vocab_candidates(cwd))
             diag.repo = run.result(repo_job)
             diag.session = run.result(agent_job)
             diag.learned = run.result(vocab_job) or []
@@ -125,17 +130,9 @@ def collect_detailed(
     return replace(snapshot, collected_ms=elapsed_ms, errors=tuple(errors)), diag
 
 
-def repo_root(cwd: str) -> str:
-    """The nearest ancestor of ``cwd`` with a ``.git`` entry (worktrees too), else ``cwd``."""
-    for d in (Path(cwd), *Path(cwd).parents):
-        if (d / ".git").exists():
-            return str(d)
-    return cwd
-
-
-def vocab_candidates(repo: str) -> list[Candidate]:
-    """Terms learned from earlier sessions for the repository (or directory) ``repo``."""
-    return vocab.store().candidates(repo)
+def vocab_candidates(cwd: str) -> list[Candidate]:
+    """Terms learned from earlier sessions for the repository containing ``cwd``."""
+    return vocab.store().candidates(vocab.repo_root(cwd))
 
 
 def session_candidates(session: AgentSession) -> list[Candidate]:
@@ -194,6 +191,7 @@ def _snapshot(
         selection=selection,
         terms=ranking.terms,
         provenance=ranking.trace,
+        prefetched=diag.prefetched,
     )
 
 

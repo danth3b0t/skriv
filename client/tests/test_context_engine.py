@@ -43,8 +43,8 @@ def fake_screen(focus: FocusInfo) -> ScreenText:
     return PANE
 
 
-def fake_vocab(repo: str) -> list[Candidate]:
-    assert repo == "/w"
+def fake_vocab(cwd: str) -> list[Candidate]:
+    assert cwd == "/w"
     return [Candidate("learnedTerm", TermKind.IDENTIFIER, Origin.PERSIST_REPO, 0.9)]
 
 
