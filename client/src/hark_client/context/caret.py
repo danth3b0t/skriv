@@ -96,7 +96,7 @@ def _utf16_slice(text: str, start: int, end: int) -> str:
     return data[2 * max(0, start) : 2 * max(0, end)].decode("utf-16-le", errors="ignore")
 
 
-def _focused(ax: AxApi, pid: int) -> tuple[object | None, str]:
+def focused_element(ax: AxApi, pid: int) -> tuple[object | None, str]:
     err, element = ax.ax_focused_element(pid, AX_TIMEOUT_S)
     if err == AX_ERROR_API_DISABLED:
         return None, "ax: no Accessibility permission"
@@ -113,7 +113,7 @@ def _focused(ax: AxApi, pid: int) -> tuple[object | None, str]:
 
 
 def ax_caret(ax: AxApi, pid: int, *, terminal: bool) -> CaretContext:
-    element, detail = _focused(ax, pid)
+    element, detail = focused_element(ax, pid)
     if element is None:
         return _none(detail)
     _, subrole = ax.ax_attribute(element, "AXSubrole", AX_TIMEOUT_S)

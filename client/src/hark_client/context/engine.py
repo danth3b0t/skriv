@@ -2,7 +2,10 @@
 
 Pipeline (each stage only starts when its input is known):
 
-    focus (app, title, selection) -> terminal (cwd, agent process) -> repo || agent session
+    focus (app, title, selection) -> screen text (tmux pane, focused field)
+                                  || terminal (cwd, agent) -> repo || agent session || vocab
+
+Ranking: :mod:`hark_client.context.rank` (at most ``MAX_TERMS`` terms, with provenance).
 
 Every provider runs in a worker thread with its own timeout, clipped to the overall
 deadline. A provider that misses its deadline is reported in ``errors`` and keeps running in
@@ -26,6 +29,8 @@ from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
 from hark_client.context.rank import MAX_TERMS, Candidate, Origin, file_candidates, rank
 from hark_client.context.repo import RepoInfo, repo_candidates, repo_info
+from hark_client.context.screen import ScreenText, denied, screen_text
+from hark_client.context.screen import candidates as screen_candidates
 from hark_client.context.terminal import TerminalState, resolve
 from hark_client.context.types import ContextSnapshot, FocusInfo, TermKind
 
@@ -38,6 +43,7 @@ PROVIDER_TIMEOUT_S: dict[str, float] = {
     "repo": 0.5,
     "agent": 0.3,
     "vocab": 0.2,
+    "screen": 0.15,
 }
 MAX_SELECTION_CHARS = 2000
 
@@ -50,6 +56,7 @@ class Diagnostics:
     session: AgentSession | None = None
     repo: RepoInfo | None = None
     learned: list[Candidate] = field(default_factory=list[Candidate])  # persistent vocabulary
+    screen: ScreenText | None = None
     stage_ms: dict[str, float] = field(default_factory=dict[str, float])
 
 
@@ -91,6 +98,7 @@ def collect_detailed(
         focus_res = run.result(run.start("focus", get_focus))
         focus = focus_res.focus if focus_res else FocusInfo()
         term_pid = focus.pid
+        screen_job = run.start("screen", lambda: screen_text(focus)) if focus.pid else None
         if focus.is_terminal and term_pid is not None:
             diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
         # HARK_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
@@ -104,6 +112,7 @@ def collect_detailed(
             diag.repo = run.result(repo_job)
             diag.session = run.result(agent_job)
             diag.learned = run.result(vocab_job) or []
+        diag.screen = run.result(screen_job) if screen_job else None
         snapshot = _snapshot(focus_res, diag, cwd, max_terms)
     except Exception as exc:  # noqa: BLE001 - collect() must never raise
         run.errors.append(f"collect: {type(exc).__name__}: {exc}")
@@ -157,11 +166,15 @@ def _snapshot(
 ) -> ContextSnapshot:
     focus = focus_res.focus if focus_res else FocusInfo()
     selection = (
-        focus_res.selection[:MAX_SELECTION_CHARS] if focus_res and focus_res.selection else None
+        focus_res.selection[:MAX_SELECTION_CHARS]
+        if focus_res and focus_res.selection and not denied(focus.app_id)
+        else None
     )
     cands: list[Candidate] = []
     if selection:
         cands.extend(text_candidates(selection, Origin.SELECTION))
+    if diag.screen is not None:
+        cands.extend(screen_candidates(diag.screen))
     session = diag.session if diag.session and diag.session.confidence >= CONFIDENT else None
     if session:
         cands.extend(session_candidates(session))

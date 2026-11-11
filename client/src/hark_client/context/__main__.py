@@ -117,6 +117,15 @@ def main(argv: list[str] | None = None) -> int:
                 "recent_files": list(repo.recent_files[:20]),
                 "identifiers": list(repo.identifiers[:40]),
             },
+            "screen": None
+            if diag.screen is None
+            else {
+                "origin": diag.screen.origin.value,
+                "source": diag.screen.source,
+                "detail": diag.screen.detail,
+                "chunks": len(diag.screen.chunks),
+            },
+            "learned_candidates": len(diag.learned),
             "stage_ms": diag.stage_ms,
         }
     if args.canonicalize is not None:

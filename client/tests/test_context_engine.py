@@ -6,12 +6,13 @@ from typing import cast
 
 import pytest
 
-from hark_client.context import TermSource, engine, vocab
+from hark_client.context import TermSource, engine, screen, vocab
 from hark_client.context.__main__ import main
 from hark_client.context.agents import AgentSession, Group
 from hark_client.context.focus import FocusResult
 from hark_client.context.rank import Candidate, Origin
 from hark_client.context.repo import RepoInfo
+from hark_client.context.screen import ScreenText
 from hark_client.context.terminal import TerminalState
 from hark_client.context.types import Evidence, FocusInfo, TermKind
 
@@ -35,6 +36,13 @@ def fake_repo(cwd: str) -> RepoInfo:
     return RepoInfo(cwd, "main", "abc", ("src/repoTerm.py",), ("src/recentTerm.py",), ())
 
 
+PANE = ScreenText(Origin.TERMINAL_TEXT, (("$ run `paneTerm`", 1.0),), "tmux")
+
+
+def fake_screen(focus: FocusInfo) -> ScreenText:
+    return PANE
+
+
 def fake_vocab(repo: str) -> list[Candidate]:
     assert repo == "/w"
     return [Candidate("learnedTerm", TermKind.IDENTIFIER, Origin.PERSIST_REPO, 0.9)]
@@ -51,13 +59,14 @@ def providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(engine, "find_session", sessions(0.95))
     monkeypatch.setattr(engine, "repo_info", fake_repo)
     monkeypatch.setattr(engine, "vocab_candidates", fake_vocab)
+    monkeypatch.setattr(engine, "screen_text", fake_screen)
 
 
 @pytest.mark.usefixtures("providers")
 def test_terms_are_ranked_by_source():
     snap = engine.collect(1.0)
     order = [t.canonical for t in snap.terms if t.canonical.endswith("Term")]
-    assert order == ["selTerm", "agentTerm", "learnedTerm", "recentTerm", "repoTerm"]
+    assert order == ["selTerm", "paneTerm", "agentTerm", "learnedTerm", "recentTerm", "repoTerm"]
     assert (snap.cwd, snap.repo_root, snap.agent, snap.errors) == ("/w", "/w", "pi", ())
 
 
@@ -88,6 +97,16 @@ def test_unconfident_session_is_not_used(monkeypatch: pytest.MonkeyPatch):
     assert snap.agent is None
     assert snap.agent_last_reply is None
     assert all(t.source is not TermSource.AGENT_SESSION for t in snap.terms)
+
+
+@pytest.mark.usefixtures("providers")
+def test_password_manager_selection_is_not_used(monkeypatch: pytest.MonkeyPatch):
+    vault = FocusInfo(app="1Password", app_id="com.1password.1password", pid=7)
+    monkeypatch.setattr(engine, "get_focus", lambda: FocusResult(vault, "`secretName`"))
+    monkeypatch.setattr(engine, "screen_text", screen.screen_text)
+    snap = engine.collect(1.0)
+    assert snap.selection is None
+    assert not any(t.canonical == "secretName" for t in snap.terms)
 
 
 @pytest.mark.usefixtures("providers")
