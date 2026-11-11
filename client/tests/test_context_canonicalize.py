@@ -1,6 +1,6 @@
 from hark_client.context import Term, TermKind, TermSource, WordInfo, canonicalize
 from hark_client.context.aliases import extract_terms
-from hark_client.context.rank import Candidate, ranked
+from hark_client.context.rank import Candidate, Origin, rank
 
 
 def term(
@@ -89,10 +89,9 @@ def test_names_from_an_agent_reply_fix_the_real_misrecognitions():
         "Compare Qwen3-ASR with Parakeet and the NeMo GPU-PB backend. "
         "Run `hark doctor` and reopen Terminal.app."
     )
-    terms = ranked(
-        (Candidate(t, k, TermSource.AGENT_SESSION) for t, k in extract_terms(reply, prose=True)),
-        60,
-    )
+    terms = rank(
+        (Candidate(t, k, Origin.ASSISTANT) for t, k in extract_terms(reply, prose=True)), 60
+    ).terms
     heard = "Run HarkDoctor, reopen terminal dot app; Qwen three ASR, the Nemo GPU PB parakeet."
     assert canonicalize(heard, [], terms)[0] == (
         "Run hark doctor, reopen Terminal.app; Qwen3-ASR, the NeMo GPU-PB parakeet."

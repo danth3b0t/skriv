@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from hark_client.context import repo
-from hark_client.context.rank import Candidate
-from hark_client.context.types import TermKind, TermSource
+from hark_client.context.rank import Candidate, Origin
+from hark_client.context.types import TermKind
 
 
 def git(root: Path, *args: str) -> None:
@@ -46,8 +46,8 @@ def test_repo_candidates_cover_recent_and_repo_wide_files(work: Path):
     info = repo.repo_info(str(work))
     assert info is not None
     cands = repo.repo_candidates(info)
-    assert Candidate("newThing.ts", TermKind.PATH, TermSource.REPO_RECENT, 1.0) in cands
-    assert any(c.canonical == "README.md" and c.source is TermSource.REPO for c in cands)
+    assert Candidate("newThing.ts", TermKind.PATH, Origin.REPO_RECENT, 1.0) in cands
+    assert any(c.canonical == "README.md" and c.origin is Origin.REPO for c in cands)
 
 
 def test_cache_is_reused_until_head_changes(work: Path):

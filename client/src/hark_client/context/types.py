@@ -21,7 +21,7 @@ class TermKind(StrEnum):
 
 
 class TermSource(StrEnum):
-    VOCABULARY = "vocabulary"  # user's static vocabulary file
+    VOCABULARY = "vocabulary"  # user's vocabulary (learned from earlier agent sessions)
     LEARNED = "learned"  # aliases learned from corrections
     SELECTION = "selection"
     FOCUSED_TEXT = "focused_text"
@@ -41,6 +41,26 @@ class Term:
     weight: float  # relevance in [0, 1]; the server maps it to its own boost scale
     kind: TermKind
     source: TermSource
+
+
+@dataclass(frozen=True, slots=True)
+class Evidence:
+    """One source supporting a term (provenance for history and evaluation)."""
+
+    origin: str  # rank.Origin value: "assistant", "user", "persist_repo", "terminal_text", ...
+    age: int  # prompt/response group age (0 = newest) for agent-session origins, else 0
+    value: float  # origin weight x recency decay x source-internal score
+
+
+@dataclass(frozen=True, slots=True)
+class TermTrace:
+    """Why a term is on the list: its ranking score and strongest evidence."""
+
+    canonical: str
+    score: float  # ranking score (unbounded); Term.weight is derived from it
+    weight: float
+    evidence: tuple[Evidence, ...]  # strongest first
+    competitors: tuple[str, ...] = ()  # near-duplicate spellings dropped for this one
 
 
 @dataclass(frozen=True, slots=True)
@@ -65,6 +85,7 @@ class ContextSnapshot:
     terms: tuple[Term, ...] = ()  # ranked, best first, already truncated
     collected_ms: float = 0.0
     errors: tuple[str, ...] = ()  # provider failures/timeouts (non-fatal)
+    provenance: tuple[TermTrace, ...] = ()  # one per term, same order
 
 
 @dataclass(frozen=True, slots=True)

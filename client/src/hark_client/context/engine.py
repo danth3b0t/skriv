@@ -22,10 +22,10 @@ from typing import TYPE_CHECKING
 from hark_client.context.agents import CONFIDENT, AgentSession, find_session
 from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
-from hark_client.context.rank import Candidate, file_candidates, ranked
+from hark_client.context.rank import MAX_TERMS, Candidate, Origin, file_candidates, rank
 from hark_client.context.repo import RepoInfo, repo_candidates, repo_info
 from hark_client.context.terminal import TerminalState, resolve
-from hark_client.context.types import ContextSnapshot, FocusInfo, TermSource
+from hark_client.context.types import ContextSnapshot, FocusInfo, TermKind
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -75,7 +75,9 @@ class _Runner:
         return None
 
 
-def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSnapshot, Diagnostics]:
+def collect_detailed(
+    deadline_s: float, max_terms: int = MAX_TERMS
+) -> tuple[ContextSnapshot, Diagnostics]:
     t0 = time.monotonic()
     diag = Diagnostics()
     pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hark-context")
@@ -108,6 +110,29 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
     return replace(snapshot, collected_ms=elapsed_ms, errors=tuple(errors)), diag
 
 
+def session_candidates(session: AgentSession) -> list[Candidate]:
+    """Terms of each prompt/response group at its age: the user's prompt, the response and
+    the tool-call paths (full path, file name and stem)."""
+    out: list[Candidate] = []
+    for g in session.groups:
+        for text, origin in ((g.user, Origin.USER), (g.assistant, Origin.ASSISTANT)):
+            out.extend(
+                Candidate(t, k, origin, age=g.age)
+                for t, k in extract_terms(scrub(text), prose=True)
+            )
+        for path in g.files:
+            if scrub(path) != path:
+                continue
+            if "/" in path:
+                out.append(Candidate(path, TermKind.PATH, Origin.TOOLS, age=g.age))
+            out.extend(file_candidates(path, Origin.TOOLS, 1.0, g.age))
+    return out
+
+
+def text_candidates(text: str, origin: Origin, score: float = 1.0) -> list[Candidate]:
+    return [Candidate(t, k, origin, score) for t, k in extract_terms(scrub(text), prose=True)]
+
+
 def _snapshot(
     focus_res: FocusResult | None, diag: Diagnostics, cwd: str | None, max_terms: int
 ) -> ContextSnapshot:
@@ -117,41 +142,27 @@ def _snapshot(
     )
     cands: list[Candidate] = []
     if selection:
-        cands.extend(
-            Candidate(t, k, TermSource.SELECTION) for t, k in extract_terms(selection, prose=True)
-        )
+        cands.extend(text_candidates(selection, Origin.SELECTION))
     session = diag.session if diag.session and diag.session.confidence >= CONFIDENT else None
-    reply = scrub(session.last_reply) if session else None
     if session:
-        # recency: newest group 1.0, then linearly down
-        for group in session.groups:
-            score = 1.0 - group.age / len(session.groups)
-            for text in (group.assistant, group.user):
-                cands.extend(
-                    Candidate(t, k, TermSource.AGENT_SESSION, score)
-                    for t, k in extract_terms(scrub(text), prose=True)
-                )
-        n = max(1, len(session.files))
-        for i, path in enumerate(session.files[:30]):
-            cands.extend(file_candidates(path, TermSource.AGENT_SESSION, 1.0 - i / n))
+        cands.extend(session_candidates(session))
     if focus.title:
-        cands.extend(
-            Candidate(t, k, TermSource.WINDOW_TITLE)
-            for t, k in extract_terms(focus.title, prose=True)
-        )
+        cands.extend(text_candidates(focus.title, Origin.WINDOW_TITLE))
     if diag.repo is not None:
         cands.extend(repo_candidates(diag.repo))
+    ranking = rank(cands, max_terms)
     return ContextSnapshot(
         focus=focus,
         cwd=cwd,
         repo_root=diag.repo.root if diag.repo else None,
         branch=diag.repo.branch if diag.repo else None,
         agent=session.agent if session else None,
-        agent_last_reply=reply,
+        agent_last_reply=scrub(session.last_reply) if session else None,
         selection=selection,
-        terms=ranked(cands, max_terms),
+        terms=ranking.terms,
+        provenance=ranking.trace,
     )
 
 
-def collect(deadline_s: float, max_terms: int = 60) -> ContextSnapshot:
+def collect(deadline_s: float, max_terms: int = MAX_TERMS) -> ContextSnapshot:
     return collect_detailed(deadline_s, max_terms)[0]

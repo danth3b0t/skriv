@@ -11,7 +11,7 @@ from hark_client.context.agents import AgentSession, Group
 from hark_client.context.focus import FocusResult
 from hark_client.context.repo import RepoInfo
 from hark_client.context.terminal import TerminalState
-from hark_client.context.types import FocusInfo
+from hark_client.context.types import Evidence, FocusInfo
 
 TERMINAL = FocusInfo(app="kitty", app_id="kitty", title="nvim", pid=4242, is_terminal=True)
 
@@ -54,19 +54,23 @@ def test_terms_are_ranked_by_source():
 
 
 @pytest.mark.usefixtures("providers")
-def test_older_agent_turns_contribute_with_lower_weight(monkeypatch: pytest.MonkeyPatch):
+def test_session_terms_rank_by_origin_and_age_with_provenance(monkeypatch: pytest.MonkeyPatch):
     groups = (
         Group(0, "Use `newTerm`, key sk-abcdefghijklmnopqrstuv.", "what about `userTerm`?"),
-        Group(1, "Compare `oldTerm` and Parakeet.", ""),
+        Group(1, "Compare `oldTerm`.", "", ("src/toolTerm.py",)),
     )
     monkeypatch.setattr(
         engine, "find_session", found(AgentSession("pi", "/s", "/w", 0.0, groups, 0.95))
     )
     snap = engine.collect(1.0)
-    weight = {t.canonical: t.weight for t in snap.terms if t.source is TermSource.AGENT_SESSION}
-    assert weight["newTerm"] == weight["userTerm"] > weight["oldTerm"] == weight["Parakeet"]
+    order = [t.canonical for t in snap.terms if t.source is TermSource.AGENT_SESSION]
+    assert order[:3] == ["userTerm", "newTerm", "oldTerm"]
+    assert {"src/toolTerm.py", "toolTerm.py", "toolTerm"} <= set(order)
     assert snap.agent_last_reply == "Use `newTerm`, key [redacted]."
     assert not any("sk-" in t.canonical for t in snap.terms)
+    trace = {t.canonical: t for t in snap.provenance}
+    assert [t.canonical for t in snap.provenance] == [t.canonical for t in snap.terms]
+    assert trace["oldTerm"].evidence == (Evidence("assistant", 1, 0.765),)  # 0.85 * 0.9
 
 
 @pytest.mark.usefixtures("providers")
