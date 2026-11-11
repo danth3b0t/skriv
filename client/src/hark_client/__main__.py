@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from pathlib import Path
@@ -28,6 +29,7 @@ class Args(argparse.Namespace):
     wav: str
     dry_run: bool
     profile: str | None
+    cwd: str | None
     realtime: bool
     no_history: bool
 
@@ -53,6 +55,9 @@ def parse_args(argv: list[str] | None = None) -> Args:
         help="stream at real-time pace (default: as fast as possible)",
     )
     o.add_argument("--no-history", action="store_true", help="do not append to history")
+    o.add_argument(
+        "--cwd", help="pretend the focused terminal is in this directory (repo/agent context)"
+    )
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
     return p.parse_args(argv, namespace=Args())
 
@@ -79,6 +84,8 @@ def cmd_once(args: Args, services: Services) -> int:
 
     if args.profile:
         services.cfg.profile(args.profile)  # raises ConfigError on unknown names
+    if args.cwd:
+        os.environ["HARK_CONTEXT_CWD"] = str(Path(args.cwd).resolve())
     pcm = read_wav(Path(args.wav))
     print(f"{'wav':<9} {args.wav}: {len(pcm) // 2 / SAMPLE_RATE:.2f} s at 16 kHz mono")
     utt = Utterance(services, profile=args.profile)

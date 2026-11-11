@@ -12,6 +12,7 @@ next dictation. Nothing here raises.
 
 from __future__ import annotations
 
+import os
 import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -98,7 +99,8 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
         term_pid = focus.pid
         if focus.is_terminal and term_pid is not None:
             diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
-        cwd = diag.terminal.cwd if diag.terminal else None
+        # HARK_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
+        cwd = os.environ.get("HARK_CONTEXT_CWD") or (diag.terminal.cwd if diag.terminal else None)
         if cwd is not None:
             agent_hint = diag.terminal.agent if diag.terminal else None
             started = diag.terminal.agent_started if diag.terminal else None
@@ -106,7 +108,7 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
             agent_job = run.start("agent", lambda: find_session(cwd, agent_hint, started))
             diag.repo = run.result(repo_job)
             diag.session = run.result(agent_job)
-        snapshot = _snapshot(focus_res, diag, max_terms)
+        snapshot = _snapshot(focus_res, diag, cwd, max_terms)
     except Exception as exc:  # noqa: BLE001 - collect() must never raise
         run.errors.append(f"collect: {type(exc).__name__}: {exc}")
         snapshot = ContextSnapshot()
@@ -118,7 +120,9 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
     return replace(snapshot, collected_ms=elapsed_ms, errors=tuple(errors)), diag
 
 
-def _snapshot(focus_res: FocusResult | None, diag: Diagnostics, max_terms: int) -> ContextSnapshot:
+def _snapshot(
+    focus_res: FocusResult | None, diag: Diagnostics, cwd: str | None, max_terms: int
+) -> ContextSnapshot:
     focus = focus_res.focus if focus_res else FocusInfo()
     selection = (
         focus_res.selection[:MAX_SELECTION_CHARS] if focus_res and focus_res.selection else None
@@ -146,7 +150,7 @@ def _snapshot(focus_res: FocusResult | None, diag: Diagnostics, max_terms: int) 
         cands.extend(repo_candidates(diag.repo))
     return ContextSnapshot(
         focus=focus,
-        cwd=diag.terminal.cwd if diag.terminal else None,
+        cwd=cwd,
         repo_root=diag.repo.root if diag.repo else None,
         branch=diag.repo.branch if diag.repo else None,
         agent=session.agent if session else None,
