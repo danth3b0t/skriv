@@ -42,7 +42,6 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("hark")
 
-FOCUS_RECHECK_DEADLINE_S = 0.1
 _NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
 
 
@@ -108,6 +107,11 @@ class Result:
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
     # Looked up at call time so tests can substitute the context engine.
     return context.collect(deadline_s, max_terms)
+
+
+def _focus_token() -> str:
+    # Looked up at call time so tests can substitute the context engine.
+    return context.focus_token()
 
 
 def _ms(since: float) -> float:
@@ -346,7 +350,7 @@ class Utterance:
                 detail="focus changed; text copied" if ok else "focus changed; copy failed",
             )
             svc.feedback.notify(
-                f"Focus moved to {changed_to or 'another window'}; the text is in the clipboard"
+                "Focus moved to another window; the text is in the clipboard"
                 if ok else "Focus changed and the clipboard write failed; see history"
             )  # fmt: skip
         else:
@@ -394,16 +398,15 @@ class Utterance:
         )
 
     def _focus_changed(self, before: FocusInfo) -> str | None:
-        """None if focus is unchanged or cannot be verified, else the new app's name."""
+        """None if focus is unchanged or cannot be verified, else "" (another window).
+
+        Uses the cheap ``focus_token()`` (~1 ms) instead of a full context collect.
+        """
         if not (self.svc.cfg.paste.check_focus and before.window_id):
             return None
-        try:
-            now = _collect(FOCUS_RECHECK_DEADLINE_S, 0).focus
-        except Exception:
-            log.exception("focus re-check failed; pasting anyway")
-            return None
-        if now.window_id and now.window_id != before.window_id:
-            return now.app or now.app_id
+        now = _focus_token()
+        if now and now != before.window_id:
+            return ""
         return None
 
     # -- history -------------------------------------------------------------------

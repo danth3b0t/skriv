@@ -155,12 +155,18 @@ class FakeContext:
             time.sleep(self.delay_s)
         return self.snapshots[min(len(self.calls), len(self.snapshots)) - 1]
 
+    def focus_token(self) -> str:
+        """The next snapshot's window id: what focus looks like at the pre-paste check."""
+        return self.snapshots[min(len(self.calls) + 1, len(self.snapshots)) - 1].focus.window_id
+
 
 @pytest.fixture
 def fake_context(monkeypatch: pytest.MonkeyPatch) -> FakeContext:
     fake = FakeContext()
     collect: Callable[[float, int], ContextSnapshot] = fake.collect
     monkeypatch.setattr(context, "collect", collect)
+    token: Callable[[], str] = fake.focus_token
+    monkeypatch.setattr(context, "focus_token", token)
     return fake
 
 
