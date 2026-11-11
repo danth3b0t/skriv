@@ -7,6 +7,9 @@ dependencies = [
     "hark-proto",
     "grpcio>=1.85",
     "protobuf>=6.31",
+    "psutil>=7",
+    "pyobjc-framework-cocoa>=11 ; sys_platform == 'darwin'",
+    "pyobjc-framework-applicationservices>=11 ; sys_platform == 'darwin'",
 ]
 
 [project.scripts]
