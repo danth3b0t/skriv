@@ -128,6 +128,11 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
         last = cast("dict[str, object]", done["last"])
         assert (last["status"], last["paste_verdict"]) == ("pasted", "unknown")
         assert "text" not in json.dumps(last)  # never the dictated text
+        again = _json(sock_path, {"version": 1, "command": "paste-last"})
+        assert (again["ok"], again["result"]) == (
+            True,
+            "pasted 15 chars",
+        )  # "please run cube": the count only
 
         for request, code in [
             (b"{not json", "bad_json"),

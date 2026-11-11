@@ -52,7 +52,11 @@ def parse_args(argv: list[str] | None = None) -> Args:
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
-    c.add_argument("action", choices=["start", "stop", "toggle", "cancel", "status", "ping"])
+    c.add_argument(
+        "action",
+        choices=["start", "stop", "toggle", "cancel", "status", "ping", "paste-last"],
+        help="paste-last: paste the last dictated text again into the focused window",
+    )
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
     )

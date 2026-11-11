@@ -2,7 +2,8 @@
 
 Two protocols on the same socket, one request line and one reply line per connection:
 
-- Text (key binds): ``start``, ``stop``, ``toggle``, ``cancel``, ``status``, ``ping`` ->
+- Text (key binds): ``start``, ``stop``, ``toggle``, ``cancel``, ``status``, ``ping``,
+  ``paste-last`` ->
   ``ok[ <detail>]`` or ``error <message>``. Example: ``echo toggle | nc -U "$sock"``.
 - JSON v1 (UIs, scripts), any line starting with ``{``: ``{"version": 1, "command": "status"}`` ->
   ``{"version": 1, "ok": true, "command": "status", ...}``; errors are
@@ -32,7 +33,7 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("hark.ctl")
 
-COMMANDS = ("start", "stop", "toggle", "cancel", "status", "ping")
+COMMANDS = ("start", "stop", "toggle", "cancel", "status", "ping", "paste-last")
 MAX_LINE = 512
 PROTOCOL_VERSION = 1
 

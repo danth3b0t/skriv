@@ -138,6 +138,23 @@ def test_cancelled_too_short_and_silent_dictations_paste_nothing(
     ]
 
 
+def test_paste_last_reinserts_the_last_text_guarded_for_the_focused_window(
+    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
+):
+    c, injector = controller
+    assert c.handle("paste-last") == "error nothing to paste yet"
+    dictate(c)  # into kitty, a terminal
+    assert c.handle("paste-last") == "ok pasted 10 chars"
+    assert injector.pasted[-1] == ("please run", True)
+    c.last_text = "two\nlines"  # e.g. a prose result, now going into the terminal
+    assert c.handle("paste-last") == "ok pasted 9 chars"
+    assert injector.pasted[-1] == ("two lines", True)
+    c.last_text = ""  # a restarted daemon reads the history
+    fake_context.snapshots = [snapshot("com.apple.Notes", "w2")]
+    c.handle("paste-last")
+    assert injector.pasted[-1] == ("please run", False)
+
+
 def tone(ms: int, dbfs: float) -> npt.NDArray[np.float64]:
     t = np.arange(ms * 16, dtype=np.float64) / 16000
     return np.sin(2 * np.pi * 220 * t) * (math.sqrt(2) * 10 ** (dbfs / 20))

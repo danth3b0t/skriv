@@ -11,7 +11,7 @@ import time
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import context, retry
+from hark_client import context, guardrails, history, retry
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
 from hark_client.config import expand
@@ -51,6 +51,7 @@ class Controller:
         # hark's pastes + the keys typed since: the caret when the app does not expose it
         self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
+        self.last_text = ""  # newest pasted/copied text (`hark ctl paste-last`)
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -103,6 +104,8 @@ class Controller:
                     min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow
                 )
                 self.last_result = (time.time(), res)
+                if res.final_text and res.status != "empty":
+                    self.last_text = res.final_text
                 self._keep(utt, res)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
@@ -151,6 +154,25 @@ class Controller:
         except OSError as e:
             log.warning("could not keep the recording for `hark retry`: %s", e)
 
+    def paste_last(self) -> str:
+        """Re-insert the newest dictated text into the focused window (guardrails re-applied
+        for it: a prose result pasted into a terminal loses its newlines)."""
+        text = self.last_text
+        if not text and self.svc.cfg.history.enabled:
+            text = history.last_text(expand(self.svc.cfg.history.dir))
+        if not text:
+            return "error nothing to paste yet"
+        cfg = self.svc.cfg
+        focus = context.collect(cfg.context.deadline_ms / 1000, 0).focus
+        terminal = cfg.profile(cfg.profile_for(focus)).terminal
+        text, _ = guardrails.apply(text, terminal=terminal)
+        self.shadow.pasted(focus.window_id, text)
+        res = self.svc.injector.paste(text, terminal=terminal, target=focus.window_id)
+        if not res.ok:
+            self.shadow.forget()
+            return f"error paste failed: {res.detail}"
+        return f"ok pasted {len(text)} chars"
+
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current and
         feeds the learner's terminal key replay (one listener for both)."""
@@ -197,6 +219,7 @@ class Controller:
             "cancel": self.cancel,
             "status": self.status,
             "ping": lambda: "ok pong",
+            "paste-last": self.paste_last,
         }
         action = actions.get(command)
         return action() if action else f"error unknown command {command!r}"
