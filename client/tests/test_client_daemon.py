@@ -13,7 +13,7 @@ import grpc
 import numpy as np
 import pytest
 
-from hark_client import asr
+from hark_client import asr, daemon
 from hark_client.audio import speech_ms
 from hark_client.config import Config, FeedbackConfig
 from hark_client.daemon import Controller
@@ -85,7 +85,7 @@ def test_toggle_streams_preroll_and_speech_then_pastes(
     assert injector.pasted == [("please run kubectl get", True)]
 
 
-def test_dictations_into_the_same_window_are_joined_until_enter(
+def test_dictations_into_the_same_window_are_joined_until_the_user_types(
     controller: tuple[Controller, DryRunInjector],
 ):
     c, injector = controller
@@ -98,9 +98,27 @@ def test_dictations_into_the_same_window_are_joined_until_enter(
 
     dictate()
     dictate()
-    c.typed_enter()
+    time.sleep(daemon.PASTE_ECHO_S)  # past the echo of hark's own paste chord
+    c.user_input()  # e.g. Enter, Backspace or a click into an empty field
     dictate()
     assert [text for text, _ in injector.pasted] == ["please run", " please run", "please run"]
+
+
+def test_hark_own_paste_keystroke_does_not_reset_join(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+
+    def dictate() -> None:
+        c.handle("start")
+        c.on_pcm(pcm(0.4))
+        c.handle("stop")
+        wait_idle(c)
+
+    dictate()
+    c.user_input()  # the listener sees hark's synthetic Cmd+V right after the paste
+    dictate()
+    assert [text for text, _ in injector.pasted] == ["please run", " please run"]
 
 
 @pytest.mark.parametrize(

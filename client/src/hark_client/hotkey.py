@@ -14,12 +14,17 @@ from __future__ import annotations
 
 import logging
 import threading
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 log = logging.getLogger("hark.hotkey")
+
+
+class _Listener(Protocol):
+    def start(self) -> None: ...
+    def stop(self) -> None: ...
 
 
 class PushToTalk:
@@ -29,9 +34,9 @@ class PushToTalk:
         on_down: Callable[[], object],
         on_up: Callable[[], object],
         on_cancel: Callable[[], object],
-        on_enter: Callable[[], object] | None = None,
+        on_input: Callable[[], object] | None = None,
     ) -> None:
-        """on_enter: Return/Enter pressed (any time)."""
+        """on_input: any other key press or mouse click (any time)."""
         from pynput import keyboard  # noqa: PLC0415 - optional, platform-specific
 
         self._keyboard = keyboard
@@ -43,14 +48,15 @@ class PushToTalk:
                 f"unknown hotkey {key!r}; use a pynput Key name like alt_r, cmd_r, f13"
             )
         self.on_down, self.on_up, self.on_cancel = on_down, on_up, on_cancel
-        self.on_enter = on_enter
-        self._enter_keys = {
-            keyboard.Key.enter,
-            getattr(keyboard.Key, "kp_enter", keyboard.Key.enter),
-        }
+        self.on_input = on_input
         self._held = False
         self._lock = threading.Lock()
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
+        self._mouse: _Listener | None = None
+        if on_input is not None:
+            from pynput import mouse  # noqa: PLC0415 - optional, platform-specific
+
+            self._mouse = mouse.Listener(on_click=self._click)
 
     def _press(self, key: object) -> None:
         with self._lock:
@@ -62,11 +68,15 @@ class PushToTalk:
             elif key == self._keyboard.Key.esc and self._held:
                 self._held = False
                 action = self.on_cancel
-            elif key in self._enter_keys and self.on_enter is not None:
-                action = self.on_enter
+            elif self.on_input is not None and not self._held:
+                action = self.on_input
             else:
                 return
         action()
+
+    def _click(self, _x: int, _y: int, _button: object, pressed: bool) -> None:  # noqa: FBT001 - pynput callback signature
+        if pressed and self.on_input is not None:
+            self.on_input()
 
     def _release(self, key: object) -> None:
         with self._lock:
@@ -77,7 +87,11 @@ class PushToTalk:
 
     def start(self) -> None:
         self._listener.start()
+        if self._mouse is not None:
+            self._mouse.start()
         log.info("push-to-talk: hold %s (Esc cancels)", self.target)
 
     def stop(self) -> None:
         self._listener.stop()
+        if self._mouse is not None:
+            self._mouse.stop()

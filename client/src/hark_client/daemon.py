@@ -7,6 +7,7 @@ import os
 import signal
 import sys
 import threading
+import time
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
@@ -23,6 +24,9 @@ if TYPE_CHECKING:
     from hark_client.pipeline import Services
 
 log = logging.getLogger("hark")
+
+# Key events this soon after hark pasted are its own synthetic paste chord.
+PASTE_ECHO_S = 0.5
 
 
 class Controller:
@@ -116,8 +120,14 @@ class Controller:
         log.info("cancelled")
         return "ok cancelled"
 
-    def typed_enter(self) -> None:
-        """The user pressed Enter (hark never does): the next dictation starts afresh."""
+    def user_input(self) -> None:
+        """The user typed a key or clicked: the caret/field may have changed (Enter, Backspace,
+        Ctrl+U, a click into an empty field...), so the next dictation must not be joined to
+        the previous paste with a space. Events within PASTE_ECHO_S of hark's own paste are
+        its synthetic Cmd+V/Ctrl+V and are ignored."""
+        prev = self.last_paste
+        if prev is not None and time.monotonic() - prev.at < PASTE_ECHO_S:
+            return
         self.last_paste = None
 
     def status(self) -> str:
@@ -162,7 +172,7 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
                 "no Input Monitoring permission: the hotkey will not fire (see `hark doctor`)"
             )
     return PushToTalk(
-        cfg.key, controller.start, controller.stop, controller.cancel, controller.typed_enter
+        cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input
     )
 
 
