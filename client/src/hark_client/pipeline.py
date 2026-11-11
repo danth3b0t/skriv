@@ -41,6 +41,37 @@ if TYPE_CHECKING:
 log = logging.getLogger("hark")
 
 FOCUS_RECHECK_DEADLINE_S = 0.1
+_NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
+
+
+@dataclass(frozen=True)
+class LastPaste:
+    """The daemon's previous paste: target (focus_target), time.monotonic(), last character."""
+
+    target: tuple[str, str]
+    at: float
+    last_char: str
+
+
+def focus_target(focus: FocusInfo) -> tuple[str, str] | None:
+    """(app, window) identity of a paste target; None if unknown."""
+    app = focus.app_id or focus.app
+    return (app, focus.window_id) if app or focus.window_id else None
+
+
+def join_prefix(
+    prev: LastPaste | None, target: tuple[str, str] | None, text: str, now: float, window_s: float
+) -> str:
+    """ " " if `text` continues the previous paste: same target, within `window_s`, the
+    previous text ended with a non-space and `text` does not start with whitespace or
+    closing punctuation."""
+    if prev is None or target is None or prev.target != target or now - prev.at > window_s:
+        return ""
+    if not prev.last_char or prev.last_char.isspace():
+        return ""
+    if not text or text[0].isspace() or text[0] in _NO_SPACE_BEFORE:
+        return ""
+    return " "
 
 
 @dataclass
@@ -67,6 +98,8 @@ class Result:
     paste: PasteResult | None = None
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
+    joined: bool = False  # pasted with a leading space (join_prefix)
+    pasted_as: LastPaste | None = None  # set when the paste went through
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -177,8 +210,10 @@ class Utterance:
         min_ms: int = 0,
         reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
         keyup_unix_us: int | None = None,
+        previous: LastPaste | None = None,
     ) -> Result:
-        """keyup_unix_us: when the key was released, if earlier than this call."""
+        """keyup_unix_us: when the key was released, if earlier than this call.
+        previous: the last paste, to join this one to it with a space."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
         if held_ms < min_ms:
@@ -191,7 +226,7 @@ class Utterance:
         self.timings["held_ms"] = held_ms
         self.timings["audio_ms"] = self.audio_ms
         try:
-            result = self._finish(t_up)
+            result = self._finish(t_up, previous)
         except AsrError as e:
             result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
             self._report("asr", f"FAILED: {e}")
@@ -200,7 +235,7 @@ class Utterance:
         self._record(result)
         return result
 
-    def _finish(self, t_up: float) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
+    def _finish(self, t_up: float, previous: LastPaste | None) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
         final = self.stream.wait_final(cfg.server.final_timeout_ms / 1000)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
@@ -295,10 +330,19 @@ class Utterance:
                 if ok else "Focus changed and the clipboard write failed; see history"
             )  # fmt: skip
         else:
-            res.paste = svc.injector.paste(res.final_text, terminal=prof.terminal)
+            target, now = focus_target(snap.focus), time.monotonic()
+            prefix = (
+                join_prefix(previous, target, res.final_text, now, cfg.paste.join_window_ms / 1000)
+                if cfg.paste.join_space
+                else ""
+            )
+            res.joined = bool(prefix)
+            res.paste = svc.injector.paste(prefix + res.final_text, terminal=prof.terminal)
             res.status = "pasted" if res.paste.ok else "paste_failed"
             if not res.paste.ok:
                 svc.feedback.notify(f"Paste failed: {res.paste.detail}")
+            elif target is not None:
+                res.pasted_as = LastPaste(target, now, res.final_text[-1])
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
         self._report(
@@ -360,6 +404,7 @@ class Utterance:
             "raw_text": res.raw_text,
             "canonical_text": res.canonical_text,
             "final_text": res.final_text,
+            "joined": res.joined,
             "replacements": res.replacements,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,

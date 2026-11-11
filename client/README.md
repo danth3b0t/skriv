@@ -109,6 +109,8 @@ listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
 restore_clipboard = true
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
+join_space = true             # same window within join_window_ms, previous paste ended with a non-space
+join_window_ms = 60000        #   => leading space; a real Enter press (hotkey listener) resets it
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)

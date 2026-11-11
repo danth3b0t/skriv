@@ -29,7 +29,9 @@ class PushToTalk:
         on_down: Callable[[], object],
         on_up: Callable[[], object],
         on_cancel: Callable[[], object],
+        on_enter: Callable[[], object] | None = None,
     ) -> None:
+        """on_enter: Return/Enter pressed (any time)."""
         from pynput import keyboard  # noqa: PLC0415 - optional, platform-specific
 
         self._keyboard = keyboard
@@ -41,6 +43,11 @@ class PushToTalk:
                 f"unknown hotkey {key!r}; use a pynput Key name like alt_r, cmd_r, f13"
             )
         self.on_down, self.on_up, self.on_cancel = on_down, on_up, on_cancel
+        self.on_enter = on_enter
+        self._enter_keys = {
+            keyboard.Key.enter,
+            getattr(keyboard.Key, "kp_enter", keyboard.Key.enter),
+        }
         self._held = False
         self._lock = threading.Lock()
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
@@ -55,6 +62,8 @@ class PushToTalk:
             elif key == self._keyboard.Key.esc and self._held:
                 self._held = False
                 action = self.on_cancel
+            elif key in self._enter_keys and self.on_enter is not None:
+                action = self.on_enter
             else:
                 return
         action()

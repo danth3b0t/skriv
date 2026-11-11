@@ -84,6 +84,10 @@ class PasteConfig:
     restore_clipboard: bool = True
     restore_delay_ms: int = 250
     check_focus: bool = True
+    # A dictation pasted into the same window within join_window_ms of the previous
+    # one, which ended with a non-space character, gets a leading space.
+    join_space: bool = True
+    join_window_ms: int = 60_000
 
 
 @dataclass
@@ -231,6 +235,7 @@ def validate(cfg: Config) -> None:
         ("cleanup.deadline_ms", cfg.cleanup.deadline_ms),
         ("server.final_timeout_ms", cfg.server.final_timeout_ms),
         ("audio.preroll_ms", cfg.audio.preroll_ms),
+        ("paste.join_window_ms", cfg.paste.join_window_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")

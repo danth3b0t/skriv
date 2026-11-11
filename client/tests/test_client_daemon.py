@@ -16,7 +16,7 @@ from hark_client.config import Config, FeedbackConfig
 from hark_client.daemon import Controller
 from hark_client.feedback import Feedback
 from hark_client.inject import DryRunInjector
-from hark_client.pipeline import Services
+from hark_client.pipeline import LastPaste, Services, join_prefix
 
 from .conftest import snapshot, speech
 
@@ -68,6 +68,44 @@ def test_toggle_streams_preroll_and_speech_then_pastes(
     wait_idle(c)
     # 200 ms pre-roll + 800 ms = 5 mock words; 1.2 s would have produced 6.
     assert injector.pasted == [("please run kubectl get", True)]
+
+
+def test_dictations_into_the_same_window_are_joined_until_enter(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+
+    def dictate() -> None:
+        c.handle("start")
+        c.on_pcm(pcm(0.4))
+        c.handle("stop")
+        wait_idle(c)
+
+    dictate()
+    dictate()
+    c.typed_enter()
+    dictate()
+    assert [text for text, _ in injector.pasted] == ["please run", " please run", "please run"]
+
+
+@pytest.mark.parametrize(
+    ("prev", "target", "text", "now", "expected"),
+    [
+        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w1"), "Next", 60.0, " "),
+        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w1"), "Next", 60.1, ""),  # too late
+        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w2"), "Next", 1.0, ""),  # other window
+        (LastPaste(("kitty", "w1"), 0.0, "."), None, "Next", 1.0, ""),  # unknown target
+        (LastPaste(("kitty", "w1"), 0.0, " "), ("kitty", "w1"), "Next", 1.0, ""),
+        (LastPaste(("kitty", "w1"), 0.0, "\n"), ("kitty", "w1"), "Next", 1.0, ""),
+        (LastPaste(("kitty", "w1"), 0.0, "a"), ("kitty", "w1"), ", then", 1.0, ""),
+        (LastPaste(("kitty", "w1"), 0.0, "a"), ("kitty", "w1"), " x", 1.0, ""),
+        (None, ("kitty", "w1"), "Next", 1.0, ""),
+    ],
+)
+def test_join_prefix(
+    prev: LastPaste | None, target: tuple[str, str] | None, text: str, now: float, expected: str
+):
+    assert join_prefix(prev, target, text, now, window_s=60.0) == expected
 
 
 def test_cancel_and_too_short_paste_nothing(controller: tuple[Controller, DryRunInjector]):
