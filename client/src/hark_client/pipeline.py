@@ -6,7 +6,7 @@ hotkey down -> Utterance():
     empty context then); audio fed meanwhile queues behind it.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
-    EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
+    EndOfAudio -> FinalResult -> anchor gate -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
     focus re-check -> caret context / shadow buffer -> smart spacing -> paste ->
     read-back (verdict; correction learning, opt-in) -> history.
@@ -30,6 +30,7 @@ from hark_client import (
     context,
     continuation,
     fields,
+    gate,
     guardrails,
     history,
     learn,
@@ -87,6 +88,7 @@ class Result:
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
     paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
+    gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -179,7 +181,9 @@ class Utterance:
                 preroll_ms=self.preroll_ms,
             ),
             context=ctx,
-            options=pb.ResultOptions(word_timestamps=True, word_confidence=True),
+            options=pb.ResultOptions(
+                word_timestamps=True, word_confidence=True, anchor=pb.ANCHOR_MODE_IF_CHEAP
+            ),
             deadlines=pb.Deadlines(finalize_budget_ms=cfg.server.finalize_budget_ms),
             client=pb.ClientInfo(client_version=asr.CLIENT_VERSION),
         )
@@ -294,11 +298,16 @@ class Utterance:
             )
             for w in hyp.words
         ]
+        text = hyp.text
+        gated = self._gate(final, hyp, res)
+        if gated is not None:
+            text, words = gated.text, gated.words
+            t1 = time.perf_counter()  # gate_ms is its own stage
         try:
-            canon, replacements = context.canonicalize(hyp.text, words, snap.terms)
+            canon, replacements = context.canonicalize(text, words, snap.terms)
         except Exception:  # keep the raw text rather than lose the dictation
             log.exception("canonicalize failed; using the raw text")
-            canon, replacements = hyp.text, []
+            canon, replacements = text, []
         t["canonicalize_ms"] = _ms(t1)
         res.canonical_text = canon
         res.replacements = [asdict(r) for r in replacements]
@@ -383,6 +392,37 @@ class Utterance:
             # terminals expose no editable field: replay the keys typed into it instead
             svc.learner.after_terminal_paste(snap.focus, text, _focus_token)
         return res
+
+    def _gate(
+        self, final: pb.FinalResult, hyp: pb.Hypothesis, res: Result
+    ) -> gate.GateResult | None:
+        """Biased spans the anchor does not support get the anchor's words back (hark_client.gate).
+        None: nothing to gate (off, no bias terms sent, no anchor) or the gate failed."""
+        cfg = self.svc.cfg.gate
+        terms = self.start_message.context.bias.terms if self.start_message else ()
+        anchor = final.anchor if final.HasField("anchor") else None
+        if not cfg.enabled or not terms or anchor is None:
+            status = "off" if not cfg.enabled else "no_terms" if not terms else "no_anchor"
+            res.gate = {"status": status}
+            return None
+        t1 = time.perf_counter()
+        try:
+            out = gate.apply(hyp, anchor, final.bias_hits, terms, cfg)
+        except Exception as e:  # keep the biased text rather than lose the dictation
+            log.exception("anchor gate failed; using the biased text")
+            res.gate = {"status": "error", "error": f"{type(e).__name__}: {e}"}
+            return None
+        self.timings["gate_ms"] = _ms(t1)
+        res.gate = {
+            "status": "applied",
+            "anchor_text": anchor.text,
+            "text": out.text,
+            "decisions": [asdict(d) for d in out.decisions],
+        }
+        if out.decisions:
+            summary = ", ".join(f"{d.biased!r}:{d.decision}/{d.reason}" for d in out.decisions)
+            self._report("anchor", f"{out.text!r} ({summary})")
+        return out
 
     def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
         """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision."""
@@ -479,6 +519,7 @@ class Utterance:
             "joined": bool(res.spacing and res.spacing["leading"]),
             "spacing": res.spacing,
             "replacements": res.replacements,
+            "gate": res.gate,
             "symbols": res.symbols,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,

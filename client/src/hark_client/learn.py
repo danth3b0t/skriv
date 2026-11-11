@@ -68,16 +68,16 @@ def _strip(word: str) -> str:
     return word.strip(_EDGE)
 
 
-def _letters(s: str) -> str:
+def letters(s: str) -> str:
     return "".join(_TOKEN_RE.findall(s.lower()))
 
 
 _PHONETIC = (("ph", "f"), ("ck", "k"), ("c", "k"), ("q", "k"), ("x", "ks"), ("z", "s"))
 
 
-def _phonetic(s: str) -> str:
+def phonetic_key(s: str) -> str:
     """Crude sound key: c/k/q merge, vowels after the first letter dropped, repeats collapsed."""
-    s = _letters(s)
+    s = letters(s)
     for a, b in _PHONETIC:
         s = s.replace(a, b)
     if not s:
@@ -87,9 +87,11 @@ def _phonetic(s: str) -> str:
 
 
 def _alike(heard: str, written: str) -> bool:
-    letters = SequenceMatcher(None, _letters(heard), _letters(written), autojunk=False).ratio()
-    sound = SequenceMatcher(None, _phonetic(heard), _phonetic(written), autojunk=False).ratio()
-    return letters >= 0.5 or sound >= 0.75
+    spelled = SequenceMatcher(None, letters(heard), letters(written), autojunk=False).ratio()
+    sound = SequenceMatcher(
+        None, phonetic_key(heard), phonetic_key(written), autojunk=False
+    ).ratio()
+    return spelled >= 0.5 or sound >= 0.75
 
 
 def _inner_capitals(word: str) -> bool:

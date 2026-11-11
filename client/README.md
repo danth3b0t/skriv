@@ -6,7 +6,7 @@ Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) serve
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
           └─ Transcribe stream opens; 40 ms PCM16 chunks (+ pre-roll) queue behind SessionStart
-key up ───► EndOfAudio ► FinalResult ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
+key up ───► EndOfAudio ► FinalResult ► anchor gate ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
           ► focus re-check ► paste (or clipboard + notification) ► history.jsonl
 ```
 
@@ -109,6 +109,11 @@ final_timeout_ms = 5000
 [context]
 deadline_ms = 150             # SessionStart waits at most this long for context
 max_terms = 60
+
+[gate]                        # anchor gate: biased words the unbiased decode does not support are reverted
+enabled = true
+max_distance = 0.5            # anchor must have heard something this close to the term (0..1)
+confident_anchor = 0.97       # ...and been less sure than this of its own word (> 1: rule off)
 
 [cleanup]
 enabled = true                # profiles opt in individually
@@ -245,11 +250,21 @@ listener sees (the same stream as the shadow buffer; macOS and X11, not Wayland)
 it cannot model exactly (history, completion, Home then an edit, mouse clicks, other shortcuts) drops the watch.
 Key events stay in memory; only the derived pairs are stored.
 
+## Anchor gate
+
+With bias terms the server returns the biased decode and an unbiased anchor of the same audio
+(`hark_client/gate.py`). Where they differ, the biased words survive only if they are a bias hit, the anchor heard
+something close to the term (`max_distance`) without being sure of its own word (`confident_anchor`), and the
+change adds/removes no negation or number, is not just an inflection and drops no function word. Everything else,
+including any change outside a hit, goes back to the anchor's words. `history.jsonl` records each region as
+`gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`. Measurements:
+[docs/bench/2026-11-12-acoustic-gate.md](../docs/bench/2026-11-12-acoustic-gate.md).
+
 ## History and recordings
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome, guard events, paste result and `paste_verdict`, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
-`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
+outcome, guard events, paste result and `paste_verdict`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+`keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
 `keyup_to_paste_ms`, `verify_ms`), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
