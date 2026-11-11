@@ -176,6 +176,7 @@ class Session:
         self.ctx, warnings = self._build_context(start.context)
         self.bias_prepare_ms = int((time.perf_counter() - t0) * 1000)
         self.start_warnings.extend(warnings)
+        self.stream = self.backend.open_stream(self.ctx.plan)
 
     # ------------------------------------------------------------------ validation
     def _check_model(self) -> None:
@@ -378,6 +379,10 @@ class Session:
                 )
             )
         self.pcm.extend(chunk.data)
+        if self.stream is not None:
+            if gap:
+                self.stream.feed(bytes(2 * gap))
+            self.stream.feed(chunk.data)
         self.last_seq = chunk.seq
         self._invalidate_eager()
         return warnings
@@ -396,6 +401,8 @@ class Session:
                 _warning(pb.WARNING_CODE_CONTEXT_IGNORED, "mid-stream context updates unsupported")
             ]
         self.ctx, warnings = self._build_context(ctx)
+        if self.stream is not None:
+            self.stream.set_plan(self.ctx.plan)
         self._invalidate_eager()
         return warnings
 
@@ -433,6 +440,8 @@ class Session:
 
     def close(self) -> None:
         self._invalidate_eager()
+        if self.stream is not None:
+            self.stream.close()
         if self.admitted:
             self.admitted = False
             self.core.active -= 1
@@ -496,7 +505,10 @@ class Session:
         flags = pb.ResultFlags(context_truncated=ctx.truncated)
         timings = pb.Timings(audio_ms=audio_ms, bias_prepare_ms=self.bias_prepare_ms)
 
-        primary = await self.backend.decode(pcm, ctx.plan)
+        if self.stream is not None:
+            primary = await self.stream.finish(pcm, ctx.plan)
+        else:
+            primary = await self.backend.decode(pcm, ctx.plan)
         timings.queue_ms = primary.queue_ms
         timings.encoder_ms = primary.encoder_ms
         timings.decode_ms = primary.decode_ms
