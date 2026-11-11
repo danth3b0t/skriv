@@ -11,10 +11,10 @@ import pytest
 
 from hark_client import context
 from hark_client.__main__ import main
-from hark_client.context import ContextSnapshot
+from hark_client.context import ContextSnapshot, Term, TermKind, TermSource
 from hark_client.learn import LearnedStore
 
-from .conftest import snapshot, write_wav
+from .conftest import KUBECTL, snapshot, write_wav
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -29,12 +29,13 @@ def run_once(
     cleanup_deadline_ms: int = 2000,
     wav_rate: int = 16000,
     channels: int = 1,
+    config: str = "",
 ) -> tuple[int, dict[str, object]]:
     cfg = tmp_path / "config.toml"
     cfg.write_text(
         f'[history]\ndir = "{tmp_path / "data"}"\n'
         f"[cleanup]\ndeadline_ms = {cleanup_deadline_ms}\n"
-        "[server]\nfinal_timeout_ms = 3000\n"
+        "[server]\nfinal_timeout_ms = 3000\n" + config
     )
     wav = write_wav(tmp_path / "in.wav", 1.0, rate=wav_rate, channels=channels)
     code = main(
@@ -206,3 +207,45 @@ def test_promoted_corrections_bias_the_recognizer(
     _, rec = run_once(tmp_path, hark_server.target)
     # The mock server only rewrites "cube control" when the bias term reached it.
     assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
+
+
+# The mock server writes a term's canonical wherever one of its aliases was "heard", so
+# with "get" as an alias of "Hark" the biased result says "Hark" where the anchor says "get".
+HARK = Term("Hark", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
+
+
+@pytest.mark.parametrize(
+    ("enabled", "canonical", "decisions"),
+    [
+        (
+            True,
+            "please run kubectl get",
+            # adjacent hits form one region, judged against every combination of their forms
+            [("kubectl Hark", "cube control get", "reverted", "in_anchor")],
+        ),
+        (False, "please run kubectl Hark", None),
+    ],
+)
+def test_anchor_gate_restores_the_anchor_words_and_records_why(
+    tmp_path: Path,
+    hark_server: HarkServer,
+    fake_context: FakeContext,
+    enabled: bool,
+    canonical: str,
+    decisions: list[tuple[str, str, str, str]] | None,
+):
+    fake_context.snapshots = [snapshot("com.apple.Notes", terms=(KUBECTL, HARK))]
+    _, rec = run_once(
+        tmp_path, hark_server.target, config=f"[gate]\nenabled = {str(enabled).lower()}\n"
+    )
+    assert rec["raw_text"] == "please run kubectl Hark"
+    # gate on: both regions go back to the anchor's words; canonicalization then
+    # writes kubectl (multi-word alias) but not Hark (single plain word)
+    assert rec["canonical_text"] == canonical
+    record = cast("dict[str, object]", rec["gate"])
+    if decisions is None:
+        assert record == {"status": "off"}
+        return
+    assert (record["status"], record["anchor_text"]) == ("applied", "please run cube control get")
+    got = cast("list[dict[str, object]]", record["decisions"])
+    assert [(d["biased"], d["anchor"], d["decision"], d["reason"]) for d in got] == decisions
