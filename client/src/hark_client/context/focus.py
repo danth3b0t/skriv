@@ -124,9 +124,10 @@ def _on_hyprland() -> bool:
     return sys.platform.startswith("linux") and bool(os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"))
 
 
-def get_focus(ax_timeout_s: float = 0.05) -> FocusResult:
+def get_focus(ax_timeout_s: float = 0.05, *, accessibility: bool = True) -> FocusResult:
+    """``accessibility=False`` (macOS): no title/selection round trip to the focused app."""
     if sys.platform == "darwin":
-        return _macos_focus(ax_timeout_s)
+        return _macos_focus(ax_timeout_s if accessibility else None)
     if _on_hyprland():
         return _hyprland()
     return FocusResult(FocusInfo())
@@ -177,7 +178,7 @@ class AxWorker:
 _AX = AxWorker()
 
 
-def _macos_focus(ax_timeout_s: float) -> FocusResult:
+def _macos_focus(ax_timeout_s: float | None) -> FocusResult:
     if mac is None:
         return FocusResult(FocusInfo())
     win = mac.front_window()
@@ -187,14 +188,14 @@ def _macos_focus(ax_timeout_s: float) -> FocusResult:
     errors: list[str] = []
     title = win.title if win is not None else ""
     selection: str | None = None
-    if mac.ax_trusted():
+    if ax_timeout_s is not None and not mac.ax_trusted():
+        errors.append("focus: accessibility permission not granted (no selection)")
+    elif ax_timeout_s is not None:
         ax, error = _AX.title_and_selection(app.pid, ax_timeout_s)
         if ax is not None:
             title, selection = ax[0] or title, ax[1]
         if error is not None:
             errors.append(error)
-    else:
-        errors.append("focus: accessibility permission not granted (no selection)")
     focus = FocusInfo(
         app=app.name,
         app_id=app.bundle_id,

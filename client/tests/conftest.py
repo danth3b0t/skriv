@@ -30,6 +30,7 @@ from hark_client.context import (
     TermKind,
     TermSource,
 )
+from hark_client.context import aliases as context_aliases
 from hark_client.daemon import Controller
 from hark_client.feedback import Feedback, Sound
 from hark_client.inject import DryRunInjector
@@ -242,3 +243,10 @@ def wait_idle(c: Controller) -> None:
 
 def pcm(seconds: float) -> bytes:
     return speech(seconds).astype("<i2").tobytes()
+
+
+@pytest.fixture(autouse=True)
+def _no_word_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Term extraction without the platform word list (it differs per machine); tests of the
+    word-list rules install a small one."""
+    monkeypatch.setattr(context_aliases, "english_words", lambda: None)

@@ -15,8 +15,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from hark_client.context.aliases import extract_terms
-from hark_client.context.rank import Candidate, file_candidates
-from hark_client.context.types import TermKind, TermSource
+from hark_client.context.rank import Candidate, Origin, file_candidates
+from hark_client.context.types import TermKind
 
 MAX_FILES = 5000  # tracked files kept from `git ls-files`
 MAX_CHANGED = 200  # changed/untracked entries considered
@@ -156,28 +156,28 @@ def _identifiers(root: str, recent: list[str]) -> tuple[str, ...]:
     return tuple(ranked[:MAX_IDENTIFIERS])
 
 
+MAX_REPO_FILES = 100  # repository-wide entries (shallow first)
+
+
 def repo_candidates(info: RepoInfo) -> list[Candidate]:
-    out: list[Candidate] = [
-        Candidate(Path(info.root).name, TermKind.NAME, TermSource.REPO_RECENT, 1.0)
-    ]
+    out: list[Candidate] = [Candidate(Path(info.root).name, TermKind.NAME, Origin.CWD)]
     if info.branch:
         out.extend(
-            Candidate(t, k, TermSource.REPO_RECENT, 1.0)
-            for t, k in extract_terms(info.branch.replace("/", " "))
+            Candidate(t, k, Origin.CWD) for t, k in extract_terms(info.branch.replace("/", " "))
         )
     n = max(1, len(info.recent_files))
     for i, rel in enumerate(info.recent_files[:60]):
-        out.extend(file_candidates(rel, TermSource.REPO_RECENT, 1.0 - i / n))
+        out.extend(file_candidates(rel, Origin.REPO_RECENT, 1.0 - i / n))
     m = max(1, len(info.identifiers))
     out.extend(
-        Candidate(ident, TermKind.IDENTIFIER, TermSource.REPO_RECENT, 1.0 - i / m)
+        Candidate(ident, TermKind.IDENTIFIER, Origin.REPO_RECENT, 1.0 - i / m)
         for i, ident in enumerate(info.identifiers)
     )
     # repository-wide: shallow files first
-    for rel in sorted(info.files, key=lambda f: (f.count("/"), f))[:300]:
+    for rel in sorted(info.files, key=lambda f: (f.count("/"), f))[:MAX_REPO_FILES]:
         depth = rel.count("/")
-        out.extend(file_candidates(rel, TermSource.REPO, 1.0 / (1 + depth)))
+        out.extend(file_candidates(rel, Origin.REPO, 1.0 / (1 + depth)))
         if depth:
             top = rel.split("/", 1)[0]
-            out.append(Candidate(top, TermKind.PATH, TermSource.REPO, 1.0))
+            out.append(Candidate(top, TermKind.PATH, Origin.REPO, 1.0))
     return out

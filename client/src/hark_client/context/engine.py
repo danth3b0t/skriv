@@ -2,7 +2,10 @@
 
 Pipeline (each stage only starts when its input is known):
 
-    focus (app, title, selection) -> terminal (cwd, agent process) -> repo || agent session
+    focus (app, title, selection) -> screen text (tmux pane, focused field)
+                                  || terminal (cwd, agent) -> repo || agent session || vocab
+
+Ranking: :mod:`hark_client.context.rank` (at most ``MAX_TERMS`` terms, with provenance).
 
 Every provider runs in a worker thread with its own timeout, clipped to the overall
 deadline. A provider that misses its deadline is reported in ``errors`` and keeps running in
@@ -13,20 +16,22 @@ next dictation. Nothing here raises.
 from __future__ import annotations
 
 import os
-import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
+from hark_client.context import prefetch, vocab
 from hark_client.context.agents import CONFIDENT, AgentSession, find_session
-from hark_client.context.aliases import extract_terms
+from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
-from hark_client.context.rank import Candidate, file_candidates, ranked
+from hark_client.context.rank import MAX_TERMS, Candidate, Origin, file_candidates, rank
 from hark_client.context.repo import RepoInfo, repo_candidates, repo_info
+from hark_client.context.screen import ScreenText, denied, screen_text
+from hark_client.context.screen import candidates as screen_candidates
 from hark_client.context.terminal import TerminalState, resolve
-from hark_client.context.types import ContextSnapshot, FocusInfo, TermSource
+from hark_client.context.types import ContextSnapshot, FocusInfo, TermKind
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -36,19 +41,10 @@ PROVIDER_TIMEOUT_S: dict[str, float] = {
     "terminal": 0.2,
     "repo": 0.5,
     "agent": 0.3,
+    "vocab": 0.2,
+    "screen": 0.15,
 }
 MAX_SELECTION_CHARS = 2000
-
-_SECRET_RE = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}"
-    r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-    r"|[A-Za-z0-9+/_-]{40,})\b"
-)
-
-
-def scrub(text: str) -> str:
-    """Redact API keys/tokens and other long opaque strings."""
-    return _SECRET_RE.sub("[redacted]", text)
 
 
 @dataclass(slots=True)
@@ -58,6 +54,9 @@ class Diagnostics:
     terminal: TerminalState | None = None
     session: AgentSession | None = None
     repo: RepoInfo | None = None
+    learned: list[Candidate] = field(default_factory=list[Candidate])  # persistent vocabulary
+    screen: ScreenText | None = None
+    prefetched: bool = False
     stage_ms: dict[str, float] = field(default_factory=dict[str, float])
 
 
@@ -87,7 +86,9 @@ class _Runner:
         return None
 
 
-def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSnapshot, Diagnostics]:
+def collect_detailed(
+    deadline_s: float, max_terms: int = MAX_TERMS
+) -> tuple[ContextSnapshot, Diagnostics]:
     t0 = time.monotonic()
     diag = Diagnostics()
     pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hark-context")
@@ -97,17 +98,26 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
         focus_res = run.result(run.start("focus", get_focus))
         focus = focus_res.focus if focus_res else FocusInfo()
         term_pid = focus.pid
-        if focus.is_terminal and term_pid is not None:
-            diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
+        screen_job = run.start("screen", lambda: screen_text(focus)) if focus.pid else None
         # HARK_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
-        cwd = os.environ.get("HARK_CONTEXT_CWD") or (diag.terminal.cwd if diag.terminal else None)
-        if cwd is not None:
+        pinned = os.environ.get("HARK_CONTEXT_CWD")
+        warm = prefetch.lookup(focus.window_id)
+        if warm is not None and pinned in {None, warm.cwd}:
+            diag.terminal, diag.repo, diag.session = warm.terminal, warm.repo, warm.session
+            diag.learned, diag.prefetched = list(warm.learned), True
+        elif focus.is_terminal and term_pid is not None:
+            diag.terminal = run.result(run.start("terminal", lambda: resolve(term_pid)))
+        cwd = pinned or (diag.terminal.cwd if diag.terminal else None)
+        if cwd is not None and not diag.prefetched:
             agent_hint = diag.terminal.agent if diag.terminal else None
             started = diag.terminal.agent_started if diag.terminal else None
             repo_job = run.start("repo", lambda: repo_info(cwd))
             agent_job = run.start("agent", lambda: find_session(cwd, agent_hint, started))
+            vocab_job = run.start("vocab", lambda: vocab_candidates(cwd))
             diag.repo = run.result(repo_job)
             diag.session = run.result(agent_job)
+            diag.learned = run.result(vocab_job) or []
+        diag.screen = run.result(screen_job) if screen_job else None
         snapshot = _snapshot(focus_res, diag, cwd, max_terms)
     except Exception as exc:  # noqa: BLE001 - collect() must never raise
         run.errors.append(f"collect: {type(exc).__name__}: {exc}")
@@ -120,49 +130,70 @@ def collect_detailed(deadline_s: float, max_terms: int = 60) -> tuple[ContextSna
     return replace(snapshot, collected_ms=elapsed_ms, errors=tuple(errors)), diag
 
 
+def vocab_candidates(cwd: str) -> list[Candidate]:
+    """Terms learned from earlier sessions for the repository containing ``cwd``."""
+    return vocab.store().candidates(vocab.repo_root(cwd))
+
+
+def session_candidates(session: AgentSession) -> list[Candidate]:
+    """Terms of each prompt/response group at its age: the user's prompt, the response and
+    the tool-call paths (full path, file name and stem)."""
+    out: list[Candidate] = []
+    for g in session.groups:
+        for text, origin in ((g.user, Origin.USER), (g.assistant, Origin.ASSISTANT)):
+            out.extend(
+                Candidate(t, k, origin, age=g.age)
+                for t, k in extract_terms(scrub(text), prose=True)
+            )
+        for path in g.files:
+            if scrub(path) != path:
+                continue
+            if "/" in path:
+                out.append(Candidate(path, TermKind.PATH, Origin.TOOLS, age=g.age))
+            out.extend(file_candidates(path, Origin.TOOLS, 1.0, g.age))
+    return out
+
+
+def text_candidates(text: str, origin: Origin, score: float = 1.0) -> list[Candidate]:
+    return [Candidate(t, k, origin, score) for t, k in extract_terms(scrub(text), prose=True)]
+
+
 def _snapshot(
     focus_res: FocusResult | None, diag: Diagnostics, cwd: str | None, max_terms: int
 ) -> ContextSnapshot:
     focus = focus_res.focus if focus_res else FocusInfo()
     selection = (
-        focus_res.selection[:MAX_SELECTION_CHARS] if focus_res and focus_res.selection else None
+        focus_res.selection[:MAX_SELECTION_CHARS]
+        if focus_res and focus_res.selection and not denied(focus.app_id)
+        else None
     )
     cands: list[Candidate] = []
     if selection:
-        cands.extend(
-            Candidate(t, k, TermSource.SELECTION) for t, k in extract_terms(selection, prose=True)
-        )
+        cands.extend(text_candidates(selection, Origin.SELECTION))
+    if diag.screen is not None:
+        cands.extend(screen_candidates(diag.screen))
     session = diag.session if diag.session and diag.session.confidence >= CONFIDENT else None
-    reply = scrub(session.last_reply) if session else None
     if session:
-        # recency: newest turn 1.0, then linearly down
-        for i, turn in enumerate(session.turns):
-            score = 1.0 - i / len(session.turns)
-            cands.extend(
-                Candidate(t, k, TermSource.AGENT_SESSION, score)
-                for t, k in extract_terms(scrub(turn.text), prose=True)
-            )
-        n = max(1, len(session.files))
-        for i, path in enumerate(session.files[:30]):
-            cands.extend(file_candidates(path, TermSource.AGENT_SESSION, 1.0 - i / n))
+        cands.extend(session_candidates(session))
     if focus.title:
-        cands.extend(
-            Candidate(t, k, TermSource.WINDOW_TITLE)
-            for t, k in extract_terms(focus.title, prose=True)
-        )
+        cands.extend(text_candidates(focus.title, Origin.WINDOW_TITLE))
     if diag.repo is not None:
         cands.extend(repo_candidates(diag.repo))
+    cands.extend(diag.learned)
+    ranking = rank(cands, max_terms)
     return ContextSnapshot(
         focus=focus,
         cwd=cwd,
         repo_root=diag.repo.root if diag.repo else None,
         branch=diag.repo.branch if diag.repo else None,
         agent=session.agent if session else None,
-        agent_last_reply=reply,
+        agent_last_reply=scrub(session.last_reply) if session else None,
         selection=selection,
-        terms=ranked(cands, max_terms),
+        terms=ranking.terms,
+        provenance=ranking.trace,
+        prefetched=diag.prefetched,
     )
 
 
-def collect(deadline_s: float, max_terms: int = 60) -> ContextSnapshot:
+def collect(deadline_s: float, max_terms: int = MAX_TERMS) -> ContextSnapshot:
     return collect_detailed(deadline_s, max_terms)[0]
