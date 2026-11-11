@@ -70,9 +70,10 @@ notifies, like the existing pre-paste check. Not adopted: the layer-shell "panel
 
 ### 8. Paste verification — adopt now; cursor context — later
 After the paste, read the focused field once or twice (150 ms, 500 ms): pasted text present (normalised spaces,
-quotes, dashes) → `landed`; readable but absent → `missing` (the text is put back on the clipboard after the
-clipboard restore, and the user is told); unreadable / no text field / terminal → `unknown` or `not_text`.
-*Absence of evidence is never "failed".* Stored in history as `paste_verdict`. The field reader is shared with X.
+quotes, dashes) → `landed`; readable, non-empty but absent → `missing`; unreadable / empty / no text field /
+terminal → `unknown` or `not_text`. *Absence of evidence is never "failed".* Stored in history as
+`paste_verdict`, recorded only: web/Electron fields can expose stale AX values, so re-copying the text on `missing`
+waits until history shows the verdict's false-positive rate. The field reader is shared with X.
 Cursor context (char before the caret → join spacing/capitalisation) reuses the same reader and replaces
 `join_prefix`'s heuristic; small, next.
 

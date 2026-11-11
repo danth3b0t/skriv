@@ -90,7 +90,7 @@ class PasteConfig:
     join_space: bool = True
     join_window_ms: int = 60_000
     # Read the target field back after pasting (macOS AX, Linux AT-SPI): landed | missing |
-    # not_text | unknown in history; "missing" puts the text back on the clipboard.
+    # not_text | unknown in history (recorded only).
     verify: bool = True
 
 

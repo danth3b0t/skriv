@@ -11,8 +11,10 @@ Secure/password fields are never read. Values longer than ``max_chars`` are not 
 most ``timeout_s`` and later reads are skipped instead of piling up.
 
 Verdicts follow "absence of evidence is not failure": ``landed`` (the pasted text is in the
-field), ``missing`` (the field is readable and the text is not there, twice), ``not_text`` (the
-focused element has no text value), ``unknown`` (could not look).
+field), ``missing`` (the field is readable, non-empty and the text is not there, twice),
+``not_text`` (the focused element has no text value), ``unknown`` (could not look). For now a
+verdict is only recorded: web/Electron fields may expose stale values over AX, so "missing" must
+first be measured from history before hark acts on it (e.g. re-copying the text).
 """
 
 from __future__ import annotations
@@ -101,10 +103,10 @@ def verdict_for(field: FieldText, pasted: str) -> Verdict:
         return "not_text"
     if field.kind != "text":
         return "unknown"
-    needle = normalize(pasted)
-    if not needle:
-        return "unknown"
-    return "landed" if needle in normalize(field.value) else "missing"
+    needle, value = normalize(pasted), normalize(field.value)
+    if not needle or not value:
+        return "unknown"  # an empty read-back after a paste: the field hides its content
+    return "landed" if needle in value else "missing"
 
 
 def verify(

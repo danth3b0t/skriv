@@ -132,7 +132,7 @@ restore_clipboard = true
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
 join_space = true             # same window within join_window_ms, previous paste ended with a non-space
 join_window_ms = 60000        #   => leading space; a real Enter press (hotkey listener) resets it
-verify = true                 # read the field back after pasting: landed | missing | not_text | unknown
+verify = true                 # read the field back after pasting: landed | missing | not_text | unknown (recorded)
 
 [learn]                       # correction learning, see below; off unless enabled
 enabled = false
@@ -183,8 +183,9 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 
 After a paste into a non-terminal app, hark reads the focused field of the target app back (macOS: Accessibility;
 Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). History gets `paste_verdict`: `landed`
-(the text is there), `missing` (readable, absent twice; the text goes back on the clipboard and a notification
-says so), `not_text`, or `unknown` (could not look: no permission, terminal, secure field, > 64 KiB). Secure and
+(the text is there), `missing` (readable, non-empty, absent twice), `not_text`, or `unknown` (could not look: no
+permission, terminal, secure field, empty read-back, > 64 KiB). The verdict is only recorded for now (web/Electron
+fields can expose stale values); acting on `missing` waits until its false-positive rate is measured. Secure and
 password fields are never read.
 
 With `[learn] enabled = true`, the same read-back watches the pasted text for up to `window_ms` (≤ 30 s), only while

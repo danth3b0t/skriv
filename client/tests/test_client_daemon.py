@@ -221,20 +221,20 @@ def test_paste_read_back_feeds_the_learner(
     assert "kubectl" not in json.dumps(record)  # the edit itself is never written to history
 
 
-def test_a_paste_missing_from_the_field_goes_back_to_the_clipboard(
+def test_a_paste_missing_from_the_field_is_recorded_only(
     controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
 ):
     c, injector = controller
     fake_context.snapshots = [snapshot("com.apple.Notes")]
-    c.svc.field_reader = EditableField(DryRunInjector(out=lambda _: None))  # never shows it
+    c.svc.field_reader = EditableField(DryRunInjector(out=lambda _: None))  # never shows the paste
     c.handle("start")
     c.on_pcm(pcm(0.4))
     c.handle("stop")
     wait_idle(c)
-    ((pasted, _),) = injector.pasted
-    assert injector.copied == [pasted]
+    assert len(injector.pasted) == 1
+    assert injector.copied == []  # the restored clipboard is left alone
     feedback = c.svc.feedback
     assert isinstance(feedback, RecordingFeedback)
-    assert any("did not show up" in n for n in feedback.notifications)
+    assert feedback.notifications == []
     last = cast("dict[str, object]", c.status_json()["last"])
     assert (last["status"], last["paste_verdict"]) == ("pasted", "missing")

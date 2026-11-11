@@ -408,12 +408,8 @@ class Utterance:
         res.timings["verify_ms"] = _ms(t1)
         res.paste_verdict = verdict
         self._report("verify", f"{verdict} ({res.timings['verify_ms']:.1f} ms)")
-        if verdict == "missing" and svc.cfg.paste.verify:
-            ok = svc.injector.copy(res.final_text)
-            svc.feedback.notify(
-                "The paste did not show up in the field; the text is in the clipboard"
-                if ok else "The paste did not show up in the field; see history"
-            )  # fmt: skip
+        if verdict == "missing":
+            log.info("paste not seen in the target field (verdict recorded only)")
         if verdict == "landed" and svc.learner is not None:
             svc.learner.after_paste(focus, res.final_text, field_text.value, _focus_token)
 

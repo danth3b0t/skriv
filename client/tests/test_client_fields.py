@@ -25,6 +25,7 @@ FOCUS = FocusInfo(app="Notes", app_id="com.apple.Notes", pid=42, window_id="42:7
         (FieldText("too_long"), "hello", "unknown"),
         (FieldText("unavailable"), "hello", "unknown"),
         (FieldText("text", "anything"), "  ", "unknown"),
+        (FieldText("text", " \n"), "hello", "unknown"),  # empty read-back: content hidden
     ],
 )  # fmt: skip
 def test_verdict(field: FieldText, pasted: str, verdict: str):
@@ -43,7 +44,7 @@ class ScriptedReader:
 
 def test_missing_needs_every_read_to_miss():
     slept: list[float] = []
-    late = ScriptedReader(FieldText("text", ""), FieldText("text", "hello"))
+    late = ScriptedReader(FieldText("text", "Dear Ann,"), FieldText("text", "Dear Ann, hello"))
     assert verify(late, FOCUS, "hello", sleep=slept.append)[0] == "landed"
     assert slept == [0.15, 0.35]
     never = ScriptedReader(FieldText("text", "x"), FieldText("text", "x"))
