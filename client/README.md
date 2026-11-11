@@ -142,7 +142,11 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 - Cleanup: protected spans (shortlist identifiers, code-like tokens, numbers, negations) are sent with the request.
   The client re-validates every returned edit (unique quote, byte range, protected spans, per-kind invariant incl.
   self-corrections and spoken numbers, negation and digit preservation, at most half the words removed, no lost `!`).
-  One bad edit discards the whole set; timeouts and RPC errors fall back to the uncleaned text. Text that looks
+  A bad edit is dropped with its group (edits at most one word apart), and a negation, digit or `!` change only
+  with the edits that make it; any other failed whole-text rule keeps the text. Status `applied` (every edit),
+  `partial` (some dropped; the reason gives the counts) or `rejected` (none); the history's `cleanup.dropped` lists
+  each dropped edit with its reason and who dropped it (`server` or `client`). Timeouts and RPC errors fall back
+  to the uncleaned text. Text that looks
   non-English (or `server.language` other than `en*`) is not sent: status `skipped`, reason `non_english`.
 - Focus: if the focused window changed between key-down and paste, the text goes to the clipboard and a notification
   says so.

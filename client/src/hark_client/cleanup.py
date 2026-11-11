@@ -1,8 +1,10 @@
 """Optional TextCleanup with protected spans, under a deadline.
 
 The server already validates edits, but the client validator is authoritative
-(ADR-001 #6): any edit that fails a check here discards the whole edit set and the
-text stays as it was. Timeouts and RPC errors also fall back to the input text.
+(ADR-001 #6): an edit that fails a check here is dropped together with its group
+(edits at most one word apart), and a failed whole-text rule that cannot be pinned
+on some edits keeps the text as it was. Timeouts and RPC errors also fall back to
+the input text.
 """
 
 from __future__ import annotations
@@ -30,6 +32,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("hark.cleanup")
 
 K = pb.EditKind
+R = pb.EditRejectionReason
 S = pb.ProtectedSpanKind
 
 # Mirrors the server validator (hark_server.cleanup); keep the two in step.
@@ -43,6 +46,7 @@ CORRECTION_CUES = (
 )  # fmt: skip
 MAX_RETRACTED_WORDS = 8
 MAX_REMOVED_SHARE = 0.5  # of the words, by filler removal
+GROUP_GAP_WORDS = 1  # edits at most this many words apart are kept or dropped together
 PUNCTUATION = set(".,;:?!'\u2019-")  # marks a punctuation edit may add or remove
 NEGATIONS = {
     "not", "no", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor",
@@ -111,10 +115,12 @@ def protected_spans(text: str, terms: Sequence[Term]) -> list[Span]:
 @dataclass
 class CleanupOutcome:
     text: str
-    status: str  # applied | no_edits | skipped | timeout | error | rejected
+    status: str  # applied | partial | rejected | no_edits | skipped | timeout | error
     reason: str = ""
-    edits: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
+    edits: list[dict[str, str]] = field(default_factory=list[dict[str, str]])  # applied
     ms: float = 0.0
+    # Edits the server or the client validator dropped: find, replace, reason, by.
+    dropped: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
 
 
 def _words(s: str) -> list[str]:
@@ -348,41 +354,122 @@ def _count(text: str, find: str) -> int:
     return n
 
 
-def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -> str:
-    """Apply `edits` to `text` if every check passes; raise ValueError otherwise."""
+def _edit_error(text: str, raw: bytes, e: pb.Edit, spans: Sequence[Span]) -> str:
+    """Why a single in-range edit fails, or ""."""
+    try:
+        quoted = raw[e.byte_start : e.byte_end].decode()
+    except UnicodeDecodeError:
+        return "not on a character boundary"
+    if quoted != e.find or _count(text, e.find) != 1:
+        return "does not quote a unique substring"
+    if _touches_protected(e, spans, raw):
+        return "touches a protected span"
+    if e.find == e.replace or not _invariant_ok(e.kind, e.find, e.replace):
+        return f"breaks its {K.Name(e.kind)} invariant"
+    return ""
+
+
+def _edit_groups(text: str, ranges: Sequence[tuple[int, int]]) -> list[int]:
+    """A group id per byte range (in any order). Ranges that overlap or have at
+    most GROUP_GAP_WORDS words between them are in one group, transitively."""
     raw = text.encode()
-    out, last = bytearray(), 0
-    for e in sorted(edits, key=lambda e: e.byte_start):
-        if not (last <= e.byte_start < e.byte_end <= len(raw)):
-            raise ValueError("edit out of range or overlapping")
-        try:
-            quoted = raw[e.byte_start : e.byte_end].decode()
-        except UnicodeDecodeError:
-            raise ValueError("edit not on a character boundary") from None
-        if quoted != e.find or _count(text, e.find) != 1:
-            raise ValueError(f"edit {e.find!r} does not quote a unique substring")
-        if _touches_protected(e, spans, raw):
-            raise ValueError(f"edit {e.find!r} touches a protected span")
-        if e.find == e.replace or not _invariant_ok(e.kind, e.find, e.replace):
-            raise ValueError(
-                f"edit {e.find!r} -> {e.replace!r} breaks its {K.Name(e.kind)} invariant"
-            )
-        out += raw[last : e.byte_start] + e.replace.encode()
-        last = e.byte_end
-    out += raw[last:]
-    after = out.decode()
+    ids = [0] * len(ranges)
+    group, end = -1, -1
+    for i in sorted(range(len(ranges)), key=lambda i: ranges[i]):
+        start = ranges[i][0]
+        between = raw[end:start].decode(errors="ignore") if start > end else ""
+        if group < 0 or len(_words(between)) > GROUP_GAP_WORDS:
+            group += 1
+        ids[i] = group
+        end = max(end, ranges[i][1])
+    return ids
+
+
+def _global_error(text: str, edits: Sequence[pb.Edit]) -> tuple[str, list[int]]:
+    """("", []) if the result of `edits` passes the whole-text rules, else the
+    failed rule and the indices of the edits it is pinned on ([]: not pinned).
+    Negations, digits and "!" must survive every edit except what a spoken
+    correction retracts (and digits a number_format edit writes); fillers may
+    make up at most MAX_REMOVED_SHARE of the words."""
     # What was meant: the text with spoken corrections and number formatting applied.
     meant = _apply(text, [e for e in edits if e.kind in _MEANING])
-    if len(_NEGATION.findall(meant)) != len(_NEGATION.findall(after)):
-        raise ValueError("negation count changed")
-    if sorted(c for c in meant if c.isdigit()) != sorted(c for c in after if c.isdigit()):
-        raise ValueError("digits changed")
+    after = _apply(text, edits)
+    pinned = (
+        ("negation count changed", _negations),
+        ("digits changed", _digits),
+        ("exclamation mark removed", _exclamations),
+    )
+    for rule, measure in pinned:
+        if measure(meant) != measure(after):
+            return rule, [
+                i
+                for i, e in enumerate(edits)
+                if e.kind not in _MEANING and measure(e.find) != measure(e.replace)
+            ]
     words = len(_words(meant))
     if words - len(_words(after)) > max(2, MAX_REMOVED_SHARE * words):
-        raise ValueError("too many words removed")
-    if after.count("!") < meant.count("!"):
-        raise ValueError("exclamation mark removed")
-    return after
+        return "too many words removed", []
+    return "", []
+
+
+def _negations(s: str) -> int:
+    return len(_NEGATION.findall(s))
+
+
+def _digits(s: str) -> list[str]:
+    return sorted(c for c in s if c.isdigit())
+
+
+def _exclamations(s: str) -> int:
+    return s.count("!")
+
+
+@dataclass(frozen=True, slots=True)
+class Validated:
+    text: str  # `text` with the accepted edits applied
+    accepted: list[pb.Edit]
+    dropped: list[tuple[pb.Edit, str]]  # (edit, reason)
+
+
+def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -> Validated:
+    """Apply the edits that pass every check, group by group.
+
+    An edit that fails a per-edit check (quote, protected span, kind invariant)
+    takes the edits of its group with it (_edit_groups): "step, uh," ->
+    "step." dropped must not leave "can" -> "Can". An edit out of range or
+    overlapping an accepted one is dropped alone. The whole-text rules then run
+    on the result: a failure pinned on some edits drops their groups and the
+    rules run again; any other failure drops every edit."""
+    raw = text.encode()
+    accepted: list[pb.Edit] = []
+    dropped: list[tuple[pb.Edit, str]] = []
+    failed: list[pb.Edit] = []  # dropped with their group
+    last = 0
+    for e in sorted(edits, key=lambda e: e.byte_start):
+        if not (e.byte_start < e.byte_end <= len(raw)):
+            dropped.append((e, "out of range"))
+        elif e.byte_start < last:
+            dropped.append((e, "overlaps an earlier edit"))
+        elif error := _edit_error(text, raw, e, spans):
+            dropped.append((e, error))
+            failed.append(e)
+        else:
+            accepted.append(e)
+            last = e.byte_end
+    ids = _edit_groups(text, [(e.byte_start, e.byte_end) for e in (*accepted, *failed)])
+    tainted = set(ids[len(accepted) :])
+    grouped = list(zip(accepted, ids[: len(accepted)], strict=True))
+    dropped += [(e, "dropped with its group") for e, g in grouped if g in tainted]
+    grouped = [(e, g) for e, g in grouped if g not in tainted]
+    while grouped:
+        rule, blame = _global_error(text, [e for e, _ in grouped])
+        if not rule:
+            break
+        bad = {grouped[i][1] for i in blame} if blame else {g for _, g in grouped}
+        dropped += [(e, rule) for e, g in grouped if g in bad]
+        grouped = [(e, g) for e, g in grouped if g not in bad]
+    kept = [e for e, _ in grouped]
+    return Validated(_apply(text, kept), kept, dropped)
 
 
 _MEANING = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
@@ -448,10 +535,14 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     t0 = time.perf_counter()
 
     def done(
-        status: str, reason: str = "", result: str = text, edits: list[dict[str, str]] | None = None
+        status: str,
+        reason: str = "",
+        result: str = text,
+        edits: list[dict[str, str]] | None = None,
+        dropped: list[dict[str, str]] | None = None,
     ) -> CleanupOutcome:
         return CleanupOutcome(
-            result, status, reason, edits or [], (time.perf_counter() - t0) * 1000
+            result, status, reason, edits or [], (time.perf_counter() - t0) * 1000, dropped or []
         )
 
     if not text.strip():
@@ -479,12 +570,29 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
         return done("error", rpc_error_text(e))
     if resp.truncated:
         return done("timeout", "server budget exhausted")
-    if not resp.edits:
+    dropped = [
+        {"find": r.find, "replace": r.replace, "by": "server",
+         "reason": R.Name(r.reason).removeprefix("EDIT_REJECTION_REASON_").lower()}
+        for r in resp.rejections
+        if r.reason != R.EDIT_REJECTION_REASON_NO_OP  # echoed text: nothing was lost
+    ]  # fmt: skip
+    if not resp.edits and not dropped:
         return done("no_edits")
-    applied = [{"find": e.find, "replace": e.replace, "kind": K.Name(e.kind)} for e in resp.edits]
-    try:
-        cleaned = validate_edits(text, resp.edits, spans)
-    except ValueError as e:
-        log.warning("cleanup rejected by client validator: %s", e)
-        return done("rejected", str(e), edits=applied)
-    return done("applied", result=cleaned, edits=applied)
+    checked = validate_edits(text, resp.edits, spans)
+    dropped += [
+        {"find": e.find, "replace": e.replace, "by": "client", "reason": why}
+        for e, why in checked.dropped
+    ]
+    applied = [
+        {"find": e.find, "replace": e.replace, "kind": K.Name(e.kind)} for e in checked.accepted
+    ]
+    total = len(applied) + len(dropped)
+    if checked.dropped:
+        log.warning("cleanup: client validator dropped %d edit(s)", len(checked.dropped))
+    if not dropped:
+        return done("applied", result=checked.text, edits=applied)
+    reasons = ", ".join(sorted({d["reason"] for d in dropped}))
+    summary = f"{len(applied)} of {total} edits applied; dropped: {reasons}"
+    if not applied:
+        return done("rejected", summary, dropped=dropped)
+    return done("partial", summary, result=checked.text, edits=applied, dropped=dropped)

@@ -18,6 +18,7 @@ if TYPE_CHECKING:
     from collections.abc import Iterator
 
 K = pb.EditKind
+R = pb.EditRejectionReason
 TEXT = "Grüße, don't run kubectl on port 8080 in parse_config"
 RAW = TEXT.encode()
 
@@ -62,8 +63,11 @@ def make_edit(find: str, replace: str, kind: pb.EditKind.ValueType, text: str = 
     ],
 )
 def test_validator_rejects(edit: pb.Edit, error: str):
-    with pytest.raises(ValueError, match=error):
-        cleanup.validate_edits(TEXT, [edit], cleanup.protected_spans(TEXT, [KUBECTL]))
+    checked = cleanup.validate_edits(TEXT, [edit], cleanup.protected_spans(TEXT, [KUBECTL]))
+    assert (checked.text, checked.accepted) == (TEXT, [])
+    ((dropped, why),) = checked.dropped
+    assert dropped == edit
+    assert error in why
 
 
 def test_validator_applies_valid_edits_and_checks_negations():
@@ -73,12 +77,68 @@ def test_validator_applies_valid_edits_and_checks_negations():
         make_edit("so um I", "so I", K.EDIT_KIND_FILLER_REMOVAL, text),
         make_edit("done", "done.", K.EDIT_KIND_PUNCTUATION, text),
     ]
-    assert cleanup.validate_edits(text, ok, spans) == "so I think it is not done."
-    # Without protection a punctuation edit could still drop a negation: caught globally.
-    with pytest.raises(ValueError, match="negation"):
-        cleanup.validate_edits(
-            "I can't go", [make_edit("can't", "cant", K.EDIT_KIND_PUNCTUATION, "I can't go")], []
-        )
+    checked = cleanup.validate_edits(text, ok, spans)
+    assert (checked.text, checked.accepted, checked.dropped) == (
+        "so I think it is not done.",
+        ok,
+        [],
+    )
+
+
+GROUPED = "so the build fails on the linker step, uh, can you check it"
+IDENT = "Um, so please run kubectl in the cluster, uh, and then check it"
+NEG = "Um, so the thing is I can't merge it today, uh, the build is red"
+F, C, P = K.EDIT_KIND_FILLER_REMOVAL, K.EDIT_KIND_CAPITALIZATION, K.EDIT_KIND_PUNCTUATION
+
+
+@pytest.mark.parametrize(
+    ("text", "edits", "result", "dropped"),
+    [
+        (  # a protected identifier edit is dropped; the filler removals around it stay
+            IDENT, [("Um, so", "So", F), ("kubectl", "Kubectl", C), ("cluster, uh,", "cluster", F)],
+            "So please run kubectl in the cluster and then check it",
+            [("kubectl", "touches a protected span")],
+        ),
+        (  # unprotected, a lost negation is caught globally and pinned on its edit
+            NEG, [("Um, so", "So", F), ("can't", "cant", P), ("today, uh,", "today,", F)],
+            "So the thing is I can't merge it today, the build is red",
+            [("can't", "negation count changed")],
+        ),
+        (  # a dropped edit takes its neighbour: no "step, uh, Can"
+            GROUPED, [("step, uh,", "stage.", F), ("can", "Can", C)], GROUPED,
+            [("step, uh,", "breaks its EDIT_KIND_FILLER_REMOVAL invariant"),
+             ("can", "dropped with its group")],
+        ),
+        (  # ... and so does one a word further away; two words away is another group
+            GROUPED, [("so the", "So the", C), ("on the", "in the", F), ("step, uh,", "step.", F),
+                      ("can", "Can", C)],
+            "So the build fails on the linker step, uh, can you check it",
+            [("on the", "breaks its EDIT_KIND_FILLER_REMOVAL invariant"),
+             ("step, uh,", "dropped with its group"), ("can", "dropped with its group")],
+        ),
+        (  # an edit overlapping an accepted one is dropped alone
+            GROUPED, [("so the", "So the", C), ("the build", "The build", C)],
+            "So the build fails on the linker step, uh, can you check it",
+            [("the build", "overlaps an earlier edit")],
+        ),
+        (  # a failed rule that no edit can be blamed for drops them all
+            "um uh like you know ok so", [("um uh like", "", F), ("you know ok", "ok", F)],
+            "um uh like you know ok so",
+            [("um uh like", "too many words removed"), ("you know ok", "too many words removed")],
+        ),
+    ],
+)  # fmt: skip
+def test_validator_drops_failing_edits_with_their_group(
+    text: str,
+    edits: list[tuple[str, str, pb.EditKind.ValueType]],
+    result: str,
+    dropped: list[tuple[str, str]],
+):
+    proposed = [make_edit(f, r, k, text) for f, r, k in edits]
+    spans = cleanup.protected_spans(text, [KUBECTL]) if text == IDENT else []
+    checked = cleanup.validate_edits(text, proposed, spans)
+    assert checked.text == result
+    assert [(e.find, why) for e, why in checked.dropped] == dropped
 
 
 CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
@@ -119,11 +179,9 @@ def test_validator_s1_edit_kinds(
     text: str, find: str, replace: str, kind: pb.EditKind.ValueType, result: str, error: str
 ):
     edits, spans = [make_edit(find, replace, kind, text)], cleanup.protected_spans(text, [KUBECTL])
-    if error:
-        with pytest.raises(ValueError, match=error):
-            cleanup.validate_edits(text, edits, spans)
-    else:
-        assert cleanup.validate_edits(text, edits, spans) == result
+    checked = cleanup.validate_edits(text, edits, spans)
+    assert checked.text == (text if error else result)
+    assert [error in why for _, why in checked.dropped] == ([True] if error else [])
 
 
 @pytest.mark.parametrize(
@@ -150,13 +208,23 @@ def test_non_english_text_is_not_cleaned(text: str, language: str, *, skipped: b
 
 
 class BadCleanup(pb_grpc.TextCleanupServicer):
-    """A server whose validator let an edit of a protected identifier through."""
+    """A server whose validator let an edit of a protected identifier through,
+    next to a filler removal when the text starts with "Um, so"."""
 
     def Cleanup(
         self, request: pb.CleanupRequest, context: grpc.ServicerContext
     ) -> pb.CleanupResponse:
+        edits = [make_edit("kubectl", "Kubectl", K.EDIT_KIND_CAPITALIZATION, request.text)]
+        if request.text.startswith("Um, so"):
+            edits.insert(0, make_edit("Um, so", "So", K.EDIT_KIND_FILLER_REMOVAL, request.text))
         return pb.CleanupResponse(
-            edits=[make_edit("kubectl", "Kubectl", K.EDIT_KIND_CAPITALIZATION, request.text)]
+            edits=edits,
+            rejections=[
+                pb.EditRejection(
+                    find="get", replace="Get!", reason=R.EDIT_REJECTION_REASON_INVARIANT
+                ),
+                pb.EditRejection(find="run", replace="run", reason=R.EDIT_REJECTION_REASON_NO_OP),
+            ],
         )
 
 
@@ -171,10 +239,31 @@ def bad_cleanup_channel() -> Iterator[grpc.Channel]:
     server.stop(0)
 
 
-def test_protected_span_violation_falls_back_to_input(bad_cleanup_channel: grpc.Channel):
+@pytest.mark.parametrize(
+    ("text", "result", "status", "reason", "applied"),
+    [
+        ("please run kubectl get", "please run kubectl get", "rejected",
+         "0 of 2 edits applied; dropped: invariant, touches a protected span", []),
+        ("Um, so please just run kubectl get", "So please just run kubectl get", "partial",
+         "1 of 3 edits applied; dropped: invariant, touches a protected span", ["Um, so"]),
+    ],
+)  # fmt: skip
+def test_protected_span_violation_drops_only_that_edit(
+    bad_cleanup_channel: grpc.Channel,
+    text: str,
+    result: str,
+    status: str,
+    reason: str,
+    applied: list[str],
+):
     out = cleanup.run(
-        bad_cleanup_channel, text="please run kubectl get", terms=[KUBECTL], utterance_id="u1",
+        bad_cleanup_channel, text=text, terms=[KUBECTL], utterance_id="u1",
         profile_id="prose", app_category="prose", language="", deadline_ms=2000,
     )  # fmt: skip
-    assert (out.text, out.status) == ("please run kubectl get", "rejected")
-    assert "protected span" in out.reason
+    assert (out.text, out.status, out.reason) == (result, status, reason)
+    assert [e["find"] for e in out.edits] == applied
+    assert out.dropped == [  # the server's no-op echo is not a loss
+        {"find": "get", "replace": "Get!", "by": "server", "reason": "invariant"},
+        {"find": "kubectl", "replace": "Kubectl", "by": "client",
+         "reason": "touches a protected span"},
+    ]  # fmt: skip
