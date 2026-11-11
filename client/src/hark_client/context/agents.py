@@ -1,4 +1,8 @@
-"""Read the coding agent's latest reply straight from its session files (no hooks needed).
+"""Read the coding agent's recent conversation straight from its session files (no hooks needed).
+
+On the active branch the readers keep the last ``MAX_ASSISTANT_TURNS`` assistant turns (all
+assistant text between two human prompts) plus the latest human prompt, newest first, within
+``MAX_CONTEXT_CHARS`` (each turn clipped to its tail).
 
 Formats (verified against real files from pi 1.5 (format v3), Claude Code 2.1, Codex 0.166):
 
@@ -40,12 +44,22 @@ if TYPE_CHECKING:
 
 CONFIDENT = 0.7
 TAIL_BYTES = 4 * 1024 * 1024  # only the end of a session file is read
-MAX_CHAIN = 400  # entries walked back from the leaf
-MAX_REPLY_CHARS = 1500
+MAX_CHAIN = 2000  # entries walked back from the leaf
+MAX_REPLY_CHARS = 1500  # AgentSession.last_reply
+MAX_ASSISTANT_TURNS = 4
+MAX_CONTEXT_CHARS = 8000  # all turns together
+MAX_ASSISTANT_TURN_CHARS = 3000
+MAX_USER_TURN_CHARS = 1500
 MAX_FILES = 30
 AGENTS = ("pi", "claude", "codex")
 
 type Json = dict[str, object]
+
+
+@dataclass(frozen=True, slots=True)
+class Turn:
+    role: str  # "assistant" | "user"
+    text: str
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,10 +68,16 @@ class AgentSession:
     path: str
     cwd: str
     mtime: float
-    last_reply: str
+    turns: tuple[Turn, ...]  # newest first
     files: tuple[str, ...] = ()  # paths touched by tool calls, most recent first
     confidence: float = 0.0
     notes: tuple[str, ...] = field(default=())
+
+    @property
+    def last_reply(self) -> str:
+        """Tail of the newest assistant turn."""
+        text = next((t.text for t in self.turns if t.role == "assistant"), "")
+        return text[-MAX_REPLY_CHARS:]
 
 
 # --------------------------------------------------------------------------- helpers
@@ -131,40 +151,83 @@ def _path_args(args: Json | None) -> list[str]:
 _PATCH_FILE_RE = re.compile(r"^\*\*\* (?:Add|Update|Delete) File: (.+)$", re.MULTILINE)
 
 
-def _clip(text: str) -> str:
-    text = text.strip()
-    return text if len(text) <= MAX_REPLY_CHARS else text[-MAX_REPLY_CHARS:]
+class _Turns:
+    """Groups messages, fed newest first, into turns; see the module docstring."""
+
+    def __init__(self) -> None:
+        self.turns: list[Turn] = []
+        self._texts: list[str] = []  # current assistant turn, newest first
+        self._assistant_turns = 0
+        self._have_user = False
+
+    def assistant(self, text: str) -> None:
+        if text.strip():
+            self._texts.append(text)
+
+    def user(self, text: str) -> bool:
+        """A human prompt (turn boundary). Returns True once enough turns are collected."""
+        self._flush()
+        if text.strip() and not self._have_user:
+            self._have_user = True
+            self.turns.append(Turn("user", text))
+        return self._assistant_turns >= MAX_ASSISTANT_TURNS
+
+    def _flush(self) -> None:
+        if self._texts:
+            self.turns.append(Turn("assistant", "\n\n".join(reversed(self._texts))))
+            self._texts = []
+            self._assistant_turns += 1
+
+    def result(self) -> list[Turn]:
+        if self._assistant_turns < MAX_ASSISTANT_TURNS:
+            self._flush()
+        out: list[Turn] = []
+        budget = MAX_CONTEXT_CHARS
+        for turn in self.turns:
+            if budget <= 0:
+                break
+            cap = MAX_USER_TURN_CHARS if turn.role == "user" else MAX_ASSISTANT_TURN_CHARS
+            text = turn.text.strip()[-min(cap, budget) :]
+            budget -= len(text)
+            out.append(Turn(turn.role, text))
+        return out
+
+
+def _texts(blocks: list[Json], kind: str) -> str:
+    return "\n".join(t for b in blocks if b.get("type") == kind and (t := _str(b.get("text"))))
+
+
+def _blocks(content: object) -> list[Json]:
+    return [b for b in map(_obj, _list(content)) if b is not None]
 
 
 # --------------------------------------------------------------------------- readers
 
 
-def read_pi(path: Path) -> tuple[str, list[str]]:
-    """(last assistant text, tool-call paths newest first) on the active branch."""
-    texts: list[str] = []
+def read_pi(path: Path) -> tuple[list[Turn], list[str]]:
+    """(recent turns newest first, tool-call paths newest first) on the active branch."""
+    turns = _Turns()
     files: list[str] = []
     for entry in _chain(_tail_lines(path), "id", "parentId", None):
         msg = _obj(entry.get("message"))
         if entry.get("type") != "message" or msg is None:
             continue
         role = msg.get("role")
-        if role == "user" and texts:
-            break  # previous turn reached
-        if role != "assistant":
-            continue
-        blocks = [b for b in map(_obj, _list(msg.get("content"))) if b is not None]
-        for block in reversed(blocks):
-            if block.get("type") == "toolCall":
-                files.extend(_path_args(_obj(block.get("arguments"))))
-        text = "\n".join(
-            t for b in blocks if b.get("type") == "text" and (t := _str(b.get("text")))
-        )
-        if text.strip():
-            texts.append(text)
-    return _clip("\n\n".join(reversed(texts))), files
+        content = msg.get("content")
+        if role == "user":
+            text = content if isinstance(content, str) else _texts(_blocks(content), "text")
+            if turns.user(text):
+                break
+        elif role == "assistant":
+            blocks = _blocks(content)
+            for block in reversed(blocks):
+                if block.get("type") == "toolCall":
+                    files.extend(_path_args(_obj(block.get("arguments"))))
+            turns.assistant(_texts(blocks, "text"))
+    return turns.result(), files
 
 
-def read_claude(path: Path) -> tuple[str, list[str]]:
+def read_claude(path: Path) -> tuple[list[Turn], list[str]]:
     lines = _tail_lines(path)
     leaf: str | None = None
     for line in reversed(lines):
@@ -173,7 +236,7 @@ def read_claude(path: Path) -> tuple[str, list[str]]:
             leaf = _str(entry.get("uuid"))
             if leaf is not None:
                 break
-    texts: list[str] = []
+    turns = _Turns()
     files: list[str] = []
     for entry in _chain(lines, "uuid", "parentUuid", leaf):
         if entry.get("isSidechain") is True:
@@ -182,16 +245,20 @@ def read_claude(path: Path) -> tuple[str, list[str]]:
         if msg is None:
             continue
         kind = entry.get("type")
-        if kind == "user" and texts and _is_human_turn(msg):
-            break
-        if kind != "assistant":
-            continue
-        for block in reversed([b for b in map(_obj, _list(msg.get("content"))) if b is not None]):
-            if block.get("type") == "tool_use":
-                files.extend(_path_args(_obj(block.get("input"))))
-            elif block.get("type") == "text" and (t := _str(block.get("text"))) and t.strip():
-                texts.append(t)
-    return _clip("\n\n".join(reversed(texts))), files
+        content = msg.get("content")
+        if kind == "user" and _is_human_turn(msg):
+            text = content if isinstance(content, str) else _texts(_blocks(content), "text")
+            # meta entries and slash-command/system wrappers are not the user's words
+            injected = entry.get("isMeta") is True or text.lstrip().startswith("<")
+            if turns.user("" if injected else text):
+                break
+        elif kind == "assistant":
+            for block in reversed(_blocks(content)):
+                if block.get("type") == "tool_use":
+                    files.extend(_path_args(_obj(block.get("input"))))
+                elif block.get("type") == "text" and (t := _str(block.get("text"))):
+                    turns.assistant(t)
+    return turns.result(), files
 
 
 def _is_human_turn(msg: Json) -> bool:
@@ -204,8 +271,12 @@ def _is_human_turn(msg: Json) -> bool:
     )
 
 
-def read_codex(path: Path) -> tuple[str, list[str]]:
-    texts: list[str] = []
+# Codex sends AGENTS.md and environment context as user messages
+_CODEX_INJECTED = ("<", "# AGENTS.md instructions")
+
+
+def read_codex(path: Path) -> tuple[list[Turn], list[str]]:
+    turns = _Turns()
     files: list[str] = []
     for line in reversed(_tail_lines(path)):
         if '"response_item"' not in line:
@@ -217,23 +288,18 @@ def read_codex(path: Path) -> tuple[str, list[str]]:
         ptype = payload.get("type")
         if ptype == "message":
             role = payload.get("role")
-            if role == "user" and texts:
-                break
-            if role == "assistant":
-                parts = [b for b in map(_obj, _list(payload.get("content"))) if b is not None]
-                text = "\n".join(
-                    t
-                    for b in parts
-                    if b.get("type") == "output_text" and (t := _str(b.get("text")))
-                )
-                if text.strip():
-                    texts.append(text)
+            if role == "user":
+                text = _texts(_blocks(payload.get("content")), "input_text")
+                if not text.lstrip().startswith(_CODEX_INJECTED) and turns.user(text):
+                    break
+            elif role == "assistant":
+                turns.assistant(_texts(_blocks(payload.get("content")), "output_text"))
         elif ptype in {"function_call", "custom_tool_call"}:
             raw = _str(payload.get("arguments")) or _str(payload.get("input")) or ""
             files.extend(reversed([m.group(1) for m in _PATCH_FILE_RE.finditer(raw)]))
             args = _parse(raw) if raw.startswith("{") else None
             files.extend(_path_args(args))
-    return _clip("\n\n".join(reversed(texts))), files
+    return turns.result(), files
 
 
 # --------------------------------------------------------------------------- locating
@@ -333,13 +399,13 @@ def find_session(
             )
         if best is not None and best.confidence >= conf:
             continue
-        reply, files = _READERS[agent](path)
+        turns, files = _READERS[agent](path)
         best = AgentSession(
             agent=agent,
             path=str(path),
             cwd=cwd,
             mtime=mtime,
-            last_reply=reply,
+            turns=tuple(turns),
             files=tuple(dict.fromkeys(files)),
             confidence=round(conf, 3),
             notes=tuple(notes),
