@@ -1,5 +1,8 @@
+import re
+
 import pytest
 
+from hark_client.context import aliases
 from hark_client.context.aliases import extract_terms, spoken_forms
 from hark_client.context.types import TermKind
 
@@ -124,6 +127,8 @@ def test_names_are_not_taken_from_plain_text_extraction():
         ("2005", TermKind.NAME, {"twenty oh five"}),
         ("3000", TermKind.NAME, {"three thousand"}),
         ("404", TermKind.NAME, {"four oh four"}),
+        ("256", TermKind.NAME, {"two fifty six", "two hundred fifty six"}),
+        ("50051", TermKind.NAME, {"fifty thousand fifty one", "five oh oh five one"}),
     ],
 )
 def test_name_and_command_aliases(canonical: str, kind: TermKind, expected: set[str]):
@@ -137,3 +142,87 @@ def test_name_hyphens_are_silent():
 @pytest.mark.parametrize("canonical", ["setUp", "set_up", "inPlace"])
 def test_lower_camel_identifiers_get_no_glued_alias(canonical: str):
     assert canonical.lower().replace("_", "") not in spoken_forms(canonical, TermKind.IDENTIFIER)
+
+
+@pytest.mark.parametrize(
+    "path",
+    ["report_v256.json", "docs/research/2026-11-12/run_42.log", "src/v2/hark_client/a/b/ctx_10.py"],
+)
+def test_long_and_numbered_paths_are_said_in_words_first(path: str):
+    forms = spoken_forms(path, TermKind.PATH)
+    assert re.fullmatch(r"[a-z ]+", forms[0])  # no digits, no punctuation
+    assert any(re.search(r"\d", f) for f in forms)  # digits as written are still offered
+    assert len(forms) <= aliases.MAX_ALIASES
+
+
+# A tiny stand-in for /usr/share/dict/words.
+WORDS = frozenset(
+    [
+        "configure",
+        "run",
+        "library",
+        "break",
+        "is",
+        "fast",
+        "rock",
+        "beat",
+        "team",
+        "feature",
+        "well",
+        "known",
+        "good",
+        "branch",
+        "don",
+        "see",
+        "ax",
+        "where",
+        "and",
+        "or",
+        "this",
+        "text",
+        "unicode",
+        "cafe",
+    ]
+)
+
+
+@pytest.fixture
+def word_list(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(aliases, "english_words", lambda: WORDS)
+
+
+@pytest.mark.usefixtures("word_list")
+def test_word_list_finds_names_acronyms_and_kebab_terms_anywhere():
+    text = (
+        "Ghostty is fast. UX and AX matter. See the ctx-rank branch and `kubectl`.\n"
+        "## Voxtype Rocks"
+    )
+    assert dict(extract_terms(text, prose=True)) == {
+        "kubectl": TermKind.NAME,
+        "Ghostty": TermKind.NAME,
+        "UX": TermKind.NAME,
+        "Voxtype": TermKind.NAME,
+        "ctx-rank": TermKind.IDENTIFIER,
+    }
+
+
+@pytest.mark.usefixtures("word_list")
+def test_word_list_keeps_inflections_tags_contractions_ids_and_fragments_out():
+    text = (
+        "Configures it. Running it. Libraries break. Don't. WHERE </system-reminder> is "
+        "toolu_01ABCDEF123 or call_abc123XYZ, commit 3f9a2b1c4d5e6f7a, id "
+        "123e4567-e89b-12d3, token a8f3k2l9x0q1w7e5z4 in \u00dcnicode caf\u00e9 well-known text."
+    )
+    assert extract_terms(text, prose=True) == []
+    assert extract_terms("toolu_01ABCDEF123 call_abc123XYZ a8f3k2l9x0q1w7e5z4 sha256sum") == [
+        ("sha256sum", TermKind.IDENTIFIER)
+    ]
+
+
+def test_directory_paths_are_terms_but_slashed_prose_is_not():
+    text = (
+        "Look in ~/projects/hark, ./build, /usr/share/dict and client/src/hark_client; "
+        "and/or Hyprland/Omarchy at https://example.com/a/b/c on 2026/11/12."
+    )
+    paths = [t for t, k in extract_terms(text, prose=True) if k is TermKind.PATH]
+    assert paths == ["~/projects/hark", "/usr/share/dict", "client/src/hark_client"]

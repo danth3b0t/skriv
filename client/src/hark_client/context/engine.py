@@ -13,7 +13,6 @@ next dictation. Nothing here raises.
 from __future__ import annotations
 
 import os
-import re
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
@@ -21,7 +20,7 @@ from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from hark_client.context.agents import CONFIDENT, AgentSession, find_session
-from hark_client.context.aliases import extract_terms
+from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
 from hark_client.context.rank import Candidate, file_candidates, ranked
 from hark_client.context.repo import RepoInfo, repo_candidates, repo_info
@@ -38,17 +37,6 @@ PROVIDER_TIMEOUT_S: dict[str, float] = {
     "agent": 0.3,
 }
 MAX_SELECTION_CHARS = 2000
-
-_SECRET_RE = re.compile(
-    r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}"
-    r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
-    r"|[A-Za-z0-9+/_-]{40,})\b"
-)
-
-
-def scrub(text: str) -> str:
-    """Redact API keys/tokens and other long opaque strings."""
-    return _SECRET_RE.sub("[redacted]", text)
 
 
 @dataclass(slots=True)

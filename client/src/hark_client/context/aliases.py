@@ -15,10 +15,17 @@ expected to transcribe someone *saying* the term:
 
 from __future__ import annotations
 
+import functools
 import itertools
+import math
 import re
+from pathlib import Path
+from typing import TYPE_CHECKING
 
 from hark_client.context.types import TermKind
+
+if TYPE_CHECKING:
+    from collections.abc import Iterator
 
 MAX_ALIASES = 8
 
@@ -74,11 +81,26 @@ def _pair(n: int) -> str:
     return f"oh {_NUMBER_WORDS[n]}" if n < 10 else _two_digits(n)
 
 
-def number_forms(digits: str) -> tuple[str, ...]:
-    """How a digit run is said: as written, naturally, digit by digit.
+def cardinal(n: int) -> str:
+    """English cardinal for ``0 <= n < 1_000_000``: 50051 -> fifty thousand fifty one."""
+    if n < 100:
+        return _two_digits(n)
+    if n < 1000:
+        hundreds, rest = divmod(n, 100)
+        tail = f" {_two_digits(rest)}" if rest else ""
+        return f"{_NUMBER_WORDS[hundreds]} hundred{tail}"
+    thousands, rest = divmod(n, 1000)
+    return f"{cardinal(thousands)} thousand" + (f" {cardinal(rest)}" if rest else "")
 
-    ``3060`` -> 3060, thirty sixty, three zero six zero, three oh six oh;
-    ``100`` -> 100, one hundred, one zero zero, one oh oh; ``007`` -> 007, zero zero seven, ...
+
+def number_forms(digits: str) -> tuple[str, ...]:
+    """How a digit run is said: as written, naturally (index 1 when there is one), as a
+    cardinal, digit by digit.
+
+    ``3060`` -> 3060, thirty sixty, three thousand sixty, three zero six zero, three oh six oh;
+    ``256`` -> 256, two fifty six, two hundred fifty six, two five six;
+    ``50051`` -> 50051, fifty thousand fifty one, five zero zero five one, ...;
+    ``007`` -> 007, zero zero seven, ... (no natural form with a leading zero).
     """
     out = [digits]
     n = int(digits)
@@ -94,6 +116,8 @@ def number_forms(digits: str) -> tuple[str, ...]:
                 out.append(f"{_NUMBER_WORDS[n // 1000]} thousand")
             else:
                 out.append(f"{_two_digits(high)} {'hundred' if low == 0 else _pair(low)}")
+        if 3 <= len(digits) <= 6:
+            out.append(cardinal(n))
     if 3 <= len(digits) <= 6 or digits[0] == "0":
         spelled = [_NUMBER_WORDS[int(d)] for d in digits]
         out.append(" ".join(spelled))
@@ -193,6 +217,23 @@ def _joined(canonical: str, kind: TermKind) -> str | None:
     return None if glued in COMMON_WORDS else glued
 
 
+def _natural(options: tuple[str, ...]) -> int:
+    """Index of the preferred option: numbers are said in words, everything else as listed."""
+    return 1 if len(options) > 1 and options[0].isdigit() else 0
+
+
+def _combos(pieces: list[tuple[str, ...]]) -> Iterator[tuple[str, ...]]:
+    """The natural reading, then each single-piece variant of it, then the Cartesian
+    product (bounded), so long or number-bearing terms still get diverse aliases."""
+    natural = tuple(p[_natural(p)] for p in pieces)
+    yield natural
+    for i, options in enumerate(pieces):
+        for option in options:
+            if option != natural[i]:
+                yield (*natural[:i], option, *natural[i + 1 :])
+    yield from itertools.islice(itertools.product(*pieces), 64)
+
+
 def spoken_forms(canonical: str, kind: TermKind) -> tuple[str, ...]:
     """Lower-case spoken aliases for ``canonical``, most natural first, at most MAX_ALIASES."""
     pieces = _pieces(canonical, kind)
@@ -201,7 +242,7 @@ def spoken_forms(canonical: str, kind: TermKind) -> tuple[str, ...]:
     joined = _joined(canonical, kind)
     limit = MAX_ALIASES - 1 if joined else MAX_ALIASES
     out: list[str] = []
-    for combo in itertools.islice(itertools.product(*pieces), 64):
+    for combo in _combos(pieces):
         alias = " ".join(" ".join(combo).split())
         if alias and alias not in out:
             out.append(alias)
@@ -294,6 +335,83 @@ _COMMON_TEXT = """
 COMMON_WORDS = frozenset(_COMMON_TEXT.split())
 _FENCE_RE = re.compile(r"^[ \t]*```.*?(?:^[ \t]*```|\Z)", re.MULTILINE | re.DOTALL)
 _URL_RE = re.compile(r"\b[a-z][a-z0-9+.-]*://\S+")
+# XML/HTML tags (</system-reminder>) and contractions (Don't -> "Don") are never names
+_TAG_RE = re.compile(r"</?[A-Za-z][\w:-]*(?:\s[^<>\n]*)?/?>")
+_CONTRACTION_RE = re.compile(r"\b[A-Za-z]+['\u2019][A-Za-z]+\b")
+# Directory paths: ~/x/y, ./x, /abs/dir, or relative with two or more slashes (a/b/c).
+_DIR_RE = re.compile(
+    r"(?<![\w/.~:@-])(?:~/|\.{1,2}/|/)?[A-Za-z_.][\w.@+-]*(?:/[\w.@+-]+)+/?(?![\w/])"
+)
+
+# The platform word list (macOS; Linux with the `words` package). Without one only the
+# conservative name rules apply: a word list is what tells "Ghostty" from "Configures".
+DICTIONARY_PATHS: tuple[str, ...] = ("/usr/share/dict/words",)
+_SUFFIXES = ("s", "es", "ed", "ing", "ly", "er", "ers")
+
+
+@functools.cache
+def english_words() -> frozenset[str] | None:
+    """The platform word list, lower-cased (~235k words, read once); None if there is none."""
+    for path in DICTIONARY_PATHS:
+        try:
+            text = Path(path).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            continue
+        return frozenset(w for line in text.splitlines() if (w := line.strip().lower()))
+    return None
+
+
+def is_english(word: str, words: frozenset[str] | None) -> bool:
+    """``word`` or its stem (configures, running, libraries) is an ordinary word."""
+    vocab = words or frozenset()
+
+    def known(w: str) -> bool:
+        return w in COMMON_WORDS or w in vocab
+
+    low = word.lower()
+    if known(low):
+        return True
+    for suffix in _SUFFIXES:
+        stem = low[: -len(suffix)]
+        if not low.endswith(suffix) or len(stem) < 2:
+            continue
+        if known(stem) or known(stem + "e"):
+            return True
+        if len(stem) > 2 and stem[-1] == stem[-2] and known(stem[:-1]):
+            return True
+    return low.endswith("ies") and known(low[:-3] + "y")
+
+
+# Opaque ids are not vocabulary: hashes/UUIDs, tool-call ids (toolu_01AB.., call_x9..).
+_OPAQUE_RE = re.compile(
+    r"[0-9a-fA-F]{12,}|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-|^(?:toolu|call|msg|req|resp|chatcmpl)[_-].*\d"
+)
+
+
+def is_opaque(term: str) -> bool:
+    """Hash, id or random token: long hex, known id prefixes, or a long high-entropy
+    letters+digits run without any structure."""
+    if _OPAQUE_RE.search(term):
+        return True
+    if len(term) < 16 or not term.isalnum() or sum(c.isdigit() for c in term) < 3:
+        return False
+    counts = [term.count(c) for c in set(term)]
+    entropy = -sum(n / len(term) * math.log2(n / len(term)) for n in counts)
+    return entropy >= 3.5
+
+
+_SECRET_RE = re.compile(
+    r"\b(?:sk-[A-Za-z0-9_-]{16,}|gh[pousr]_[A-Za-z0-9]{20,}|xox[abprs]-[A-Za-z0-9-]{10,}"
+    r"|AKIA[0-9A-Z]{16}|eyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}"
+    r"|[A-Za-z0-9+/_-]{40,})\b"
+)
+
+
+def scrub(text: str) -> str:
+    """Redact API keys/tokens and other long opaque strings (before extracting terms)."""
+    return _SECRET_RE.sub("[redacted]", text)
+
+
 # word-ish tokens; "/" may separate two names (Hyprland/Omarchy)
 _NAME_TOKEN_RE = re.compile(r"(?<![\w.@-])[A-Za-z0-9]+(?:[-.][A-Za-z0-9]+)*(?![\w@-])")
 _ACRONYM_NUMBER_RE = re.compile(r"(?<![\w.-])[A-Z]{2,} \d{2,5}(?!\w|\.\d)")  # RTX 3060
@@ -358,14 +476,28 @@ def _name_kind(token: str) -> str | None:
     return None  # acronyms and mixed case are identifiers
 
 
-def _names(text: str) -> list[str]:
+def _is_acronym_name(token: str, words: frozenset[str] | None) -> bool:
+    """UX, AX, ASR: 2-8 capitals that are no word (needs the word list: "WHERE" is one)."""
+    return (
+        words is not None
+        and token.isalpha()
+        and token.isupper()
+        and 2 <= len(token) <= 8
+        and token not in _STOP
+        and not is_english(token, words)
+    )
+
+
+def _names(text: str, words: frozenset[str] | None) -> list[str]:
     """Product/proper names in prose, in first-seen order.
 
     Shape alone decides for ``Qwen3-ASR``, ``M5``, ``H100``, ``Terminal.app``, ``RTX 3060``.
     A plain Capitalized word counts when it is not a common English word and either appears
-    mid-sentence, or appears at least twice and never in lower case.
+    mid-sentence, or appears at least twice and never in lower case. With a word list
+    (``words``), a Capitalized word that is not in it counts anywhere (``Ghostty`` at a
+    sentence start; ``Configures`` stays out), and so do acronyms that are no word (``UX``).
     """
-    for pattern in (_FENCE_RE, _BACKTICK_RE, _URL_RE, _PATH_RE):
+    for pattern in (_FENCE_RE, _BACKTICK_RE, _URL_RE, _PATH_RE, _TAG_RE, _CONTRACTION_RE):
         text = _mask(text, pattern)
     words_lower = {m.group() for m in re.finditer(r"\b[a-z][a-z]+\b", text)}
     titles = _title_lines(text)
@@ -385,7 +517,7 @@ def _names(text: str) -> list[str]:
         for raw, start in candidates:
             tok = raw[:-1] if re.fullmatch(r"[A-Z]+\d+s", raw) else raw  # H100s
             kind = _name_kind(tok)
-            if kind == "name":
+            if kind == "name" or (kind is None and _is_acronym_name(tok, words)):
                 found[tok] = None
             elif kind == "capitalized" and tok.lower() not in COMMON_WORDS:
                 line_start = text.rfind("\n", 0, start) + 1
@@ -398,7 +530,12 @@ def _names(text: str) -> list[str]:
         if name not in capitalized
         or any(capitalized[name])
         or (len(capitalized[name]) >= 2 and name.lower() not in words_lower)
+        or (words is not None and len(name) >= 3 and not is_english(name, words))
     ]
+
+
+def _unknown_word(word: str, words: frozenset[str] | None) -> bool:
+    return words is not None and len(word) >= 2 and word.isalpha() and not is_english(word, words)
 
 
 def _backtick_kind(span: str, *, prose: bool) -> TermKind | None:
@@ -414,22 +551,47 @@ def _backtick_kind(span: str, *, prose: bool) -> TermKind | None:
         ("/" in span or _PATH_RE.fullmatch(span) is not None, TermKind.PATH),
         (prose and _name_kind(span) == "name", TermKind.NAME),
         (_KEBAB_RE.match(span) is not None or is_interesting_identifier(span), TermKind.IDENTIFIER),
+        # a quoted word that is no English word: `kubectl`, `tmux`
+        (
+            prose and span.islower() and len(span) >= 3 and _unknown_word(span, english_words()),
+            TermKind.NAME,
+        ),
     )
     return next((kind for ok, kind in checks if ok), None)
 
 
+def _directories(text: str, words: frozenset[str] | None) -> list[str]:
+    """``~/projects/hark``, ``./build``, ``/usr/share/dict``, ``client/src/hark_client``;
+    not ``and/or``-style prose or dates."""
+    out: list[str] = []
+    for m in _DIR_RE.finditer(_mask(text, _URL_RE)):
+        path = m.group().rstrip("/.")
+        parts = [p for p in path.split("/") if p not in {"", "~", ".", ".."}]
+        if len(parts) < 2:
+            continue
+        if path.startswith(("/", "~/", "./", "../")) or (
+            path.count("/") >= 2 and any(not is_english(p, words) for p in parts)
+        ):
+            out.append(path)
+    return out
+
+
 def extract_terms(text: str, *, prose: bool = False) -> list[tuple[str, TermKind]]:
-    """Identifiers, paths and flags in ``text``, in first-seen order, deduplicated.
+    """Identifiers, paths (files and directories) and flags in ``text``, in first-seen order,
+    deduplicated; opaque ids (:func:`is_opaque`) never.
 
     With ``prose=True`` (agent replies, selections of prose) kebab-case words are only taken
-    from backticked spans, since ``well-known`` style words are ordinary English; instead
-    names (see :func:`_names`) and backticked commands (``hark doctor``) are added.
+    from backticked spans or when a part is no English word (``ctx-rank``, not
+    ``well-known``); instead names (see :func:`_names`), backticked commands
+    (``hark doctor``) and backticked non-words (``kubectl``) are added. The word-list rules
+    need :func:`english_words`.
     """
     found: dict[str, TermKind] = {}
+    words = english_words() if prose else None
 
     def add(term: str, kind: TermKind) -> None:
         term = term.strip(".,;:'\"()[]{}<>")
-        if term and term not in found:
+        if term and term not in found and not is_opaque(term):
             found[term] = kind
 
     for m in _BACKTICK_RE.finditer(text):
@@ -438,6 +600,8 @@ def extract_terms(text: str, *, prose: bool = False) -> list[tuple[str, TermKind
             add(span, kind)
     for m in _PATH_RE.finditer(text):
         add(m.group(), TermKind.PATH)
+    for path in _directories(text, words):
+        add(path, TermKind.PATH)
     for m in _FLAG_RE.finditer(text):
         if m.group().startswith("--") or len(m.group()) == 2:
             add(m.group(), TermKind.FLAG)
@@ -451,9 +615,19 @@ def extract_terms(text: str, *, prose: bool = False) -> list[tuple[str, TermKind
         if not _PATH_RE.fullmatch(tok) and is_interesting_identifier(tok):
             add(tok, TermKind.IDENTIFIER)
     if prose:
-        for name in _names(text):
-            add(name, TermKind.NAME)
+        extra = _prose_terms(text, words)
     else:
-        for k in _KEBAB_WORD_RE.finditer(text):
-            add(k.group(), TermKind.IDENTIFIER)
+        extra = [(k.group(), TermKind.IDENTIFIER) for k in _KEBAB_WORD_RE.finditer(text)]
+    for term, kind in extra:
+        add(term, kind)
     return list(found.items())
+
+
+def _prose_terms(text: str, words: frozenset[str] | None) -> list[tuple[str, TermKind]]:
+    """Names, then kebab-case words with a part that is no English word (ctx-rank)."""
+    kebab = [
+        (k.group(), TermKind.IDENTIFIER)
+        for k in _KEBAB_WORD_RE.finditer(_mask(_mask(text, _TAG_RE), _URL_RE))
+        if any(_unknown_word(p, words) for p in k.group().split("-"))
+    ]
+    return [*((n, TermKind.NAME) for n in _names(text, words)), *kebab]
