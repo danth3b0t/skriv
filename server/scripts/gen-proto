@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# Regenerate the checked-in Python stubs for proto/hark/v1/hark.proto.
+# Usage: server/scripts/gen-proto [OUT_DIR]   (default: server/src)
+set -euo pipefail
+here="$(cd "$(dirname "$0")/.." && pwd)"
+root="$(cd "$here/.." && pwd)"
+out="${1:-$here/src}"
+mkdir -p "$out/hark/v1"
+cd "$here"
+uv run --group dev python -m grpc_tools.protoc \
+  -I "$root/proto" \
+  --python_out="$out" --pyi_out="$out" --grpc_python_out="$out" \
+  "$root/proto/hark/v1/hark.proto"
+touch "$out/hark/__init__.py" "$out/hark/v1/__init__.py"
