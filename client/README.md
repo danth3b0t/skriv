@@ -142,7 +142,9 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 
 `history.jsonl` gets one line per dictation: status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
-`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`)
+`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`),
+wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
+`final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 and the server's `Timings`. Files are created 0600 in a 0700 directory.
 
 With `save_recordings = true`, each dictation also writes `recordings/YYYY/MM/<utterance_id>/`:

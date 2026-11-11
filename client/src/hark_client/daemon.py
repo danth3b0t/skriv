@@ -10,6 +10,7 @@ import threading
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
+from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
 from hark_client.pipeline import Utterance
 
@@ -73,6 +74,7 @@ class Controller:
         return utt
 
     def stop(self) -> str:
+        keyup = unix_us()
         utt = self._detach()
         if utt is None:
             return "ok idle"
@@ -82,7 +84,7 @@ class Controller:
 
         def work() -> None:
             try:
-                res = utt.finish(min_ms=self.svc.cfg.audio.min_ms)
+                res = utt.finish(min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,

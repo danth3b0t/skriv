@@ -93,6 +93,7 @@ class Utterance:
         self._ctx: Future[ContextSnapshot] = Future()
         self._lock = threading.Lock()
         self._done = False
+        self.keyup_unix_us = 0
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
         self.stream = TranscribeStream(svc.channel)
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
@@ -171,8 +172,14 @@ class Utterance:
             self.svc.out(f"{stage:<9} {text}")
 
     def finish(
-        self, *, min_ms: int = 0, reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP
+        self,
+        *,
+        min_ms: int = 0,
+        reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
+        keyup_unix_us: int | None = None,
     ) -> Result:
+        """keyup_unix_us: when the key was released, if earlier than this call."""
+        self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
         if held_ms < min_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
@@ -358,6 +365,7 @@ class Utterance:
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
             "timings_ms": res.timings,
+            "client_unix_us": {"keyup": self.keyup_unix_us, **self.stream.unix_us},
             "context": {
                 "terms": len(snap.terms),
                 "collected_ms": snap.collected_ms,
