@@ -80,7 +80,11 @@ omarchy dictation toggle                               # = omarchy-dictation-har
 words. Zero-cost alternative: `echo start | nc -U "$XDG_RUNTIME_DIR/hark/ctl.sock"`. `hark ctl toggle` works for a single
 tap-to-start/tap-to-stop key.
 
-Paste: `wl-copy`, then `hyprctl dispatch sendshortcut` (old and Lua dispatcher syntax are both tried), else `wtype`.
+Paste: `wl-copy`, then a Ctrl+V sent to the window that was focused at key-down. With a Lua Hyprland config
+(≥ 0.55) one `hyprctl repl` chunk re-checks the active window's address *inside the compositor* and sends
+`send_shortcut{…, window = "address:…"}` only if it still matches (otherwise: status `focus_changed`, text left in
+the clipboard, notification); with hyprlang (≤ 0.54) `dispatch sendshortcut CTRL, V, address:…`. The syntax that
+worked is remembered. Unknown target: an untargeted shortcut; neither syntax works: `wtype`.
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
 Control protocol: one line in (`start|stop|toggle|cancel|status|ping`), one line out (`ok …` or `error …`).

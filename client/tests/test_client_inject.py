@@ -14,9 +14,12 @@ if TYPE_CHECKING:
 
 
 class FakeRunner:
-    def __init__(self, hyprctl_reply: str = "ok", clipboard: str = "old") -> None:
+    def __init__(
+        self, hyprctl_reply: str = "ok", clipboard: str = "old", repl_reply: str | None = None
+    ) -> None:
         self.calls: list[tuple[list[str], str | None]] = []
         self.hyprctl_reply = hyprctl_reply
+        self.repl_reply = repl_reply  # None: `hyprctl repl` is unknown (hyprlang Hyprland)
         self.clipboard = clipboard
 
     def __call__(
@@ -28,6 +31,8 @@ class FakeRunner:
             self.clipboard = stdin
         if argv[0] in ("wl-paste", "xclip") and stdin is None:
             return 0, self.clipboard
+        if argv[:2] == ["hyprctl", "repl"]:
+            return 0, "unknown request" if self.repl_reply is None else self.repl_reply
         if argv[0] == "hyprctl":
             return 0, self.hyprctl_reply
         return 0, ""
@@ -62,6 +67,57 @@ def test_paste_keys(mode: str, terminal: bool, hyprctl_reply: str, expected_keys
     assert not any(
         "\n" in a or "Return" in a for argv in run.key_calls() for a in argv
     )  # never Enter
+
+
+ADDR = "0x55d0C0a1b2c0"
+
+
+def test_lua_hyprland_rechecks_focus_and_targets_the_window_inside_the_compositor():
+    run = FakeRunner(hyprctl_reply="Invalid dispatcher", repl_reply='"paste_sent"')
+    inj = LinuxInjector("hyprland", restore=False, run=run)
+    assert inj.paste("a", terminal=True, target=ADDR).ok
+    assert inj.paste("b", terminal=False, target=ADDR).ok
+    calls = run.key_calls()
+    assert [c[:2] for c in calls] == [["hyprctl", "repl"]] * 2  # no other attempt, no wtype
+    lua = calls[0][2]
+    assert "if a ~= '55d0c0a1b2c0' then return 'focus_changed:'" in lua
+    assert "mods = 'CTRL + SHIFT', key = 'V', window = 'address:0x55d0c0a1b2c0'" in lua
+    assert "mods = 'CTRL', key = 'V'" in calls[1][2]
+
+
+def test_lua_hyprland_focus_change_keeps_the_text_in_the_clipboard():
+    run = FakeRunner(clipboard="previous", repl_reply="focus_changed:abc123")
+    res = LinuxInjector("hyprland", restore=True, restore_delay_s=0.0, run=run).paste(
+        "dictated", terminal=False, target=ADDR
+    )
+    assert (res.ok, res.focus_changed) == (False, True)
+    assert "0xabc123" in res.detail
+    assert [c[1] for c in run.key_calls()] == ["repl"]  # nothing was sent
+    time.sleep(0.05)
+    assert run.clipboard == "dictated"  # not restored
+
+
+def test_hyprlang_hyprland_targets_the_address_and_is_remembered():
+    run = FakeRunner(hyprctl_reply="ok")  # repl unknown
+    inj = LinuxInjector("hyprland", restore=False, run=run)
+    inj.paste("a", terminal=True, target=ADDR)
+    inj.paste("b", terminal=True, target=ADDR)
+    assert run.key_calls() == [
+        ["hyprctl", "repl", run.key_calls()[0][2]],
+        ["hyprctl", "dispatch", "sendshortcut", "CTRL SHIFT, V, address:0x55d0c0a1b2c0"],
+        ["hyprctl", "dispatch", "sendshortcut", "CTRL SHIFT, V, address:0x55d0c0a1b2c0"],
+    ]
+
+
+@pytest.mark.parametrize("target", ["", "0x12'); os.exit() --", "123:45"])
+def test_unknown_or_malformed_target_falls_back_to_an_untargeted_shortcut(target: str):
+    run = FakeRunner(hyprctl_reply="ok", repl_reply="paste_sent")
+    assert (
+        LinuxInjector("hyprland", restore=False, run=run)
+        .paste("x", terminal=False, target=target)
+        .ok
+    )
+    assert run.key_calls() == [["hyprctl", "dispatch", "sendshortcut", "CTRL, V,"]]
 
 
 def test_previous_clipboard_text_is_restored():

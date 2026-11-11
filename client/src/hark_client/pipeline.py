@@ -361,9 +361,14 @@ class Utterance:
                 else ""
             )
             res.joined = bool(prefix)
-            res.paste = svc.injector.paste(prefix + res.final_text, terminal=prof.terminal)
+            res.paste = svc.injector.paste(
+                prefix + res.final_text, terminal=prof.terminal, target=snap.focus.window_id
+            )
             res.status = "pasted" if res.paste.ok else "paste_failed"
-            if not res.paste.ok:
+            if res.paste.focus_changed:
+                res.status = "focus_changed"
+                svc.feedback.notify("Focus moved to another window; the text is in the clipboard")
+            elif not res.paste.ok:
                 svc.feedback.notify(f"Paste failed: {res.paste.detail}")
             elif target is not None:
                 res.pasted_as = LastPaste(target, now, res.final_text[-1])
