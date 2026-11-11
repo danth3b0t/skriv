@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+# Run hark-probe inside the server's uv project (it needs the hark.v1 stubs).
+set -euo pipefail
+here="$(cd "$(dirname "$0")" && pwd)"
+exec uv run --quiet --project "$here/../../server" python "$here/hark_probe.py" "$@"

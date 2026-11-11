@@ -105,8 +105,9 @@ async def error_detail(call) -> pb.ErrorDetail | None:
 
 
 class Client:
-    def __init__(self, channel: grpc.aio.Channel) -> None:
+    def __init__(self, channel: grpc.aio.Channel, target: str) -> None:
         self.channel = channel
+        self.target = target
         self.asr = pb_grpc.AsrStub(channel)
         self.cleanup = pb_grpc.TextCleanupStub(channel)
 
@@ -170,9 +171,10 @@ async def serve():
             for k, v in cleanup.items():
                 setattr(cfg.cleanup, k, v)
         running = await start(cfg, backend or MockBackend())
-        channel = grpc.aio.insecure_channel(f"127.0.0.1:{running.port}")
+        target = f"127.0.0.1:{running.port}"
+        channel = grpc.aio.insecure_channel(target)
         started.append((running, channel))
-        return Client(channel)
+        return Client(channel, target)
 
     yield _serve
     for running, channel in started:
