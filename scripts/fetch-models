@@ -12,8 +12,8 @@
 # Revisions are pinned commits.
 set -euo pipefail
 
-# Default chosen in docs/bench/2026-11-11-cleanup.md (scripts/llama-up reads this line).
-DEFAULT=qwen3-1.7b-q4_k_m
+# Default chosen in docs/bench/2026-11-11-cleanup-s1.md (scripts/llama-up reads this line).
+DEFAULT=s1-mini-q4_k_m
 KEYS=(s1-mini-q4_k_m qwen3-0.6b-q8_0 qwen3-0.6b-q4_k_m qwen3-1.7b-q8_0 qwen3-1.7b-q4_k_m)
 
 # key -> "repo revision file sha256"

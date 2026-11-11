@@ -28,13 +28,17 @@ Text cleanup with a local LLM (from the repo root; everything lands in the gitig
 
 ```sh
 scripts/fetch-llama                 # pinned llama.cpp release (macOS arm64 Metal; linux-x64: cpu | vulkan | cuda)
-scripts/fetch-models                # default cleanup model (qwen3-1.7b-q4_k_m); `all` for the eval set of four
+scripts/fetch-models                # default cleanup model (s1-mini-q4_k_m) + its LICENSE/NOTICE; `all` for every model
 scripts/llama-up &                  # llama-server on 127.0.0.1:8080
-(cd server && uv run hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model qwen3-1.7b-q4_k_m)
-scripts/eval-cleanup --model qwen3-1.7b-q4_k_m -v     # 44-case eval through the real Cleanup RPC
+(cd server && uv run hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model s1-mini-q4_k_m)
+scripts/eval-cleanup --model s1-mini-q4_k_m -v     # 44-case eval through the real Cleanup RPC
+scripts/eval-cleanup --model s1-mini-q4_k_m --data server/tests/data/cleanup_eval_real.jsonl   # 29 real dictations
+# the Qwen3 edit-list engine: scripts/llama-up qwen3-1.7b-q4_k_m, then --cleanup-engine edits / --engine edits
 ```
 
-See [the cleanup bench](../docs/bench/2026-11-11-cleanup.md) for how the model and flags were chosen.
+The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://huggingface.co/superwhisper/s1-mini),
+Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/bench/2026-11-11-cleanup-s1.md)
+and [the Qwen3 bench](../docs/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
 
 `hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`, `--warmup`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
