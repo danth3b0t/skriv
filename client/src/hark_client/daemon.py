@@ -11,9 +11,10 @@ import time
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import context
+from hark_client import context, retry
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
+from hark_client.config import expand
 from hark_client.continuation import ShadowBuffer
 from hark_client.pipeline import Utterance
 
@@ -102,6 +103,7 @@ class Controller:
                     min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow
                 )
                 self.last_result = (time.time(), res)
+                self._keep(utt, res)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
@@ -127,6 +129,27 @@ class Controller:
         self.svc.feedback.sound("error")
         log.info("cancelled")
         return "ok cancelled"
+
+    def _keep(self, utt: Utterance, res: Result) -> None:
+        """Recovery ring for `hark retry` (not for presses under min_ms)."""
+        if res.status == "too_short":
+            return
+        focus = utt.snapshot_at_start.focus
+        meta = {
+            "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(utt.created_unix)),
+            "utterance_id": utt.id,
+            "status": res.status,
+            "error": res.error,
+            "profile": res.profile,
+            "app": focus.app,
+            "app_id": focus.app_id,
+            "audio_ms": utt.audio_ms,
+        }
+        base = expand(self.svc.cfg.history.dir)
+        try:
+            retry.save(base, self.svc.cfg.retry.keep, bytes(utt.pcm), utt.snapshot_at_start, meta)
+        except OSError as e:
+            log.warning("could not keep the recording for `hark retry`: %s", e)
 
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current and

@@ -122,6 +122,13 @@ class HistoryConfig:
 
 
 @dataclass
+class RetryConfig:
+    # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600),
+    # independent of save_recordings, so `hark retry` can re-run a failed one. 0 = off.
+    keep: int = 10
+
+
+@dataclass
 class Profile:
     apps: list[str] = field(
         default_factory=list[str]
@@ -168,6 +175,7 @@ class Config:
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
     learn: LearnConfig = field(default_factory=LearnConfig)
+    retry: RetryConfig = field(default_factory=RetryConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     log_level: str = "INFO"
 
@@ -258,6 +266,7 @@ def validate(cfg: Config) -> None:
         ("audio.min_speech_ms", cfg.audio.min_speech_ms),
         ("learn.window_ms", cfg.learn.window_ms),
         ("learn.max_terms", cfg.learn.max_terms),
+        ("retry.keep", cfg.retry.keep),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")

@@ -109,8 +109,16 @@ def _ms(since: float) -> float:
 
 
 class Utterance:
-    def __init__(self, svc: Services, *, profile: str | None = None, preroll: bytes = b"") -> None:
+    def __init__(
+        self,
+        svc: Services,
+        *,
+        profile: str | None = None,
+        preroll: bytes = b"",
+        replay: ContextSnapshot | None = None,  # `hark retry`: the original key-down context
+    ) -> None:
         self.svc = svc
+        self.replay = replay
         self.id = uuid7()
         self.created_unix = time.time()
         self.t0 = time.perf_counter()
@@ -137,7 +145,7 @@ class Utterance:
         t = time.perf_counter()
         cfg = self.svc.cfg.context
         try:
-            snap = _collect(cfg.deadline_ms / 1000, cfg.max_terms)
+            snap = self.replay or _collect(cfg.deadline_ms / 1000, cfg.max_terms)
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
@@ -247,7 +255,8 @@ class Utterance:
             result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
             self._report("asr", f"FAILED: {e}")
             self.svc.feedback.sound("error")
-            self.svc.feedback.notify(f"Transcription failed: {e}")
+            hint = "; `hark retry` re-runs it" if self.svc.cfg.retry.keep > 0 else ""
+            self.svc.feedback.notify(f"Transcription failed: {e}{hint}")
         self._record(result)
         return result
 
