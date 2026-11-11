@@ -61,6 +61,20 @@ hl.bind("F13", hl.dsp.exec_cmd("hark ctl start"))
 hl.bind("F13", hl.dsp.exec_cmd("hark ctl stop"), { release = true })
 ```
 
+Omarchy: hark implements Omarchy's dictation-backend contract, so Omarchy's own keys (hold Right Alt, Alt+Space
+toggle) drive it with no Hyprland edits:
+
+```sh
+uv tool install --editable ./client                    # puts `hark` on PATH
+packaging/omarchy/omarchy-install-dictation-hark       # links omarchy-dictation-hark into ~/.local/bin,
+                                                       # installs + starts hark.service, selects hark
+omarchy dictation toggle                               # = omarchy-dictation-hark toggle = hark ctl toggle
+```
+
+`omarchy-dictation-hark stop` succeeds when hark is idle or not running; `start` with no daemon starts
+`hark.service` and fails so you press again. `packaging/omarchy/omarchy-remove-dictation-hark` undoes the install
+(config, history and learned vocabulary stay). Untested on a real Omarchy install.
+
 `hark` must be on `PATH` for the compositor (e.g. `uv tool install --editable ./client`, or use the full path to
 `.venv/bin/hark`). `hark ctl` takes ~50 ms (stdlib-only imports); the 200 ms pre-roll buffer (mic kept open) covers the first
 words. Zero-cost alternative: `echo start | nc -U "$XDG_RUNTIME_DIR/hark/ctl.sock"`. `hark ctl toggle` works for a single
