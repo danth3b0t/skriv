@@ -8,7 +8,7 @@ audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
-    focus re-check -> paste -> history.
+    focus re-check -> caret context / shadow buffer -> smart spacing -> paste -> history.
 """
 
 from __future__ import annotations
@@ -23,12 +23,12 @@ from typing import TYPE_CHECKING
 from google.protobuf import json_format
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, cleanup, context, guardrails, history, symbols
+from hark_client import asr, cleanup, context, continuation, guardrails, history, symbols
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
-from hark_client.context import ContextSnapshot, FocusInfo, WordInfo
+from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
 from hark_client.inject import PasteResult
 
 if TYPE_CHECKING:
@@ -37,42 +37,11 @@ if TYPE_CHECKING:
     import grpc
 
     from hark_client.config import Config
+    from hark_client.continuation import ShadowBuffer
     from hark_client.feedback import Feedback
     from hark_client.inject import Injector
 
 log = logging.getLogger("hark")
-
-_NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
-
-
-@dataclass(frozen=True)
-class LastPaste:
-    """The daemon's previous paste: target (focus_target), time.monotonic(), last character."""
-
-    target: tuple[str, str]
-    at: float
-    last_char: str
-
-
-def focus_target(focus: FocusInfo) -> tuple[str, str] | None:
-    """(app, window) identity of a paste target; None if unknown."""
-    app = focus.app_id or focus.app
-    return (app, focus.window_id) if app or focus.window_id else None
-
-
-def join_prefix(
-    prev: LastPaste | None, target: tuple[str, str] | None, text: str, now: float, window_s: float
-) -> str:
-    """ " " if `text` continues the previous paste: same target, within `window_s`, the
-    previous text ended with a non-space and `text` does not start with whitespace or
-    closing punctuation."""
-    if prev is None or target is None or prev.target != target or now - prev.at > window_s:
-        return ""
-    if not prev.last_char or prev.last_char.isspace():
-        return ""
-    if not text or text[0].isspace() or text[0] in _NO_SPACE_BEFORE:
-        return ""
-    return " "
 
 
 @dataclass
@@ -100,8 +69,7 @@ class Result:
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
-    joined: bool = False  # pasted with a leading space (join_prefix)
-    pasted_as: LastPaste | None = None  # set when the paste went through
+    spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -112,6 +80,11 @@ def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
 def _focus_token() -> str:
     # Looked up at call time so tests can substitute the context engine.
     return context.focus_token()
+
+
+def _caret_context(focus: FocusInfo) -> CaretContext:
+    # Looked up at call time so tests can substitute the context engine.
+    return context.caret_context(focus)
 
 
 def _ms(since: float) -> float:
@@ -217,10 +190,10 @@ class Utterance:
         min_ms: int = 0,
         reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
         keyup_unix_us: int | None = None,
-        previous: LastPaste | None = None,
+        shadow: ShadowBuffer | None = None,
     ) -> Result:
         """keyup_unix_us: when the key was released, if earlier than this call.
-        previous: the last paste, to join this one to it with a space."""
+        shadow: the daemon's record of its pastes and later keys (spacing fallback)."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
         with self._lock:
@@ -245,7 +218,7 @@ class Utterance:
         self.timings["speech_ms"] = speech
         self.timings["audio_ms"] = self.audio_ms
         try:
-            result = self._finish(t_up, previous)
+            result = self._finish(t_up, shadow)
         except AsrError as e:
             result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
             self._report("asr", f"FAILED: {e}")
@@ -254,7 +227,7 @@ class Utterance:
         self._record(result)
         return result
 
-    def _finish(self, t_up: float, previous: LastPaste | None) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
+    def _finish(self, t_up: float, shadow: ShadowBuffer | None) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
         final = self.stream.wait_final(cfg.server.final_timeout_ms / 1000)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
@@ -354,19 +327,19 @@ class Utterance:
                 if ok else "Focus changed and the clipboard write failed; see history"
             )  # fmt: skip
         else:
-            target, now = focus_target(snap.focus), time.monotonic()
-            prefix = (
-                join_prefix(previous, target, res.final_text, now, cfg.paste.join_window_ms / 1000)
-                if cfg.paste.join_space
-                else ""
-            )
-            res.joined = bool(prefix)
-            res.paste = svc.injector.paste(prefix + res.final_text, terminal=prof.terminal)
+            text = res.final_text
+            if cfg.paste.smart_spacing and cfg.paste.join_space:
+                text = self._spacing(snap.focus, res, shadow)
+                t["spacing_ms"] = _ms(t1)
+                t1 = time.perf_counter()
+            if shadow is not None:  # before pasting: the listener sees the paste chord
+                shadow.pasted(snap.focus.window_id, text)
+            res.paste = svc.injector.paste(text, terminal=prof.terminal)
             res.status = "pasted" if res.paste.ok else "paste_failed"
             if not res.paste.ok:
                 svc.feedback.notify(f"Paste failed: {res.paste.detail}")
-            elif target is not None:
-                res.pasted_as = LastPaste(target, now, res.final_text[-1])
+                if shadow is not None:
+                    shadow.forget()
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
         self._report(
@@ -376,6 +349,31 @@ class Utterance:
         self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
         svc.feedback.sound("done" if res.paste.ok else "error")
         return res
+
+    def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
+        """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision."""
+        caret = _caret_context(focus)
+        if not caret.trusted:
+            before = shadow.before(focus.window_id) if shadow is not None else None
+            caret = CaretContext(
+                before, None, "shadow" if before is not None else "none", detail=caret.detail
+            )
+        sp = continuation.decide(caret.before, caret.after, res.final_text)
+        res.spacing = {
+            "before_repr": repr(caret.before[-16:]) if caret.before is not None else None,
+            "after_repr": repr(caret.after) if caret.after is not None else None,
+            "source": caret.source,
+            "detail": caret.detail,
+            "leading": sp.leading,
+            "trailing": sp.trailing,
+            "lowercased": sp.lowercased,
+        }
+        self._report(
+            "spacing",
+            f"{caret.source}: before={res.spacing['before_repr']} after={res.spacing['after_repr']}"
+            f" -> {sp.text!r}{f' ({caret.detail})' if caret.detail else ''}",
+        )
+        return sp.text
 
     def _cleanup(self, text: str, snap: ContextSnapshot, profile_name: str) -> CleanupOutcome:
         cfg = self.svc.cfg
@@ -427,7 +425,8 @@ class Utterance:
             "raw_text": res.raw_text,
             "canonical_text": res.canonical_text,
             "final_text": res.final_text,
-            "joined": res.joined,
+            "joined": bool(res.spacing and res.spacing["leading"]),
+            "spacing": res.spacing,
             "replacements": res.replacements,
             "symbols": res.symbols,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,

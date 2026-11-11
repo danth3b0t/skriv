@@ -2,24 +2,27 @@
 
 from __future__ import annotations
 
+import json
 import math
 import os
 import subprocess
 import sys
 import time
-from typing import TYPE_CHECKING, override
+from typing import TYPE_CHECKING, cast, override
 
 import grpc
 import numpy as np
 import pytest
 
-from hark_client import asr, daemon
+from hark_client import asr
 from hark_client.audio import speech_ms
 from hark_client.config import Config, FeedbackConfig
+from hark_client.context import CaretContext
+from hark_client.continuation import PASTE_ECHO_S, KeyPress
 from hark_client.daemon import Controller
 from hark_client.feedback import Feedback, Sound
 from hark_client.inject import DryRunInjector
-from hark_client.pipeline import LastPaste, Services, join_prefix
+from hark_client.pipeline import Services
 
 from .conftest import snapshot, speech
 
@@ -85,60 +88,68 @@ def test_toggle_streams_preroll_and_speech_then_pastes(
     assert injector.pasted == [("please run kubectl get", True)]
 
 
-def test_dictations_into_the_same_window_are_joined_until_the_user_types(
+def dictate(c: Controller) -> None:
+    c.handle("start")
+    c.on_pcm(pcm(0.4))
+    c.handle("stop")
+    wait_idle(c)
+
+
+def typed(c: Controller, *keys: str, mods: frozenset[str] = frozenset()) -> None:
+    for k in keys:
+        c.user_input(KeyPress("char", k, mods) if len(k) == 1 else KeyPress(k, "", mods))
+
+
+def test_without_a_readable_caret_spacing_follows_the_shadow_of_typed_keys(
     controller: tuple[Controller, DryRunInjector],
 ):
     c, injector = controller
+    dictate(c)  # nothing known before: field start
+    typed(c, "x", "y", "backspace", "backspace")  # back to the end of the paste
+    dictate(c)
+    typed(c, "enter")
+    dictate(c)
+    typed(c, *["backspace"] * len("please run"))  # deletes everything again
+    dictate(c)
+    assert [text for text, _ in injector.pasted] == [
+        "please run",
+        " please run",
+        "please run",
+        "please run",
+    ]
 
-    def dictate() -> None:
-        c.handle("start")
-        c.on_pcm(pcm(0.4))
-        c.handle("stop")
-        wait_idle(c)
 
-    dictate()
-    dictate()
-    time.sleep(daemon.PASTE_ECHO_S)  # past the echo of hark's own paste chord
-    c.user_input()  # e.g. Enter, Backspace or a click into an empty field
-    dictate()
+def test_hark_own_paste_chord_is_not_a_user_key(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+    dictate(c)
+    typed(c, "v", mods=frozenset({"cmd"}))  # the listener sees hark's Cmd+V right after
+    dictate(c)
+    time.sleep(PASTE_ECHO_S)
+    typed(c, "v", mods=frozenset({"cmd"}))  # the user's own paste: unknown text
+    dictate(c)
     assert [text for text, _ in injector.pasted] == ["please run", " please run", "please run"]
 
 
-def test_hark_own_paste_keystroke_does_not_reset_join(
-    controller: tuple[Controller, DryRunInjector],
+def test_trusted_caret_wins_over_the_shadow_and_is_recorded(
+    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext, tmp_path: Path
 ):
     c, injector = controller
-
-    def dictate() -> None:
-        c.handle("start")
-        c.on_pcm(pcm(0.4))
-        c.handle("stop")
-        wait_idle(c)
-
-    dictate()
-    c.user_input()  # the listener sees hark's synthetic Cmd+V right after the paste
-    dictate()
-    assert [text for text, _ in injector.pasted] == ["please run", " please run"]
-
-
-@pytest.mark.parametrize(
-    ("prev", "target", "text", "now", "expected"),
-    [
-        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w1"), "Next", 60.0, " "),
-        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w1"), "Next", 60.1, ""),  # too late
-        (LastPaste(("kitty", "w1"), 0.0, "."), ("kitty", "w2"), "Next", 1.0, ""),  # other window
-        (LastPaste(("kitty", "w1"), 0.0, "."), None, "Next", 1.0, ""),  # unknown target
-        (LastPaste(("kitty", "w1"), 0.0, " "), ("kitty", "w1"), "Next", 1.0, ""),
-        (LastPaste(("kitty", "w1"), 0.0, "\n"), ("kitty", "w1"), "Next", 1.0, ""),
-        (LastPaste(("kitty", "w1"), 0.0, "a"), ("kitty", "w1"), ", then", 1.0, ""),
-        (LastPaste(("kitty", "w1"), 0.0, "a"), ("kitty", "w1"), " x", 1.0, ""),
-        (None, ("kitty", "w1"), "Next", 1.0, ""),
-    ],
-)
-def test_join_prefix(
-    prev: LastPaste | None, target: tuple[str, str] | None, text: str, now: float, expected: str
-):
-    assert join_prefix(prev, target, text, now, window_s=60.0) == expected
+    fake_context.caret = CaretContext("we went to the", "zoo", "ax", trusted=True)
+    dictate(c)
+    assert injector.pasted == [(" please run ", True)]
+    line = (tmp_path / "history.jsonl").read_text().splitlines()[-1]
+    record = cast("dict[str, object]", json.loads(line))
+    assert record["spacing"] == {
+        "before_repr": "'we went to the'",
+        "after_repr": "'zoo'",
+        "source": "ax",
+        "detail": "",
+        "leading": True,
+        "trailing": True,
+        "lowercased": False,
+    }
 
 
 def test_cancelled_too_short_and_silent_dictations_paste_nothing(

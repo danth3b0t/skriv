@@ -85,9 +85,12 @@ class PasteConfig:
     restore_clipboard: bool = True
     restore_delay_ms: int = 250
     check_focus: bool = True
-    # A dictation pasted into the same window within join_window_ms of the previous
-    # one, which ended with a non-space character, gets a leading space.
+    # Leading/trailing space and mid-sentence lower case from the text around the caret
+    # (hark_client.continuation). join_space is the older name; false turns it off too.
+    smart_spacing: bool = True
     join_space: bool = True
+    # Without a readable caret: hark's last paste + the keys typed since, forgotten after
+    # this long without a key or paste in that window.
     join_window_ms: int = 60_000
 
 

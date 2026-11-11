@@ -7,26 +7,30 @@ import os
 import signal
 import sys
 import threading
-import time
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
+from hark_client import context
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
-from hark_client.pipeline import LastPaste, Utterance
+from hark_client.continuation import ShadowBuffer
+from hark_client.pipeline import Utterance
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import FrameType
 
+    from hark_client.continuation import KeyPress
     from hark_client.hotkey import PushToTalk
     from hark_client.mic import Mic
     from hark_client.pipeline import Services
 
 log = logging.getLogger("hark")
 
-# Key events this soon after hark pasted are its own synthetic paste chord.
-PASTE_ECHO_S = 0.5
+
+def _focus_token() -> str:
+    # Looked up at call time so tests can substitute the context engine.
+    return context.focus_token()
 
 
 class Controller:
@@ -42,7 +46,8 @@ class Controller:
         self.current: Utterance | None = None
         self.busy = 0  # utterances still finishing
         self._max_hit = False
-        self.last_paste: LastPaste | None = None
+        # hark's pastes + the keys typed since: the caret when the app does not expose it
+        self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -90,10 +95,8 @@ class Controller:
         def work() -> None:
             try:
                 res = utt.finish(
-                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, previous=self.last_paste
+                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow
                 )
-                if res.pasted_as is not None:
-                    self.last_paste = res.pasted_as
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
@@ -120,15 +123,9 @@ class Controller:
         log.info("cancelled")
         return "ok cancelled"
 
-    def user_input(self) -> None:
-        """The user typed a key or clicked: the caret/field may have changed (Enter, Backspace,
-        Ctrl+U, a click into an empty field...), so the next dictation must not be joined to
-        the previous paste with a space. Events within PASTE_ECHO_S of hark's own paste are
-        its synthetic Cmd+V/Ctrl+V and are ignored."""
-        prev = self.last_paste
-        if prev is not None and time.monotonic() - prev.at < PASTE_ECHO_S:
-            return
-        self.last_paste = None
+    def user_input(self, press: KeyPress) -> None:
+        """A key press or click from the hotkey listener: keeps the shadow buffer current."""
+        self.shadow.key(press)
 
     def status(self) -> str:
         with self._lock:

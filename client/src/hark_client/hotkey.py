@@ -16,10 +16,20 @@ import logging
 import threading
 from typing import TYPE_CHECKING, Protocol
 
+from hark_client.continuation import CLICK, KeyPress
+
 if TYPE_CHECKING:
     from collections.abc import Callable
 
 log = logging.getLogger("hark.hotkey")
+
+# pynput Key names of modifiers -> KeyPress.mods names
+MODIFIERS = {
+    "cmd": "cmd", "cmd_l": "cmd", "cmd_r": "cmd",
+    "ctrl": "ctrl", "ctrl_l": "ctrl", "ctrl_r": "ctrl",
+    "alt": "alt", "alt_l": "alt", "alt_r": "alt", "alt_gr": "alt",
+    "shift": "shift", "shift_l": "shift", "shift_r": "shift",
+}  # fmt: skip
 
 
 class _Listener(Protocol):
@@ -34,9 +44,9 @@ class PushToTalk:
         on_down: Callable[[], object],
         on_up: Callable[[], object],
         on_cancel: Callable[[], object],
-        on_input: Callable[[], object] | None = None,
+        on_input: Callable[[KeyPress], object] | None = None,
     ) -> None:
-        """on_input: any other key press or mouse click (any time)."""
+        """on_input: any other key press (modifiers folded into ``mods``) or mouse click."""
         from pynput import keyboard  # noqa: PLC0415 - optional, platform-specific
 
         self._keyboard = keyboard
@@ -50,6 +60,7 @@ class PushToTalk:
         self.on_down, self.on_up, self.on_cancel = on_down, on_up, on_cancel
         self.on_input = on_input
         self._held = False
+        self._mods: dict[object, str] = {}  # held modifier key -> mods name
         self._lock = threading.Lock()
         self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
         self._mouse: _Listener | None = None
@@ -57,6 +68,12 @@ class PushToTalk:
             from pynput import mouse  # noqa: PLC0415 - optional, platform-specific
 
             self._mouse = mouse.Listener(on_click=self._click)
+
+    def _key_press(self, key: object) -> KeyPress:
+        mods = frozenset(self._mods.values())
+        if isinstance(key, self._keyboard.KeyCode):
+            return KeyPress("char", key.char or "", mods)
+        return KeyPress(str(getattr(key, "name", "")), "", mods)
 
     def _press(self, key: object) -> None:
         with self._lock:
@@ -68,18 +85,26 @@ class PushToTalk:
             elif key == self._keyboard.Key.esc and self._held:
                 self._held = False
                 action = self.on_cancel
-            elif self.on_input is not None and not self._held:
-                action = self.on_input
+            elif (mod := MODIFIERS.get(str(getattr(key, "name", "")))) is not None:
+                self._mods[key] = mod
+                return
+            elif self.on_input is not None:
+                press = self._key_press(key)
+                on_input = self.on_input
+
+                def action() -> object:
+                    return on_input(press)
             else:
                 return
         action()
 
     def _click(self, _x: int, _y: int, _button: object, pressed: bool) -> None:  # noqa: FBT001 - pynput callback signature
         if pressed and self.on_input is not None:
-            self.on_input()
+            self.on_input(CLICK)
 
     def _release(self, key: object) -> None:
         with self._lock:
+            self._mods.pop(key, None)
             if key != self.target or not self._held:
                 return
             self._held = False

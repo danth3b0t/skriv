@@ -20,7 +20,14 @@ import numpy as np
 import pytest
 
 from hark_client import context
-from hark_client.context import ContextSnapshot, FocusInfo, Term, TermKind, TermSource
+from hark_client.context import (
+    CaretContext,
+    ContextSnapshot,
+    FocusInfo,
+    Term,
+    TermKind,
+    TermSource,
+)
 from hark_server.backends.mock import MockBackend
 from hark_server.config import Config as ServerConfig
 from hark_server.server import start
@@ -143,9 +150,11 @@ def hark_server(fake_llm: FakeLLM) -> Iterator[HarkServer]:
 @dataclass
 class FakeContext:
     """Replaces hark_client.context.collect. `snapshots` are returned in order (the
-    last one repeats); calls are recorded as (deadline_s, max_terms)."""
+    last one repeats); calls are recorded as (deadline_s, max_terms). `caret` is what
+    caret_context() reports (default: nothing readable)."""
 
     snapshots: list[ContextSnapshot] = field(default_factory=lambda: [ContextSnapshot()])
+    caret: CaretContext = field(default_factory=CaretContext)
     delay_s: float = 0.0
     calls: list[tuple[float, int]] = field(default_factory=list[tuple[float, int]])
 
@@ -159,6 +168,9 @@ class FakeContext:
         """The next snapshot's window id: what focus looks like at the pre-paste check."""
         return self.snapshots[min(len(self.calls) + 1, len(self.snapshots)) - 1].focus.window_id
 
+    def caret_context(self, focus: FocusInfo) -> CaretContext:
+        return self.caret
+
 
 @pytest.fixture
 def fake_context(monkeypatch: pytest.MonkeyPatch) -> FakeContext:
@@ -167,6 +179,8 @@ def fake_context(monkeypatch: pytest.MonkeyPatch) -> FakeContext:
     monkeypatch.setattr(context, "collect", collect)
     token: Callable[[], str] = fake.focus_token
     monkeypatch.setattr(context, "focus_token", token)
+    caret: Callable[[FocusInfo], CaretContext] = fake.caret_context
+    monkeypatch.setattr(context, "caret_context", caret)
     return fake
 
 
