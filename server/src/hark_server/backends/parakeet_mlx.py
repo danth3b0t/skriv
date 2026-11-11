@@ -554,7 +554,7 @@ class ParakeetMlxBackend(Backend):
             backend_ms["greedy"] = int((time.perf_counter() - t0) * 1000)
         greedy = u.greedy
         forms = boost_forms(plan.terms, plan.term_boosts, self._chars)[0] if plan else {}
-        if not forms:
+        if plan is None or not forms:
             return DecodeOut(
                 greedy.text,
                 list(greedy.words),
@@ -564,7 +564,7 @@ class ParakeetMlxBackend(Backend):
             )
 
         t1 = time.perf_counter()
-        booster = self._booster(plan, forms) if plan else TrieBooster(forms, self._vocab)
+        booster = self._booster(plan, forms)
         t2 = time.perf_counter()
         beam = Beam(beam_size=self.beam_size, patience=self.patience, booster=booster.machine)
         tokens = _tokens(model.decode(u.features, u.lengths, config=DecodingConfig(decoding=beam)))
