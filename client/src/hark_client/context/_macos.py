@@ -17,6 +17,8 @@ import importlib
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
+from hark_client.fields import FieldText
+
 if TYPE_CHECKING:
     from collections.abc import Mapping, Sequence
 
@@ -26,6 +28,11 @@ _AX_FOCUSED_WINDOW = "AXFocusedWindow"
 _AX_FOCUSED_UI_ELEMENT = "AXFocusedUIElement"
 _AX_TITLE = "AXTitle"
 _AX_SELECTED_TEXT = "AXSelectedText"
+_AX_VALUE = "AXValue"
+_AX_ROLE = "AXRole"
+_AX_SUBROLE = "AXSubrole"
+_AX_NUMBER_OF_CHARACTERS = "AXNumberOfCharacters"
+_AX_SECURE = "AXSecureTextField"
 # CGWindowListOption values and kCGNullWindowID
 _ON_SCREEN_ONLY = 1 << 0
 _EXCLUDE_DESKTOP = 1 << 4
@@ -141,6 +148,26 @@ def _ax_attr(element: object, attribute: str, timeout_s: float) -> object | None
     _AS.AXUIElementSetMessagingTimeout(element, timeout_s)
     err, value = _AS.AXUIElementCopyAttributeValue(element, attribute, None)
     return value if err == _AX_SUCCESS else None
+
+
+def focused_field(pid: int, timeout_s: float, max_chars: int) -> FieldText:
+    """Value of the focused element of ``pid``; secure fields are never read."""
+    focused = _ax_attr(_AS.AXUIElementCreateApplication(pid), _AX_FOCUSED_UI_ELEMENT, timeout_s)
+    if focused is None:
+        return FieldText("unavailable")
+    role = _ax_attr(focused, _AX_ROLE, timeout_s)
+    subrole = _ax_attr(focused, _AX_SUBROLE, timeout_s)
+    if _AX_SECURE in (role, subrole):
+        return FieldText("secure")
+    count = _ax_attr(focused, _AX_NUMBER_OF_CHARACTERS, timeout_s)
+    if isinstance(count, int) and count > max_chars:
+        return FieldText("too_long")
+    value = _ax_attr(focused, _AX_VALUE, timeout_s)
+    if not isinstance(value, str):
+        return FieldText("not_text")
+    if len(value) > max_chars:
+        return FieldText("too_long")
+    return FieldText("text", str(value))
 
 
 def window_title_and_selection(pid: int, timeout_s: float) -> tuple[str | None, str | None]:
