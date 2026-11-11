@@ -2,7 +2,7 @@
 # Start llama-server for hark cleanup on 127.0.0.1:8080 (OpenAI-compatible /v1).
 #
 #   scripts/llama-up                         # default model (see scripts/fetch-models)
-#   scripts/llama-up qwen3-0.6b-q8_0         # a key from scripts/fetch-models, or a .gguf path
+#   scripts/llama-up qwen3-1.7b-q4_k_m       # a key from scripts/fetch-models, or a .gguf path
 #   scripts/llama-up qwen3-0.6b-q8_0 --port 8081 -v   # extra args go to llama-server
 #
 # Then: hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model <key>
@@ -32,7 +32,10 @@ fi
 # -ngl 99: all layers on the GPU (Metal/CUDA/Vulkan; ignored by CPU builds).
 # -c 2048 -np 1: one slot holding the whole prompt (policy + few-shots + text, ~1.3k tokens).
 # --cache-prompt: reuse the KV of the static prompt prefix across requests.
-# --reasoning off: Qwen3 is a hybrid thinker; thinking would blow the latency budget.
+# --reasoning off + enable_thinking=false: Qwen3 is a hybrid thinker; thinking would
+#   blow the latency budget. The template then opens the assistant turn with an empty
+#   <think> block, the exact prefix S1-mini was trained on (its model card asks for
+#   --chat-template-kwargs, not --reasoning-budget 0).
 # --temp 0: deterministic edits (the hark server also sends temperature 0).
 # --spec-type ngram-simple (n=1, m=4): prompt-lookup speculative decoding. Edits
 #   mostly copy the input, so drafts from it are often accepted; greedy
@@ -41,7 +44,7 @@ exec "$server" \
   -m "$path" --alias "$alias" \
   --host 127.0.0.1 --port 8080 \
   -ngl 99 -c 2048 -np 1 \
-  --cache-prompt --jinja --reasoning off \
+  --cache-prompt --jinja --reasoning off --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0 --no-webui \
   --spec-type ngram-simple --spec-ngram-simple-size-n 1 --spec-ngram-simple-size-m 4 \
   "$@"
