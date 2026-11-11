@@ -16,6 +16,7 @@ Rules (each guards against false substitutions):
 - When word timings/confidences are given, every word overlapping the match must have
   confidence >= ``min_confidence`` (words without a confidence don't gate).
 - Only aliases present in the transcript are rewritten, so no term is ever introduced.
+- A rewrite that would only lower-case the text (``Hark doctor`` -> ``hark doctor``) is skipped.
 """
 
 from __future__ import annotations
@@ -161,7 +162,9 @@ def canonicalize(
         start, end = toks[i].start, toks[j].end
         before = text[start:end]
         conf = _min_conf(spans, start, end)
-        if before == term.canonical or (conf is not None and conf < min_confidence):
+        # "Hark doctor" -> "hark doctor" would only lose a capital
+        case_only = before.lower() == term.canonical and term.canonical.islower()
+        if before == term.canonical or case_only or (conf is not None and conf < min_confidence):
             i = j + 1
             continue
         out.append(text[pos:start])
