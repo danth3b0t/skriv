@@ -129,6 +129,14 @@ class RetryConfig:
 
 
 @dataclass
+class IndicatorConfig:
+    """Recording indicator: a small passive overlay (never takes focus or clicks)."""
+
+    enabled: bool = True
+    position: str = "bottom"  # bottom | top (centre of the screen with the pointer)
+
+
+@dataclass
 class Profile:
     apps: list[str] = field(
         default_factory=list[str]
@@ -176,6 +184,7 @@ class Config:
     history: HistoryConfig = field(default_factory=HistoryConfig)
     learn: LearnConfig = field(default_factory=LearnConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
+    indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     log_level: str = "INFO"
 
@@ -204,6 +213,7 @@ class Config:
 
 PASTE_METHODS = ("auto", "macos", "hyprland", "wtype", "x11", "clipboard", "dry-run")
 LISTENERS = ("auto", "pynput", "none")
+INDICATOR_POSITIONS = ("bottom", "top")
 
 
 def _type_ok(value: object, default: object) -> bool:
@@ -255,6 +265,8 @@ def validate(cfg: Config) -> None:
         raise ConfigError(f"paste.method must be one of {', '.join(PASTE_METHODS)}")
     if cfg.hotkey.listener not in LISTENERS:
         raise ConfigError(f"hotkey.listener must be one of {', '.join(LISTENERS)}")
+    if cfg.indicator.position not in INDICATOR_POSITIONS:
+        raise ConfigError(f"indicator.position must be one of {', '.join(INDICATOR_POSITIONS)}")
     if "prose" not in cfg.profiles:
         raise ConfigError("profiles.prose is the fallback profile and cannot be removed")
     for key, v in (

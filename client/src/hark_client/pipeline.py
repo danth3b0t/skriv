@@ -68,6 +68,7 @@ class Services:
     field_reader: FieldReader | None = None  # paste read-back; None = verdict "unknown"
     learned: LearnedStore | None = None  # promoted corrections join every shortlist
     learner: Learner | None = None  # watches edits after a paste (learn.enabled)
+    on_stage: Callable[[str, str], None] | None = None  # (utterance id, "cleaning"): indicator
 
 
 @dataclass
@@ -444,6 +445,8 @@ class Utterance:
             return CleanupOutcome(
                 text, "skipped", f"server has no cleanup profile {prof.cleanup_profile!r}"
             )
+        if self.svc.on_stage is not None:
+            self.svc.on_stage(self.id, "cleaning")
         return cleanup.run(
             self.svc.channel,
             text=text,
