@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Regenerate the checked-in Python stubs for proto/hark/v1/hark.proto.
 # Typed stubs (.pyi) for messages and gRPC services come from mypy-protobuf.
-# Usage: server/scripts/gen-proto [OUT_DIR]   (default: server/src)
+# Usage: proto-py/gen-proto [OUT_DIR]   (default: proto-py/src)
 set -euo pipefail
-here="$(cd "$(dirname "$0")/.." && pwd)"
+here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 out="${1:-$here/src}"
 mkdir -p "$out/hark/v1"

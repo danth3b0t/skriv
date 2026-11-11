@@ -8,16 +8,18 @@ requires-python = ">=3.12,<3.13"
 package = false
 
 [tool.uv.workspace]
-members = ["server"]
+members = ["proto-py", "server", "client"]
 
 [tool.uv.sources]
 hark-server = { workspace = true, editable = true }
+hark-client = { workspace = true, editable = true }
 
 [dependency-groups]
 dev = [
     "basedpyright>=1.40.2",
     "commitizen>=4.19.3",
     "grpcio-tools>=1.85.1",
+    "hark-client",
     "hark-server[mlx]",
     "lefthook>=2.2.2",
     "mypy-protobuf>=5.1.0",
@@ -33,13 +35,13 @@ dev = [
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 asyncio_default_test_loop_scope = "function"
-testpaths = ["server/tests"]
+testpaths = ["server/tests", "client/tests"]
 
 [tool.basedpyright]
-include = ["server/src", "server/tests", "tools"]
-exclude = ["server/src/hark/v1", "**/__pycache__", ".venv"]
+include = ["server/src", "server/tests", "client/src", "client/tests", "tools"]
+exclude = ["proto-py/src/hark/v1", "**/__pycache__", ".venv"]
 pythonVersion = "3.12"
-extraPaths = ["server/src"]  # resolve workspace sources as project code, not as an editable install
+extraPaths = ["server/src", "client/src", "proto-py/src"]  # resolve workspace sources as project code, not as an editable install
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"   # e.g. parakeet-mlx ships no stubs
 reportUnknownMemberType = "warning"
@@ -52,8 +54,8 @@ reportAny = "warning"
 reportExplicitAny = "warning"
 
 [tool.ty.src]
-include = ["server/src", "server/tests", "tools"]
-exclude = ["server/src/hark/v1"]
+include = ["server/src", "server/tests", "client/src", "client/tests", "tools"]
+exclude = ["proto-py/src/hark/v1"]
 
 [tool.ty.environment]
 python-version = "3.12"

@@ -24,4 +24,4 @@ proposal-a was never deployed, so removed fields are `reserved` only for hygiene
 
 - `SessionStart.required_features` additionally accepts `result.word_confidence`; unknown feature names fail (cannot honour what is not understood). Required result fields are never shed for budget.
 - `ResultFlags.finalize_budget_exceeded` is defined as `end_to_final_ms > finalize_budget_ms`.
-- Compiled with grpcio-tools 1.85 (`server/scripts/gen-proto`). Not verified: `buf lint`/`buf breaking` (buf is not installed here). One `buf lint` STANDARD finding is inherited from proposal-a: `GetCapabilities` returns `Capabilities` instead of `GetCapabilitiesResponse` (RPC_RESPONSE_STANDARD_NAME). Left as is; decide when buf is added to CI.
+- Compiled with grpcio-tools 1.85 (`proto-py/gen-proto`). Not verified: `buf lint`/`buf breaking` (buf is not installed here). One `buf lint` STANDARD finding is inherited from proposal-a: `GetCapabilities` returns `Capabilities` instead of `GetCapabilitiesResponse` (RPC_RESPONSE_STANDARD_NAME). Left as is; decide when buf is added to CI.

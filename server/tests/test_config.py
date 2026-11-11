@@ -63,9 +63,11 @@ def test_nemo_backend_fails_clearly_without_nemo():
 
 
 def test_checked_in_stubs_match_proto(tmp_path: Path):
-    gen_proto = SERVER / "scripts" / "gen-proto"
+    gen_proto = SERVER.parent / "proto-py" / "gen-proto"
     subprocess.run([str(gen_proto), str(tmp_path)], check=True)  # noqa: S603 - repo script, fixed argv
-    for name in ("hark_pb2.py", "hark_pb2.pyi", "hark_pb2_grpc.py"):
+    for name in ("hark_pb2.py", "hark_pb2.pyi", "hark_pb2_grpc.py", "hark_pb2_grpc.pyi"):
         assert filecmp.cmp(
-            tmp_path / "hark/v1" / name, SERVER / "src/hark/v1" / name, shallow=False
+            tmp_path / "hark/v1" / name,
+            SERVER.parent / "proto-py/src/hark/v1" / name,
+            shallow=False,
         ), name

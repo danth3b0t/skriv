@@ -93,7 +93,7 @@ The tests run against the in-process server over real gRPC on localhost. They co
 terminal-message table over 20 success and failure paths, privacy rejection, the cleanup proxy, config security, the
 probe end to end, and drift between `proto/` and the checked-in stubs.
 
-Regenerate stubs after editing the proto: `scripts/gen-proto` (grpcio-tools; buf/protoc are not required).
+Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo root) (grpcio-tools; buf/protoc are not required).
 
 ## Known limitations
 

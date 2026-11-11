@@ -4,6 +4,8 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
+    "hark-client",
+    "hark-proto",
     "hark-server",
     "hark-workspace",
 ]
@@ -322,6 +324,38 @@ wheels = [
 ]
 
 [[package]]
+name = "hark-client"
+version = "0.1.0"
+source = { editable = "client" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "hark-proto" },
+    { name = "protobuf" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.85" },
+    { name = "hark-proto", editable = "proto-py" },
+    { name = "protobuf", specifier = ">=6.31" },
+]
+
+[[package]]
+name = "hark-proto"
+version = "0.1.0"
+source = { editable = "proto-py" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.85" },
+    { name = "protobuf", specifier = ">=6.31" },
+]
+
+[[package]]
 name = "hark-server"
 version = "0.1.0"
 source = { editable = "server" }
@@ -329,6 +363,7 @@ dependencies = [
     { name = "grpcio" },
     { name = "grpcio-health-checking" },
     { name = "grpcio-status" },
+    { name = "hark-proto" },
     { name = "httpx" },
     { name = "numpy" },
     { name = "protobuf" },
@@ -344,6 +379,7 @@ requires-dist = [
     { name = "grpcio", specifier = ">=1.85" },
     { name = "grpcio-health-checking", specifier = ">=1.85" },
     { name = "grpcio-status", specifier = ">=1.85" },
+    { name = "hark-proto", editable = "proto-py" },
     { name = "httpx", specifier = ">=0.28" },
     { name = "numpy", specifier = ">=2.0" },
     { name = "parakeet-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.7,<0.8" },
@@ -361,6 +397,7 @@ dev = [
     { name = "basedpyright" },
     { name = "commitizen" },
     { name = "grpcio-tools" },
+    { name = "hark-client" },
     { name = "hark-server", extra = ["mlx"] },
     { name = "lefthook" },
     { name = "mypy-protobuf" },
@@ -379,6 +416,7 @@ dev = [
     { name = "basedpyright", specifier = ">=1.40.2" },
     { name = "commitizen", specifier = ">=4.19.3" },
     { name = "grpcio-tools", specifier = ">=1.85.1" },
+    { name = "hark-client", editable = "client" },
     { name = "hark-server", extras = ["mlx"], editable = "server" },
     { name = "lefthook", specifier = ">=2.2.2" },
     { name = "mypy-protobuf", specifier = ">=5.1.0" },
