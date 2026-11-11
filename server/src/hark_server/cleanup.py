@@ -55,7 +55,8 @@ FILLERS = {"um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm
 # Discourse fillers: deletable like FILLERS, but only the model decides where
 # they are fillers ("I want to like test") and where they are words ("I like it").
 DISCOURSE_FILLERS = {"like", "basically", "literally"}
-FILLER_PHRASES = {("you", "know"), ("i", "mean"), ("kind", "of"), ("sort", "of")}
+# Not "I mean": "I mean it, ..." is not a filler (as a correction cue it is handled there).
+FILLER_PHRASES = {("you", "know"), ("kind", "of"), ("sort", "of")}
 NEGATIONS = {
     "not", "no", "never", "nothing", "none", "nobody", "cannot", "dont", "don't",
     "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't", "won't", "wouldn't",
@@ -156,6 +157,7 @@ class ProfileSpec:
     examples: tuple[Example, ...]
     single_line: bool  # reject edits that insert line breaks
     s1_control: str = S1_CONTROL
+    s1_final_period: bool = True  # False: drop a final period S1-mini adds
 
 
 _ALL_KINDS = ("punctuation", "capitalization", "spacing", "filler_removal", "self_correction")
@@ -237,6 +239,7 @@ PROFILES = (
             Example("Sounds good, see you then!", (), ()),
         ),
         single_line=True,
+        s1_final_period=False,  # the chat profile keeps the writer's casual style
     ),
     ProfileSpec(
         id="prose",
@@ -447,6 +450,45 @@ def _number_format_ok(find: str, replace: str) -> bool:
     return converted != spoken and converted == written
 
 
+def _is_word_char(c: str) -> bool:
+    return c.isalnum() or c == "_"
+
+
+def _span_kept(find: str, replace: str, s: int, e: int, prefix: str) -> bool:
+    """find[s:e] (a protected span) reappears unchanged in `replace` and gains
+    no letters or digits on either side: "main.py" -> "main.py." is fine,
+    "8080" -> "8081" or "80 80" -> "8080" is not. A negation may change case
+    where it starts a sentence of the result ("never" -> "Never"). `prefix`:
+    the text before the edit."""
+    fold = find[s:e].lower() in NEGATIONS  # may change case at a sentence start
+    a, b = (find.lower(), replace.lower()) if fold else (find, replace)
+    new_s = new_e = -1
+    for tag, i1, i2, j1, _ in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            if i1 <= s < i2:
+                new_s = j1 + s - i1
+            if i1 < e <= i2:
+                new_e = j1 + e - i1
+        elif (i1 < e and s < i2) or (i1 == i2 and s < i1 < e):
+            return False
+    if new_s < 0 or new_e - new_s != e - s:
+        return False
+    lead = (prefix + replace[:new_s]).rstrip()  # the result before the span
+    if replace[new_s:new_e] != find[s:e] and lead and not lead.endswith((".", "!", "?")):
+        return False
+    before = (
+        new_s == 0
+        or not _is_word_char(replace[new_s - 1])
+        or (s > 0 and replace[new_s - 1] == find[s - 1])
+    )
+    after = (
+        new_e == len(replace)
+        or not _is_word_char(replace[new_e])
+        or (e < len(find) and replace[new_e] == find[e])
+    )
+    return before and after
+
+
 def _punctuation_ok(find: str, replace: str) -> bool:
     if [c for c in find if c.isalnum()] != [c for c in replace if c.isalnum()]:
         return False
@@ -584,27 +626,31 @@ class _Request(NamedTuple):
     allowed_kinds: list[pb.EditKind.ValueType]
     single_line: bool
 
-    def is_protected(self, start: int, end: int) -> bool:  # character offsets
-        bs, be = len(self.text[:start].encode()), len(self.text[:end].encode())
-        return any(bs < pe and ps < be for ps, pe in self.protected)
-
     def edit_protected(
         self, start: int, find: str, replace: str, kind: pb.EditKind.ValueType
     ) -> bool:
         """Whether the edit at character offset `start` changes protected text.
-        A self-correction may drop protected spans with the words it retracts
+        Protected spans inside the edit must survive it (see _span_kept). A
+        self-correction may instead drop them with the words it retracts
         ("port 8080, sorry, I mean port 8081"; the "no" of "no wait"); the
-        ones it keeps must reappear unchanged in `replace`."""
+        others must reappear in `replace`."""
         cut = self_correction_cut(find, replace) if kind == K.EDIT_KIND_SELF_CORRECTION else None
-        if cut is None:
-            return self.is_protected(start, start + len(find))
         raw = self.text.encode()
-        b = [len(self.text[: start + i].encode()) for i in (0, cut[0], cut[1], len(find))]
-        return any(
-            ps < b[3] and b[0] < pe and not (b[1] <= ps and pe <= b[2])
-            and raw[ps:pe].decode() not in replace
-            for ps, pe in self.protected
-        )  # fmt: skip
+        b = [len(self.text[: start + i].encode()) for i in (0, len(find))]
+        drop = [len(self.text[: start + i].encode()) for i in cut] if cut is not None else [-1, -1]
+        for ps, pe in self.protected:
+            if not (ps < b[1] and b[0] < pe) or (drop[0] <= ps and pe <= drop[1]):
+                continue
+            if ps < b[0] or pe > b[1]:  # the edit cuts through the span
+                return True
+            if cut is not None:
+                if raw[ps:pe].decode() not in replace:
+                    return True
+                continue
+            s = len(raw[b[0] : ps].decode())
+            if not _span_kept(find, replace, s, s + len(raw[ps:pe].decode()), self.text[:start]):
+                return True
+        return False
 
     def classify(
         self, find: str, replace: str, proposed_kind: pb.EditKind.ValueType
@@ -645,7 +691,7 @@ def _resolve_one(
         start, end = _unique_context(text, at + i1, at + i2)
         part_find = text[start:end]
         part_replace = text[start : at + i1] + replace[j1:j2] + text[at + i2 : end]
-        if req.is_protected(start, end):
+        if req.edit_protected(start, part_find, part_replace, K.EDIT_KIND_UNSPECIFIED):
             return R.EDIT_REJECTION_REASON_PROTECTED_SPAN
         part_kind = req.classify(part_find, part_replace, proposed_kind)
         if part_kind is None:
@@ -1041,6 +1087,8 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
             if output is None:
                 log.warning("cleanup: rewrite hit max_tokens; keeping the text")
                 return []
+            if not spec.s1_final_period and not request.text.rstrip().endswith((".", "!", "?")):
+                output = output.rstrip().removesuffix(".")
             return rewrite_edits(request.text, output, single_line=spec.single_line)
         extra: dict[str, str] = {}
         if request.language:

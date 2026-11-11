@@ -240,7 +240,7 @@ async def test_cleanup_rejects_invalid_edits(
     ("profile", "text", "protected", "proposed", "accepted", "reasons"),
     [
         (  # kept prefix + retracted words + cue + correction; retracted digits may go
-            "terminal", "Run it on port 8080, sorry, I mean port 8081.", [],
+            "terminal", "Run it on port 8080, sorry, I mean port 8081.", ["8080", "8081"],
             [edit("Run it on port 8080, sorry, I mean port 8081", "Run it on port 8081", "self_correction")],
             [("Run it on port 8080, sorry, I mean port 8081", "Run it on port 8081", "self_correction")],
             [],
@@ -430,7 +430,7 @@ async def test_s1_rewrite_is_aligned_into_validated_edits(s1_client: Client, fak
     rewrite = "So I need the report on Wednesday."
     fake_llm.respond_text(rewrite)
 
-    resp, code, _ = await call(s1_client, text=text, protected_spans=[], profile_id="chat")
+    resp, code, _ = await call(s1_client, text=text, protected_spans=[], profile_id="prose")
 
     assert code == grpc.StatusCode.OK
     assert resp is not None
@@ -456,6 +456,12 @@ async def test_s1_rewrite_is_aligned_into_validated_edits(s1_client: Client, fak
         ("the total is twenty five", [], "The total is 52.", None),  # wrong value
         ("um, reply with OK.", [], "Reply with okay.", None),  # a changed word drops it all
         ("please run kubectl now", ["kubectl"], "Please run Kubectl now.", None),
+        (  # protected text may get punctuation next to it, and negations may be re-cased
+            "never edit main.py", ["never", "main.py"], "Never edit main.py.",
+            "Never edit main.py.",
+        ),
+        ("meet at 3:30 pm", ["3:30"], "Meet at 3:30pm.", None),  # letters glued to a number
+        ("There is no wait time.", ["no"], "There is No wait time.", None),  # mid-sentence
         ("it is, uh, I don't know, broken", [], "It is broken.", None),  # negation
         (  # a self-correction may retract protected text, but keeps the correction's
             "Run it on port 8080, sorry, I mean port 8081.", ["8080", "8081"],
@@ -491,6 +497,18 @@ async def test_s1_rewrite_guard(
         assert resp.rejections
     else:
         assert list(resp.rejections) == []
+        assert apply_edits(text, list(resp.edits)) == result
+
+
+async def test_s1_chat_keeps_the_writers_final_punctuation(s1_client: Client, fake_llm: FakeLLM):
+    for text, rewrite, result in (
+        ("um yeah sounds good", "Yeah, sounds good.", "Yeah, sounds good"),
+        ("um yeah sounds good.", "Yeah, sounds good.", "Yeah, sounds good."),
+    ):
+        fake_llm.respond_text(rewrite)
+        resp, code, _ = await call(s1_client, text=text, protected_spans=[], profile_id="chat")
+        assert code == grpc.StatusCode.OK
+        assert resp is not None
         assert apply_edits(text, list(resp.edits)) == result
 
 

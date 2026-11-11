@@ -35,7 +35,8 @@ S = pb.ProtectedSpanKind
 # Mirrors the server validator (hark_server.cleanup); keep the two in step.
 FILLERS = {"um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm"}
 DISCOURSE_FILLERS = {"like", "basically", "literally"}  # only the model knows where
-FILLER_PHRASES = {("you", "know"), ("i", "mean"), ("kind", "of"), ("sort", "of")}
+# Not "I mean": "I mean it, ..." is not a filler (as a correction cue it is handled there).
+FILLER_PHRASES = {("you", "know"), ("kind", "of"), ("sort", "of")}
 CORRECTION_CUES = (
     ("no", "wait"), ("wait", "no"), ("no", "sorry"), ("sorry", "no"), ("i", "mean"),
     ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),
@@ -269,20 +270,74 @@ def _invariant_ok(kind: pb.EditKind.ValueType, find: str, replace: str) -> bool:
     return check is not None and check(find, replace)  # no check => not accepted
 
 
+def _is_word_char(c: str) -> bool:
+    return c.isalnum() or c == "_"
+
+
+def _span_kept(find: str, replace: str, s: int, e: int, prefix: str) -> bool:
+    """find[s:e] (a protected span) reappears unchanged in `replace` and gains no
+    letters or digits on either side ("main.py" -> "main.py." is fine, "80 80" ->
+    "8080" is not). A negation may change case where it starts a sentence of the
+    result ("never" -> "Never"). `prefix`: the text before the edit."""
+    fold = _NEGATION.fullmatch(find[s:e]) is not None  # may change case at a sentence start
+    a, b = (find.lower(), replace.lower()) if fold else (find, replace)
+    new_s = new_e = -1
+    for tag, i1, i2, j1, _ in SequenceMatcher(None, a, b, autojunk=False).get_opcodes():
+        if tag == "equal":
+            if i1 <= s < i2:
+                new_s = j1 + s - i1
+            if i1 < e <= i2:
+                new_e = j1 + e - i1
+        elif (i1 < e and s < i2) or (i1 == i2 and s < i1 < e):
+            return False
+    if new_s < 0 or new_e - new_s != e - s:
+        return False
+    lead = (prefix + replace[:new_s]).rstrip()  # the result before the span
+    if replace[new_s:new_e] != find[s:e] and lead and not lead.endswith((".", "!", "?")):
+        return False
+    before = (
+        new_s == 0
+        or not _is_word_char(replace[new_s - 1])
+        or (s > 0 and replace[new_s - 1] == find[s - 1])
+    )
+    after = (
+        new_e == len(replace)
+        or not _is_word_char(replace[new_e])
+        or (e < len(find) and replace[new_e] == find[e])
+    )
+    return before and after
+
+
 def _touches_protected(e: pb.Edit, spans: Sequence[Span], raw: bytes) -> bool:
-    """A self-correction may drop protected spans with the words it retracts
-    (the "no" of "no wait", "port 8080, sorry, I mean ..."); the ones it keeps
-    must reappear unchanged in `replace`."""
+    """Protected spans inside the edit must survive it (_span_kept). A
+    self-correction may instead drop them with the words it retracts (the "no"
+    of "no wait", "port 8080, sorry, I mean ..."); the others must reappear in
+    `replace`."""
     cut = self_correction_cut(e.find, e.replace) if e.kind == K.EDIT_KIND_SELF_CORRECTION else None
-    lo = hi = e.byte_start
-    if cut is not None:
-        lo += len(e.find[: cut[0]].encode())
-        hi += len(e.find[: cut[1]].encode())
-    return any(
-        e.byte_start < s.end and s.start < e.byte_end and not (lo <= s.start and s.end <= hi)
-        and (cut is None or raw[s.start : s.end].decode() not in e.replace)
-        for s in spans
-    )  # fmt: skip
+    lo, hi = (
+        (
+            e.byte_start + len(e.find[: cut[0]].encode()),
+            e.byte_start + len(e.find[: cut[1]].encode()),
+        )
+        if cut is not None
+        else (-1, -1)
+    )
+    for sp in spans:
+        if not (e.byte_start < sp.end and sp.start < e.byte_end) or (
+            lo <= sp.start and sp.end <= hi
+        ):
+            continue
+        if sp.start < e.byte_start or sp.end > e.byte_end:  # the edit cuts through the span
+            return True
+        if cut is not None:
+            if raw[sp.start : sp.end].decode() not in e.replace:
+                return True
+            continue
+        s = len(raw[e.byte_start : sp.start].decode())
+        prefix = raw[: e.byte_start].decode()
+        if not _span_kept(e.find, e.replace, s, s + len(raw[sp.start : sp.end].decode()), prefix):
+            return True
+    return False
 
 
 def _count(text: str, find: str) -> int:
