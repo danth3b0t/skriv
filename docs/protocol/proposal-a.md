@@ -1300,15 +1300,16 @@ async def Transcribe(self, request_iterator, context):
     first = await anext(it)
     if first.WhichOneof("msg") != "start":
         await context.abort(grpc.StatusCode.INVALID_ARGUMENT, "first message must be start")
-    sess = await self.sessions.open(first.start, context)          # admission + async bias compile
+    sess = await self.sessions.open(first.start, context)  # admission + async bias compile
     yield pb.TranscribeResponse(accepted=sess.accepted())
     out: asyncio.Queue = asyncio.Queue()
-    pump = asyncio.create_task(sess.pump(it, out))                  # audio/context/end/cancel
+    pump = asyncio.create_task(sess.pump(it, out))  # audio/context/end/cancel
     try:
-        while (m := await out.get()) is not None:                   # status/partials/final
+        while (m := await out.get()) is not None:  # status/partials/final
             yield m
     finally:
-        pump.cancel(); await sess.close()                           # also runs on RST_STREAM
+        pump.cancel()
+        await sess.close()  # also runs on RST_STREAM
 ```
 
 ### 15.3 Swift (Mac)

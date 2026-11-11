@@ -650,15 +650,19 @@ Qwen3-ASR 1.7B in `buffered` mode is expected to finalize in 300–700 ms [U]. O
 The Python reference server hosts backends behind one small interface:
 ```python
 class Backend(Protocol):
-    caps: ModelCaps                                   # → welcome.models[]
+    caps: ModelCaps  # → welcome.models[]
+
     async def open(self, start: SessionStart) -> "BackendSession": ...
     async def warmup(self) -> None: ...
 
+
 class BackendSession(Protocol):
-    def push(self, pcm16k: np.ndarray, pos: int) -> None: ...          # contiguous, already decoded from Opus
+    def push(
+        self, pcm16k: np.ndarray, pos: int
+    ) -> None: ...  # contiguous, already decoded from Opus
     def update(self, bias: BiasSet | None, ctx: Context | None) -> None: ...
-    async def partial(self) -> PartialResult | None: ...               # called every partial_interval_ms
-    async def eager(self, speech_end: int) -> None: ...                # speculative finalize (optional)
+    async def partial(self) -> PartialResult | None: ...  # called every partial_interval_ms
+    async def eager(self, speech_end: int) -> None: ...  # speculative finalize (optional)
     async def finalize(self, deadline: float, want: Output) -> FinalResult: ...
     def cancel(self) -> None: ...
 ```
@@ -727,9 +731,10 @@ Adapters fill `final.quality` honestly, e.g. `word_confidence:"none"` for OpenAI
 import json, struct, msgpack
 from starlette.websockets import WebSocket, WebSocketDisconnect
 
-SUBPROTOCOLS = ("hark.v1.msgpack", "hark.v1.json")   # server preference order
+SUBPROTOCOLS = ("hark.v1.msgpack", "hark.v1.json")  # server preference order
 AUDIO, CTRL = 0x02, 0x01
-HDR = struct.Struct(">BBHI")          # kind, flags, sid, pos  (8 bytes)
+HDR = struct.Struct(">BBHI")  # kind, flags, sid, pos  (8 bytes)
+
 
 @app.websocket("/v1/stream")
 async def stream(ws: WebSocket):
@@ -737,11 +742,11 @@ async def stream(ws: WebSocket):
     offered = ws.scope.get("subprotocols", [])
     proto = next((p for p in SUBPROTOCOLS if p in offered), None)
     if principal is None or proto is None:
-        await ws.close(code=1008)                   # before accept → upgrade refused (HTTP 403)
+        await ws.close(code=1008)  # before accept → upgrade refused (HTTP 403)
         return
     await ws.accept(subprotocol=proto)
     binary = proto.endswith("msgpack")
-    conn = Connection(ws, principal, binary)        # owns: sessions{sid}, out-queue, writer task
+    conn = Connection(ws, principal, binary)  # owns: sessions{sid}, out-queue, writer task
     conn.start_writer()
     await conn.send(welcome_msg(binary))
     try:
@@ -752,7 +757,7 @@ async def stream(ws: WebSocket):
             if (b := m.get("bytes")) is not None:
                 if b and b[0] == AUDIO and len(b) >= HDR.size:
                     _, flags, sid, pos = HDR.unpack_from(b)
-                    conn.on_audio(sid, pos, flags, memoryview(b)[HDR.size:])   # non-blocking append
+                    conn.on_audio(sid, pos, flags, memoryview(b)[HDR.size :])  # non-blocking append
                 elif b and b[0] == CTRL and binary:
                     conn.on_ctrl(msgpack.unpackb(b[1:], raw=False))
                 else:
@@ -765,7 +770,7 @@ async def stream(ws: WebSocket):
     except WebSocketDisconnect:
         pass
     finally:
-        conn.orphan_live_sessions()                 # resume window (§10)
+        conn.orphan_live_sessions()  # resume window (§10)
 ```
 `on_ctrl` validates against the schema in debug and test builds (`jsonschema`); production builds use pydantic models generated from the schema [U tooling: datamodel-code-generator]. Inference runs in one GPU worker with a micro-batcher (5–10 ms window) so concurrent sessions can share batches, with per-row bias ids as GPU-PB allows [S7].
 
