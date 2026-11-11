@@ -59,7 +59,8 @@ class ContextConfig:
 @dataclass
 class CleanupConfig:
     enabled: bool = True  # global switch; profiles opt in individually
-    deadline_ms: int = 600  # whole Cleanup RPC; timeout => raw text
+    # Whole Cleanup RPC; timeout => raw text. POC: ~0.6 s for ~200 edit tokens on Qwen3-1.7B.
+    deadline_ms: int = 1000
 
 
 @dataclass
@@ -118,7 +119,8 @@ def default_profiles() -> dict[str, Profile]:
                 "dev.warp.Warp-Stable", "*ghostty*", "*terminal*",
             ],
             terminal=True,
-            cleanup=False,
+            cleanup=True,
+            cleanup_profile="terminal",
         ),
         "chat": Profile(
             apps=[
@@ -127,6 +129,7 @@ def default_profiles() -> dict[str, Profile]:
                 "net.whatsapp.WhatsApp",
             ],
             cleanup=True,
+            cleanup_profile="chat",
         ),
         "prose": Profile(cleanup=True),
     }  # fmt: skip

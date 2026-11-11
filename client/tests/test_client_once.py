@@ -79,7 +79,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
     assert fake_llm.user_payload()["protected"] == ["kubectl"]
 
 
-def test_terminal_app_gets_terminal_profile_without_cleanup(
+def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     tmp_path: Path,
     hark_server: HarkServer,
     fake_llm: FakeLLM,
@@ -93,7 +93,9 @@ def test_terminal_app_gets_terminal_profile_without_cleanup(
     assert code == 0
     assert "[dry-run] would terminal paste: 'please run kubectl get'" in capsys.readouterr().out
     assert rec["profile"] == "terminal"
-    assert fake_llm.requests == []
+    assert len(fake_llm.requests) == 1
+    messages = cast("list[dict[str, str]]", fake_llm.requests[0]["messages"])
+    assert 'Profile "terminal"' in messages[0]["content"]
 
 
 def test_cleanup_timeout_falls_back_to_canonical_text(
