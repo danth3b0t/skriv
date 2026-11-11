@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
+from hark_client.__main__ import main
 from hark_client.context import FocusInfo, Term, TermKind, TermSource
 from hark_client.fields import FieldText
 from hark_client.learn import Anchor, LearnedStore, Learner, corrections, merge_terms
@@ -166,3 +167,20 @@ def test_watch_needs_an_unambiguous_span_and_a_window_id(tmp_path: Path):
     assert not learner.after_paste(TARGET, "go", field.value, lambda: "1:7")
     assert not learner.after_paste(FocusInfo(pid=1), "go go", field.value, lambda: "")
     assert field.reads == 0
+
+
+def test_hark_learned_cli(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    cfg = tmp_path / "config.toml"
+    cfg.write_text(f'[history]\ndir = "{tmp_path}"\n')
+    store = LearnedStore(tmp_path / "learned.json")
+    store.record([("cube control", "kubectl"), ("pie charm", "PyCharm")])
+    store.record([("cube control", "kubectl")])
+    assert main(["--config", str(cfg), "learned"]) == 0
+    out = capsys.readouterr().out
+    assert "*   2  'cube control' -> 'kubectl'" in out
+    assert "    1  'pie charm' -> 'PyCharm'" in out
+    assert main(["--config", str(cfg), "learned", "forget"]) == 2
+    assert main(["--config", str(cfg), "learned", "forget", "nope"]) == 1
+    assert main(["--config", str(cfg), "learned", "forget", "pie charm"]) == 0
+    assert main(["--config", str(cfg), "learned", "clear"]) == 0
+    assert store.entries() == []
