@@ -17,6 +17,8 @@ import sys
 import time
 import uuid
 import wave
+from pathlib import Path
+from typing import TYPE_CHECKING, TypedDict, cast
 
 import grpc
 from google.protobuf import json_format
@@ -24,7 +26,52 @@ from google.protobuf import json_format
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
 
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from hark.v1.hark_pb2_grpc import AsrAsyncStub
+
 SAMPLE_RATE = 16000
+
+
+class Args(argparse.Namespace):
+    # Annotations only: argparse fills in the defaults for attributes that are not set.
+    wav: str
+    server: str
+    fast: bool
+    bias: str | None
+    model: str
+    language: str
+    chunk_ms: int
+    budget_ms: int
+    anchor: str
+    n_best: int
+    words: bool
+    repeat: int
+    warmup: bool
+    caps: bool
+    json_summary: str | None
+    quiet: bool
+    tls_ca: str | None
+    tls_cert: str | None
+    tls_key: str | None
+    tls_server_name: str | None
+
+
+class RunResult(TypedDict):
+    audio_s: float
+    accepted_ms: float
+    stream_s: float
+    eoa_to_final_ms: float
+    server_end_to_final_ms: int
+    network_client_ms: float
+    encoder_ms: int
+    decode_ms: int
+    queue_ms: int
+    eager_hit: bool
+    text: str
+    warnings: list[dict[str, object]]
+    final: pb.FinalResult
 
 
 def read_wav(path: str) -> bytes:
@@ -41,33 +88,37 @@ def read_wav(path: str) -> bytes:
 def load_bias(path: str) -> pb.BiasList:
     """BiasList in protobuf JSON; aliases may be plain strings.
     e.g. {"terms": [{"id": "t1", "canonical": "kubectl", "aliases": ["cube control"], "weight": 0.8}]}"""
-    with open(path) as f:
-        data = json.load(f)
-    if isinstance(data, list):
-        data = {"terms": data}
+    raw = cast("object", json.loads(Path(path).read_text()))
+    if isinstance(raw, list):
+        raw = {"terms": cast("list[object]", raw)}
+    data = cast("dict[str, list[dict[str, object]]]", raw)
     for term in data.get("terms", []):
-        term["aliases"] = [{"text": a} if isinstance(a, str) else a for a in term.get("aliases", [])]
+        aliases = cast("list[object]", term.get("aliases", []))
+        term["aliases"] = [{"text": a} if isinstance(a, str) else a for a in aliases]
     return json_format.ParseDict(data, pb.BiasList())
 
 
-def channel(args) -> grpc.aio.Channel:
+def channel(args: Args) -> grpc.aio.Channel:
     if not args.tls_ca:
         return grpc.aio.insecure_channel(args.server)
 
-    def read(p):
-        with open(p, "rb") as f:
-            return f.read()
+    def read(p: str) -> bytes:
+        return Path(p).read_bytes()
 
     creds = grpc.ssl_channel_credentials(
         root_certificates=read(args.tls_ca),
         private_key=read(args.tls_key) if args.tls_key else None,
         certificate_chain=read(args.tls_cert) if args.tls_cert else None,
     )
-    options = [("grpc.ssl_target_name_override", args.tls_server_name)] if args.tls_server_name else []
+    options = (
+        [("grpc.ssl_target_name_override", args.tls_server_name)] if args.tls_server_name else []
+    )
     return grpc.aio.secure_channel(args.server, creds, options=options)
 
 
-async def run_once(stub, args, pcm: bytes, bias: pb.BiasList | None) -> dict:
+async def run_once(
+    stub: AsrAsyncStub, args: Args, pcm: bytes, bias: pb.BiasList | None
+) -> RunResult:
     chunk_bytes = SAMPLE_RATE * args.chunk_ms // 1000 * 2
     chunks = [pcm[i : i + chunk_bytes] for i in range(0, len(pcm), chunk_bytes)]
     start = pb.SessionStart(
@@ -90,7 +141,7 @@ async def run_once(stub, args, pcm: bytes, bias: pb.BiasList | None) -> dict:
         start.context.CopyFrom(pb.RecognitionContext(revision=1, bias=bias))
     t: dict[str, float] = {}
 
-    async def requests():
+    async def requests() -> AsyncIterator[pb.TranscribeRequest]:
         t["start"] = time.perf_counter()
         yield pb.TranscribeRequest(start=start)
         sent = 0
@@ -111,14 +162,17 @@ async def run_once(stub, args, pcm: bytes, bias: pb.BiasList | None) -> dict:
         )
 
     call = stub.Transcribe(requests())
-    final = ended = None
-    warnings = []
+    final: pb.FinalResult | None = None
+    ended: pb.SessionEnded | None = None
+    warnings: list[dict[str, object]] = []
     async for msg in call:
         kind = msg.WhichOneof("msg")
         if kind == "accepted":
             t["accepted"] = time.perf_counter()
         elif kind == "warning":
-            warnings.append(json_format.MessageToDict(msg.warning, preserving_proto_field_name=True))
+            warnings.append(
+                json_format.MessageToDict(msg.warning, preserving_proto_field_name=True)
+            )
         elif kind == "final_result":
             t["final"] = time.perf_counter()
             final = msg.final_result
@@ -127,6 +181,7 @@ async def run_once(stub, args, pcm: bytes, bias: pb.BiasList | None) -> dict:
     if ended is not None or final is None:
         detail = json_format.MessageToJson(ended, preserving_proto_field_name=True) if ended else ""
         raise RuntimeError(f"session ended without result: {detail or await call.code()}")
+
     def ms(a: str, b: str) -> float:
         return (t[b] - t[a]) * 1000
 
@@ -153,22 +208,25 @@ def pct(values: list[float], q: float) -> float:
     return s[min(len(s) - 1, max(0, round(q * (len(s) - 1))))]
 
 
-async def main_async(args) -> int:
+async def main_async(args: Args) -> int:
     pcm = read_wav(args.wav)
     bias = load_bias(args.bias) if args.bias else None
     async with channel(args) as ch:
         stub = pb_grpc.AsrStub(ch)
         if args.caps:
-            caps = await stub.GetCapabilities(pb.GetCapabilitiesRequest(client_version="hark-probe/0.1"))
+            caps = await stub.GetCapabilities(
+                pb.GetCapabilitiesRequest(client_version="hark-probe/0.1")
+            )
             print(json_format.MessageToJson(caps, preserving_proto_field_name=True))
             return 0
-        summary: dict = {"wav": args.wav, "fast": args.fast, "runs": []}
+        summary: dict[str, object] = {"wav": args.wav, "fast": args.fast, "runs": []}
         if args.warmup:
             t0 = time.perf_counter()
             w = await stub.Warmup(pb.WarmupRequest(model_id=args.model))
-            summary["warmup"] = {"server_warm_ms": w.warm_ms, "rpc_ms": (time.perf_counter() - t0) * 1000}
-            print(f"warmup: server {w.warm_ms} ms, rpc {summary['warmup']['rpc_ms']:.0f} ms", file=sys.stderr)
-        results = []
+            rpc_ms = (time.perf_counter() - t0) * 1000
+            summary["warmup"] = {"server_warm_ms": w.warm_ms, "rpc_ms": rpc_ms}
+            print(f"warmup: server {w.warm_ms} ms, rpc {rpc_ms:.0f} ms", file=sys.stderr)
+        results: list[RunResult] = []
         for i in range(args.repeat):
             try:
                 r = await run_once(stub, args, pcm, bias)
@@ -187,32 +245,45 @@ async def main_async(args) -> int:
                 )
         e2f = [r["eoa_to_final_ms"] for r in results]
         srv = [r["server_end_to_final_ms"] for r in results]
+        e2f_stats = {
+            "p50": statistics.median(e2f),
+            "p95": pct(e2f, 0.95),
+            "min": min(e2f),
+            "max": max(e2f),
+        }
+        srv_p50 = statistics.median(srv)
         summary["runs"] = [{k: v for k, v in r.items() if k != "final"} for r in results]
-        summary["eoa_to_final_ms"] = {"p50": statistics.median(e2f), "p95": pct(e2f, 0.95), "min": min(e2f), "max": max(e2f)}
-        summary["server_end_to_final_ms_p50"] = statistics.median(srv)
+        summary["eoa_to_final_ms"] = e2f_stats
+        summary["server_end_to_final_ms_p50"] = srv_p50
         print(
-            f"eoa->final over {len(e2f)} runs: p50 {summary['eoa_to_final_ms']['p50']:.1f} ms, "
-            f"p95 {summary['eoa_to_final_ms']['p95']:.1f} ms, min {min(e2f):.1f}, max {max(e2f):.1f} "
-            f"(server p50 {summary['server_end_to_final_ms_p50']:.0f} ms)",
+            f"eoa->final over {len(e2f)} runs: p50 {e2f_stats['p50']:.1f} ms, "
+            f"p95 {e2f_stats['p95']:.1f} ms, min {min(e2f):.1f}, max {max(e2f):.1f} "
+            f"(server p50 {srv_p50:.0f} ms)",
             file=sys.stderr,
         )
         print(json_format.MessageToJson(results[-1]["final"], preserving_proto_field_name=True))
         if args.json_summary:
-            with open(args.json_summary, "w") as f:
-                json.dump(summary, f, indent=2)
+            text = json.dumps(summary, indent=2)
+            await asyncio.to_thread(Path(args.json_summary).write_text, text)
     return 0
 
 
-def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
-    p = argparse.ArgumentParser(prog="hark-probe", description=__doc__.split("\n\n")[0])
+def parse_args(argv: list[str] | None = None) -> Args:
+    # __doc__ is None under `python -OO`.
+    description = (__doc__ or "").split("\n\n")[0]
+    p = argparse.ArgumentParser(prog="hark-probe", description=description)
     p.add_argument("wav", help="16 kHz mono PCM16 WAV")
     p.add_argument("--server", default="127.0.0.1:50051")
-    p.add_argument("--fast", action="store_true", help="send audio as fast as possible (default: real time)")
+    p.add_argument(
+        "--fast", action="store_true", help="send audio as fast as possible (default: real time)"
+    )
     p.add_argument("--bias", help="BiasList JSON file")
     p.add_argument("--model", default="", help="model_id ('' = server default)")
     p.add_argument("--language", default="")
     p.add_argument("--chunk-ms", type=int, default=40)
-    p.add_argument("--budget-ms", type=int, default=0, help="finalize_budget_ms (0 = server default)")
+    p.add_argument(
+        "--budget-ms", type=int, default=0, help="finalize_budget_ms (0 = server default)"
+    )
     p.add_argument("--anchor", default="if_cheap", choices=["off", "if_cheap", "always"])
     p.add_argument("--n-best", type=int, default=0)
     p.add_argument("--words", action="store_true", help="request word timestamps + confidence")
@@ -225,7 +296,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     p.add_argument("--tls-cert", help="client cert (mTLS)")
     p.add_argument("--tls-key", help="client key (mTLS)")
     p.add_argument("--tls-server-name", help="override expected server name")
-    return p.parse_args(argv)
+    return p.parse_args(argv, namespace=Args())
 
 
 def main(argv: list[str] | None = None) -> int:
