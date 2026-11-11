@@ -1,0 +1,899 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://hark.invalid/schema/protocol/proposal-b/hark-ws-1.json",
+  "title": "hark-ws/1 control messages (Proposal B)",
+  "description": "Logical schema for hark-ws/1 control messages. The same messages are carried as MessagePack maps (subprotocol hark.v1.msgpack, binary frame prefixed with kind byte 0x01) or JSON text frames (subprotocol hark.v1.json). Control messages are restricted to the JSON data model (string keys, no bin/ext, finite floats). Senders MUST emit messages valid against this schema; receivers MUST ignore unknown fields. Top-level x_* fields are reserved for extensions. Audio frames are binary and documented in $defs/AudioFrameHeader. Units: ms for durations/word times, samples for audio positions, Unicode code points for text offsets (half-open).",
+  "oneOf": [
+    { "$ref": "#/$defs/ClientMessage" },
+    { "$ref": "#/$defs/ServerMessage" }
+  ],
+  "$defs": {
+
+    "ClientMessage": {
+      "oneOf": [
+        { "$ref": "#/$defs/SessionStart" },
+        { "$ref": "#/$defs/ContextUpdate" },
+        { "$ref": "#/$defs/AudioEagerEnd" },
+        { "$ref": "#/$defs/AudioEnd" },
+        { "$ref": "#/$defs/SessionCancel" },
+        { "$ref": "#/$defs/Ping" },
+        { "$ref": "#/$defs/Warmup" }
+      ]
+    },
+
+    "ServerMessage": {
+      "oneOf": [
+        { "$ref": "#/$defs/Welcome" },
+        { "$ref": "#/$defs/SessionStarted" },
+        { "$ref": "#/$defs/AudioAck" },
+        { "$ref": "#/$defs/Partial" },
+        { "$ref": "#/$defs/Final" },
+        { "$ref": "#/$defs/SessionEnd" },
+        { "$ref": "#/$defs/Error" },
+        { "$ref": "#/$defs/Pong" },
+        { "$ref": "#/$defs/WarmupResult" },
+        { "$ref": "#/$defs/ServerNotice" }
+      ]
+    },
+
+    "Sid": {
+      "description": "Connection-scoped session handle chosen by the client; also carried in every audio frame header.",
+      "type": "integer", "minimum": 0, "maximum": 65535
+    },
+    "UtteranceId": {
+      "description": "Globally unique utterance id (ULID or UUIDv7 recommended). Idempotency key; constant across retries/resume/failover.",
+      "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$"
+    },
+    "ShortId": { "type": "string", "pattern": "^[A-Za-z0-9_.:-]{1,64}$" },
+    "Samples": { "description": "Audio sample index/count at the session sample rate.", "type": "integer", "minimum": 0, "maximum": 4294967295 },
+    "Ms": { "type": "integer", "minimum": 0 },
+    "Unit": { "type": "number", "minimum": 0, "maximum": 1 },
+    "Lang": { "description": "BCP-47 language tag.", "type": "string", "pattern": "^[A-Za-z]{2,3}(-[A-Za-z0-9]{2,8})*$" },
+    "Span": {
+      "description": "Half-open [start, end) offsets in Unicode code points into the message's text.",
+      "type": "array", "prefixItems": [ { "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 } ],
+      "minItems": 2, "maxItems": 2
+    },
+    "WordRange": {
+      "description": "Half-open [start, end) index range into a words array.",
+      "type": "array", "prefixItems": [ { "type": "integer", "minimum": 0 }, { "type": "integer", "minimum": 0 } ],
+      "minItems": 2, "maxItems": 2
+    },
+    "Extensions": { "description": "Placeholder: top-level x_* fields allowed on messages.", "type": "object" },
+
+    "AudioFrameHeader": {
+      "description": "DOCUMENTATION ONLY (binary, not a control message). Binary WebSocket frame layout for audio, client to server. Byte 0 kind=0x02, byte 1 flags (bit0 DISCONTINUITY, bits1-7 reserved = 0), bytes 2-3 sid (u16 big-endian), bytes 4-7 pos (u32 big-endian, index of first payload sample at the session sample rate), bytes 8.. payload (pcm_s16le little-endian samples, or exactly one raw Opus packet).",
+      "type": "object",
+      "x-binary-layout": [
+        { "offset": 0, "size": 1, "name": "kind", "type": "u8", "value": 2 },
+        { "offset": 1, "size": 1, "name": "flags", "type": "u8", "bits": { "0": "DISCONTINUITY" } },
+        { "offset": 2, "size": 2, "name": "sid", "type": "u16be" },
+        { "offset": 4, "size": 4, "name": "pos", "type": "u32be" },
+        { "offset": 8, "size": "n", "name": "payload", "type": "bytes" }
+      ],
+      "x-frame-kinds": { "0": "reserved", "1": "CTRL (MessagePack body, msgpack subprotocol only)", "2": "AUDIO", "3-127": "reserved", "128-255": "experimental" },
+      "required": [ "kind", "flags", "sid", "pos" ],
+      "properties": {
+        "kind": { "const": 2 },
+        "flags": { "type": "integer", "minimum": 0, "maximum": 1 },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "pos": { "$ref": "#/$defs/Samples" }
+      }
+    },
+
+    "AudioFormat": {
+      "type": "object",
+      "required": [ "codec", "sample_rate" ],
+      "properties": {
+        "codec": { "enum": [ "pcm_s16le", "opus" ] },
+        "sample_rate": { "type": "integer", "enum": [ 8000, 16000, 24000, 48000 ], "default": 16000 },
+        "channels": { "const": 1, "default": 1 },
+        "frame_ms": { "type": "integer", "minimum": 10, "maximum": 120, "multipleOf": 10, "default": 20 },
+        "bitrate": { "description": "Opus only: encoder target bitrate in bit/s.", "type": "integer", "minimum": 6000, "maximum": 128000 }
+      },
+      "additionalProperties": false
+    },
+
+    "ProvenanceSource": {
+      "enum": [ "app", "window_title", "focused_text", "selection", "terminal", "terminal_cwd", "repo_vocab", "history", "alias_table", "agent_session", "ocr", "manual", "domain_hint", "other" ]
+    },
+
+    "Provenance": {
+      "type": "object",
+      "required": [ "source" ],
+      "properties": {
+        "source": { "$ref": "#/$defs/ProvenanceSource" },
+        "ref": { "description": "Opaque short reference (e.g. hash); never raw content.", "type": "string", "maxLength": 64 },
+        "score": { "$ref": "#/$defs/Unit" }
+      },
+      "additionalProperties": false
+    },
+
+    "BiasTerm": {
+      "type": "object",
+      "required": [ "id", "canonical", "weight" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/ShortId" },
+        "canonical": { "description": "Exact written form the user wants.", "type": "string", "minLength": 1, "maxLength": 128 },
+        "spoken": {
+          "description": "Spoken forms / typical ASR spellings; boosted/prompted/rescored and mapped back to this term.",
+          "type": "array", "maxItems": 8,
+          "items": { "type": "string", "minLength": 1, "maxLength": 128 }
+        },
+        "weight": { "description": "Client ranker relevance in [0,1]; server maps monotonically to backend scale.", "$ref": "#/$defs/Unit" },
+        "class": { "enum": [ "identifier", "name", "product", "acronym", "path", "jargon", "phrase", "other" ], "default": "other" },
+        "provenance": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Provenance" } },
+        "boost_canonical": { "description": "false when the canonical form is never emitted by ASR (e.g. 'k8s'); only spoken forms are boosted.", "type": "boolean", "default": true },
+        "case_sensitive": { "type": "boolean", "default": false }
+      },
+      "additionalProperties": false
+    },
+
+    "BiasSet": {
+      "type": "object",
+      "required": [ "version", "terms" ],
+      "properties": {
+        "version": { "description": "Starts at 1; strictly increases with each context.update.", "type": "integer", "minimum": 1 },
+        "list_id": { "description": "Content hash of terms; server cache key.", "type": "string", "maxLength": 80 },
+        "strength": { "description": "Global multiplier; 0.5 = server default.", "$ref": "#/$defs/Unit", "default": 0.5 },
+        "terms": { "type": "array", "maxItems": 500, "items": { "$ref": "#/$defs/BiasTerm" } }
+      },
+      "additionalProperties": false
+    },
+
+    "ContextItem": {
+      "type": "object",
+      "required": [ "source", "text" ],
+      "properties": {
+        "source": { "$ref": "#/$defs/ProvenanceSource" },
+        "text": { "type": "string", "minLength": 1, "maxLength": 8000 },
+        "weight": { "$ref": "#/$defs/Unit", "default": 0.5 }
+      },
+      "additionalProperties": false
+    },
+
+    "Context": {
+      "description": "Free-text context; rendered by the server with a model-specific template. Only sent when provider privacy policy allows.",
+      "type": "object",
+      "required": [ "version", "items" ],
+      "properties": {
+        "version": { "type": "integer", "minimum": 1 },
+        "items": { "type": "array", "maxItems": 32, "items": { "$ref": "#/$defs/ContextItem" } }
+      },
+      "additionalProperties": false
+    },
+
+    "OutputOptions": {
+      "type": "object",
+      "properties": {
+        "partials": { "type": "boolean", "default": true },
+        "partial_interval_ms": { "type": "integer", "minimum": 100, "maximum": 5000, "default": 300 },
+        "partial_words": { "type": "boolean", "default": false },
+        "nbest": { "type": "integer", "minimum": 0, "maximum": 10, "default": 0 },
+        "word_timings": { "type": "boolean", "default": true },
+        "word_confidence": { "type": "boolean", "default": true },
+        "anchor": { "description": "Return the unbiased/no-context hypothesis.", "type": "boolean", "default": true },
+        "bias_hits": { "type": "boolean", "default": true },
+        "punctuation": { "type": "boolean", "default": true },
+        "casing": { "type": "boolean", "default": true },
+        "itn": { "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+
+    "Privacy": {
+      "type": "object",
+      "properties": {
+        "retention": { "enum": [ "none", "metrics", "debug" ], "default": "none" },
+        "allow_external": { "description": "false: server MUST NOT forward audio/text/context off-host.", "type": "boolean", "default": false },
+        "sensitive": { "description": "Session carries screen/code text: memory-only, never logged.", "type": "boolean", "default": true }
+      },
+      "additionalProperties": false
+    },
+
+    "SessionStart": {
+      "type": "object",
+      "required": [ "type", "sid", "utterance_id", "audio" ],
+      "properties": {
+        "type": { "const": "session.start" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "utterance_id": { "$ref": "#/$defs/UtteranceId" },
+        "attempt": { "type": "integer", "minimum": 1, "default": 1 },
+        "resume": { "type": "boolean", "default": false },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128, "default": "default" },
+        "mode": { "enum": [ "stream", "buffered" ], "default": "stream" },
+        "audio": { "$ref": "#/$defs/AudioFormat" },
+        "languages": { "description": "Empty/absent = auto; one = forced; several = hint.", "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/Lang" } },
+        "bias": { "$ref": "#/$defs/BiasSet" },
+        "context": { "$ref": "#/$defs/Context" },
+        "output": { "$ref": "#/$defs/OutputOptions" },
+        "deadline_ms": { "description": "Budget from receipt of audio.end (all samples) to sending final.", "type": "integer", "minimum": 50, "maximum": 60000, "default": 600 },
+        "priority": { "enum": [ "interactive", "background" ], "default": "interactive" },
+        "privacy": { "$ref": "#/$defs/Privacy" },
+        "trace_id": { "type": "string", "maxLength": 64 }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "ContextUpdate": {
+      "type": "object",
+      "required": [ "type", "sid" ],
+      "anyOf": [ { "required": [ "bias" ] }, { "required": [ "context" ] } ],
+      "properties": {
+        "type": { "const": "context.update" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "bias": { "$ref": "#/$defs/BiasSet" },
+        "context": { "$ref": "#/$defs/Context" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "AudioEagerEnd": {
+      "type": "object",
+      "required": [ "type", "sid", "speech_end" ],
+      "properties": {
+        "type": { "const": "audio.eager_end" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "speech_end": { "description": "Client VAD: last speech sample before a pause while key still held.", "$ref": "#/$defs/Samples" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "AudioEnd": {
+      "type": "object",
+      "required": [ "type", "sid", "total_samples" ],
+      "properties": {
+        "type": { "const": "audio.end" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "total_samples": { "description": "Server finalizes once it has received this many samples (lets control overtake queued audio).", "$ref": "#/$defs/Samples" },
+        "speech_end": { "$ref": "#/$defs/Samples" },
+        "reason": { "enum": [ "key_up", "toggle", "vad", "max_duration" ], "default": "key_up" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "SessionCancel": {
+      "type": "object",
+      "required": [ "type", "sid" ],
+      "properties": {
+        "type": { "const": "session.cancel" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "reason": { "enum": [ "user", "superseded", "failover", "timeout", "shutdown" ], "default": "user" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Ping": {
+      "type": "object",
+      "required": [ "type", "id" ],
+      "properties": {
+        "type": { "const": "ping" },
+        "id": { "type": "integer", "minimum": 0 },
+        "t_ms": { "description": "Opaque client timestamp echoed in pong.", "type": "integer", "minimum": 0 }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Warmup": {
+      "type": "object",
+      "required": [ "type", "id", "model" ],
+      "properties": {
+        "type": { "const": "warmup" },
+        "id": { "type": "integer", "minimum": 0 },
+        "model": { "type": "string", "minLength": 1, "maxLength": 128 }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "ModelState": { "enum": [ "warm", "loading", "cold", "suspended", "unavailable" ] },
+
+    "BiasCaps": {
+      "type": "object",
+      "required": [ "mode" ],
+      "properties": {
+        "mode": { "enum": [ "decode_time", "rescoring", "prompt", "none" ] },
+        "max_terms": { "type": "integer", "minimum": 0 },
+        "max_phrase_chars": { "type": "integer", "minimum": 1 },
+        "max_spoken_per_term": { "type": "integer", "minimum": 0 },
+        "weights": { "enum": [ "per_term", "bucketed", "threshold", "ignored" ] },
+        "aliases": { "enum": [ "boosted", "rescored", "prompted", "ignored" ] },
+        "late_update": { "enum": [ "none", "before_audio", "until_end" ] },
+        "cache": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "ModelCaps": {
+      "type": "object",
+      "required": [ "id", "backend", "languages", "audio", "streaming", "bias", "state" ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1, "maxLength": 128 },
+        "backend": { "type": "string", "description": "e.g. nemo, nemo-speech-cpp, qwen3-asr, fluidaudio, mlx, sherpa-onnx, scripted" },
+        "display": { "type": "string" },
+        "languages": { "description": "BCP-47 tags or [\"*\"].", "type": "array", "items": { "type": "string" } },
+        "audio": {
+          "type": "object",
+          "required": [ "codecs", "sample_rates" ],
+          "properties": {
+            "codecs": { "type": "array", "items": { "enum": [ "pcm_s16le", "opus" ] } },
+            "sample_rates": { "type": "array", "items": { "type": "integer" } }
+          },
+          "additionalProperties": false
+        },
+        "streaming": { "enum": [ "native", "rolling", "buffered" ] },
+        "partials": { "type": "boolean" },
+        "bias": { "$ref": "#/$defs/BiasCaps" },
+        "context_text": {
+          "type": "object",
+          "required": [ "supported" ],
+          "properties": {
+            "supported": { "type": "boolean" },
+            "max_chars": { "type": "integer", "minimum": 0 },
+            "echo_risk": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "nbest": {
+          "type": "object",
+          "properties": {
+            "max": { "type": "integer", "minimum": 0 },
+            "kind": { "enum": [ "beam", "sampling", "biased_plus_anchor", "none" ] }
+          },
+          "additionalProperties": false
+        },
+        "word_timings": {
+          "type": "object",
+          "properties": {
+            "kind": { "enum": [ "native", "frame_grid", "aligned", "none" ] },
+            "resolution_ms": { "type": "integer", "minimum": 1 }
+          },
+          "additionalProperties": false
+        },
+        "word_confidence": { "enum": [ "calibrated", "raw", "constant", "none" ] },
+        "anchor": {
+          "type": "object",
+          "properties": {
+            "kind": { "enum": [ "shared_encoder", "parallel_decode", "pre_rescore", "none" ] },
+            "cost": { "enum": [ "low", "high" ] }
+          },
+          "additionalProperties": false
+        },
+        "formatting": {
+          "type": "object",
+          "properties": {
+            "punctuation": { "type": "boolean" },
+            "casing": { "type": "boolean" },
+            "itn": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "eager_end": { "type": "boolean" },
+        "max_audio_ms": { "$ref": "#/$defs/Ms" },
+        "state": { "$ref": "#/$defs/ModelState" },
+        "perf": {
+          "type": "object",
+          "properties": {
+            "finalize_ms_p50": { "$ref": "#/$defs/Ms" },
+            "finalize_ms_p95": { "$ref": "#/$defs/Ms" },
+            "samples": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Limits": {
+      "type": "object",
+      "properties": {
+        "max_sessions": { "type": "integer", "minimum": 1 },
+        "max_ctrl_bytes": { "type": "integer", "minimum": 1024 },
+        "max_audio_frame_bytes": { "type": "integer", "minimum": 1024 },
+        "max_utterance_ms": { "$ref": "#/$defs/Ms" },
+        "max_bias_terms": { "type": "integer", "minimum": 0 },
+        "max_context_chars": { "type": "integer", "minimum": 0 },
+        "ack_interval_ms": { "$ref": "#/$defs/Ms" },
+        "resume_window_ms": { "$ref": "#/$defs/Ms" },
+        "result_cache_ms": { "$ref": "#/$defs/Ms" }
+      },
+      "additionalProperties": false
+    },
+
+    "PrivacyPolicy": {
+      "type": "object",
+      "required": [ "retention_supported", "external_forwarding", "logs_content" ],
+      "properties": {
+        "retention_supported": { "type": "array", "items": { "enum": [ "none", "metrics", "debug" ] } },
+        "default_retention": { "enum": [ "none", "metrics", "debug" ] },
+        "debug_ttl_hours": { "type": "integer", "minimum": 0 },
+        "external_forwarding": { "type": "boolean" },
+        "logs_content": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "ServerInfo": {
+      "description": "Body of GET /v1/info; identical to Welcome without 'type' and 'encoding'.",
+      "type": "object",
+      "required": [ "protocol", "server", "features", "limits", "privacy", "models" ],
+      "properties": {
+        "protocol": {
+          "type": "object",
+          "required": [ "name", "major", "minor" ],
+          "properties": {
+            "name": { "const": "hark" },
+            "major": { "const": 1 },
+            "minor": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "server": {
+          "type": "object",
+          "required": [ "name", "version", "boot_id" ],
+          "properties": {
+            "name": { "type": "string" },
+            "version": { "type": "string" },
+            "instance": { "type": "string" },
+            "boot_id": { "description": "Changes on restart; invalidates resume/result caches.", "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "features": { "type": "array", "items": { "type": "string", "description": "e.g. eager_end, late_context, resume, batch_http, cleanup_proxy" } },
+        "limits": { "$ref": "#/$defs/Limits" },
+        "privacy": { "$ref": "#/$defs/PrivacyPolicy" },
+        "default_model": { "type": "string" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelCaps" } },
+        "cleanup": {
+          "type": "object",
+          "properties": {
+            "proxy_path": { "type": "string" },
+            "models": { "type": "array", "items": { "type": "string" } }
+          },
+          "additionalProperties": false
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "Welcome": {
+      "type": "object",
+      "required": [ "type", "protocol", "encoding", "server", "features", "limits", "privacy", "models" ],
+      "properties": {
+        "type": { "const": "welcome" },
+        "encoding": { "enum": [ "msgpack", "json" ] },
+        "protocol": { "$ref": "#/$defs/ServerInfo/properties/protocol" },
+        "server": { "$ref": "#/$defs/ServerInfo/properties/server" },
+        "features": { "$ref": "#/$defs/ServerInfo/properties/features" },
+        "limits": { "$ref": "#/$defs/Limits" },
+        "privacy": { "$ref": "#/$defs/PrivacyPolicy" },
+        "default_model": { "type": "string" },
+        "models": { "type": "array", "items": { "$ref": "#/$defs/ModelCaps" } },
+        "cleanup": { "$ref": "#/$defs/ServerInfo/properties/cleanup" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "DroppedTerm": {
+      "type": "object",
+      "required": [ "id", "reason" ],
+      "properties": {
+        "id": { "$ref": "#/$defs/ShortId" },
+        "reason": { "enum": [ "too_long", "over_limit", "empty_tokenization", "low_weight", "unsupported_chars", "duplicate" ] }
+      },
+      "additionalProperties": false
+    },
+
+    "SessionStarted": {
+      "type": "object",
+      "required": [ "type", "sid", "utterance_id", "model", "resumed", "received" ],
+      "properties": {
+        "type": { "const": "session.started" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "utterance_id": { "$ref": "#/$defs/UtteranceId" },
+        "model": { "description": "Resolved model id.", "type": "string" },
+        "resumed": { "type": "boolean" },
+        "received": { "description": "Samples already held by the server (resume point; 0 for fresh sessions unless pipelined audio already arrived).", "$ref": "#/$defs/Samples" },
+        "bias": {
+          "type": "object",
+          "required": [ "version", "accepted" ],
+          "properties": {
+            "version": { "type": "integer", "minimum": 1 },
+            "accepted": { "type": "integer", "minimum": 0 },
+            "dropped": { "type": "array", "items": { "$ref": "#/$defs/DroppedTerm" } }
+          },
+          "additionalProperties": false
+        },
+        "context": {
+          "type": "object",
+          "required": [ "version", "chars_used" ],
+          "properties": {
+            "version": { "type": "integer", "minimum": 1 },
+            "chars_used": { "type": "integer", "minimum": 0 },
+            "truncated": { "type": "boolean" }
+          },
+          "additionalProperties": false
+        },
+        "warnings": { "type": "array", "items": { "type": "string" } }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "AudioAck": {
+      "type": "object",
+      "required": [ "type", "sid", "received", "decoded" ],
+      "properties": {
+        "type": { "const": "audio.ack" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "received": { "$ref": "#/$defs/Samples" },
+        "decoded": { "$ref": "#/$defs/Samples" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "WordAlt": {
+      "type": "object",
+      "required": [ "text" ],
+      "properties": {
+        "text": { "type": "string" },
+        "conf": { "$ref": "#/$defs/Unit" }
+      },
+      "additionalProperties": false
+    },
+
+    "Word": {
+      "type": "object",
+      "required": [ "text", "start_ms", "end_ms" ],
+      "properties": {
+        "text": { "type": "string" },
+        "start_ms": { "$ref": "#/$defs/Ms" },
+        "end_ms": { "$ref": "#/$defs/Ms" },
+        "conf": { "description": "Interpret via final.quality.word_confidence.", "oneOf": [ { "$ref": "#/$defs/Unit" }, { "type": "null" } ] },
+        "span": { "description": "Code-point span of this word in the enclosing text.", "$ref": "#/$defs/Span" },
+        "term": { "description": "Bias term id if this word is part of a bias hit.", "$ref": "#/$defs/ShortId" },
+        "alts": { "type": "array", "maxItems": 8, "items": { "$ref": "#/$defs/WordAlt" } }
+      },
+      "additionalProperties": false
+    },
+
+    "Partial": {
+      "type": "object",
+      "required": [ "type", "sid", "rev", "text", "stable_chars" ],
+      "properties": {
+        "type": { "const": "partial" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "rev": { "type": "integer", "minimum": 1 },
+        "text": { "description": "Full replacement of previous partial.", "type": "string" },
+        "stable_chars": { "type": "integer", "minimum": 0 },
+        "decoded": { "$ref": "#/$defs/Samples" },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/Word" } }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Alternative": {
+      "type": "object",
+      "required": [ "text" ],
+      "properties": {
+        "text": { "type": "string" },
+        "score": { "description": "Natural-log score, comparable only within one final.", "oneOf": [ { "type": "number" }, { "type": "null" } ] },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/Word" } }
+      },
+      "additionalProperties": false
+    },
+
+    "Anchor": {
+      "description": "Hypothesis decoded WITHOUT bias and WITHOUT context on the same audio/model.",
+      "type": "object",
+      "required": [ "text" ],
+      "properties": {
+        "text": { "type": "string" },
+        "score": { "oneOf": [ { "type": "number" }, { "type": "null" } ] },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/Word" } }
+      },
+      "additionalProperties": false
+    },
+
+    "BiasHit": {
+      "type": "object",
+      "required": [ "term", "words", "surface", "matched", "in_anchor", "evidence" ],
+      "properties": {
+        "term": { "$ref": "#/$defs/ShortId" },
+        "words": { "description": "Index range into final.words.", "$ref": "#/$defs/WordRange" },
+        "surface": { "description": "Decoded text of the hit (pre-canonicalization).", "type": "string" },
+        "matched": { "enum": [ "canonical", "spoken" ] },
+        "spoken_index": { "type": "integer", "minimum": 0 },
+        "in_anchor": { "description": "Whether the unbiased anchor contains the same surface at the aligned position.", "type": "boolean" },
+        "anchor_surface": { "description": "What the anchor has at the aligned position.", "type": "string" },
+        "evidence": { "enum": [ "decoder", "spotter", "match" ] },
+        "score": { "description": "Backend-specific acoustic score (e.g. CTC-WS); absent if unavailable.", "type": "number" }
+      },
+      "additionalProperties": false
+    },
+
+    "Timing": {
+      "type": "object",
+      "required": [ "end_to_final_ms" ],
+      "properties": {
+        "end_to_final_ms": { "$ref": "#/$defs/Ms" },
+        "queue_ms": { "$ref": "#/$defs/Ms" },
+        "decode_ms": { "$ref": "#/$defs/Ms" },
+        "anchor_ms": { "$ref": "#/$defs/Ms" },
+        "align_ms": { "$ref": "#/$defs/Ms" },
+        "lag_at_end_ms": { "$ref": "#/$defs/Ms" },
+        "eager_hit": { "type": "boolean" }
+      },
+      "additionalProperties": false
+    },
+
+    "Final": {
+      "description": "Terminal success message for a sid.",
+      "type": "object",
+      "required": [ "type", "sid", "utterance_id", "attempt", "status", "text", "words", "nbest", "anchor", "bias_hits", "timing", "model", "quality", "omitted" ],
+      "properties": {
+        "type": { "const": "final" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "utterance_id": { "$ref": "#/$defs/UtteranceId" },
+        "attempt": { "type": "integer", "minimum": 1 },
+        "status": { "enum": [ "ok", "no_speech" ] },
+        "text": { "type": "string" },
+        "words": { "type": "array", "items": { "$ref": "#/$defs/Word" } },
+        "nbest": { "description": "nbest[0] equals the primary hypothesis when present; empty if unavailable.", "type": "array", "maxItems": 10, "items": { "$ref": "#/$defs/Alternative" } },
+        "anchor": { "oneOf": [ { "$ref": "#/$defs/Anchor" }, { "type": "null" } ] },
+        "bias_hits": { "type": "array", "items": { "$ref": "#/$defs/BiasHit" } },
+        "language": {
+          "type": "object",
+          "required": [ "code" ],
+          "properties": {
+            "code": { "type": "string" },
+            "confidence": { "$ref": "#/$defs/Unit" }
+          },
+          "additionalProperties": false
+        },
+        "audio": {
+          "type": "object",
+          "properties": {
+            "received": { "$ref": "#/$defs/Samples" },
+            "decoded": { "$ref": "#/$defs/Samples" },
+            "duration_ms": { "$ref": "#/$defs/Ms" },
+            "discontinuities": { "type": "integer", "minimum": 0 }
+          },
+          "additionalProperties": false
+        },
+        "timing": { "$ref": "#/$defs/Timing" },
+        "model": {
+          "type": "object",
+          "required": [ "id" ],
+          "properties": {
+            "id": { "type": "string" },
+            "revision": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "effective": {
+          "type": "object",
+          "properties": {
+            "bias_version": { "type": "integer", "minimum": 0 },
+            "context_version": { "type": "integer", "minimum": 0 },
+            "bias_terms_used": { "type": "integer", "minimum": 0 },
+            "context_chars_used": { "type": "integer", "minimum": 0 },
+            "prompt_hash": { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "quality": {
+          "type": "object",
+          "required": [ "word_timings", "word_confidence", "nbest", "anchor" ],
+          "properties": {
+            "word_timings": { "enum": [ "native", "frame_grid", "aligned", "none" ] },
+            "word_confidence": { "enum": [ "calibrated", "raw", "constant", "none" ] },
+            "nbest": { "enum": [ "beam", "sampling", "biased_plus_anchor", "none" ] },
+            "anchor": { "enum": [ "shared_encoder", "parallel_decode", "pre_rescore", "none" ] }
+          },
+          "additionalProperties": false
+        },
+        "omitted": {
+          "description": "Requested fields not delivered (unsupported or dropped to meet deadline_ms).",
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": [ "nbest", "anchor", "bias_hits", "bias_hit_scores", "word_timings", "word_confidence", "alignment", "language" ] }
+        },
+        "flags": {
+          "type": "array", "uniqueItems": true,
+          "items": { "enum": [ "context_echo_suspected", "late_context_ignored", "truncated", "replayed", "audio_gap_filled" ] }
+        }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "ErrorCode": {
+      "enum": [
+        "unauthorized", "forbidden",
+        "protocol_error", "bad_frame", "unsupported_encoding", "message_too_large",
+        "unknown_message_type", "invalid_message", "late_update_rejected",
+        "sid_in_use", "unknown_sid", "too_many_sessions",
+        "unknown_model", "unsupported_audio", "unsupported_feature",
+        "bias_too_large", "context_too_large", "context_not_allowed", "privacy_unsatisfiable",
+        "model_unavailable", "overloaded", "draining",
+        "audio_gap", "audio_overflow", "utterance_too_long",
+        "deadline_exceeded", "decode_failed", "internal"
+      ]
+    },
+
+    "ErrorBody": {
+      "type": "object",
+      "required": [ "code", "message", "retryable" ],
+      "properties": {
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": { "type": "string", "maxLength": 1000 },
+        "retryable": { "type": "boolean" },
+        "retry_after_ms": { "$ref": "#/$defs/Ms" },
+        "detail": { "type": "object" }
+      },
+      "additionalProperties": false
+    },
+
+    "SessionEnd": {
+      "description": "Terminal non-success message for a sid.",
+      "type": "object",
+      "required": [ "type", "sid", "status" ],
+      "properties": {
+        "type": { "const": "session.end" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "utterance_id": { "$ref": "#/$defs/UtteranceId" },
+        "status": { "enum": [ "cancelled", "rejected", "failed", "expired" ] },
+        "error": { "$ref": "#/$defs/ErrorBody" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Error": {
+      "description": "Non-terminal error. fatal=true: connection will be closed next (live sessions become resumable orphans).",
+      "type": "object",
+      "required": [ "type", "code", "message", "retryable", "fatal" ],
+      "properties": {
+        "type": { "const": "error" },
+        "sid": { "$ref": "#/$defs/Sid" },
+        "code": { "$ref": "#/$defs/ErrorCode" },
+        "message": { "type": "string", "maxLength": 1000 },
+        "retryable": { "type": "boolean" },
+        "retry_after_ms": { "$ref": "#/$defs/Ms" },
+        "fatal": { "type": "boolean" },
+        "ref": { "description": "Type of the offending message, if any.", "type": "string" },
+        "detail": { "type": "object" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "Pong": {
+      "type": "object",
+      "required": [ "type", "id" ],
+      "properties": {
+        "type": { "const": "pong" },
+        "id": { "type": "integer", "minimum": 0 },
+        "t_ms": { "type": "integer", "minimum": 0 },
+        "load": {
+          "type": "object",
+          "properties": {
+            "active_sessions": { "type": "integer", "minimum": 0 },
+            "queued": { "type": "integer", "minimum": 0 },
+            "est_finalize_ms": { "$ref": "#/$defs/Ms" }
+          },
+          "additionalProperties": false
+        }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "WarmupResult": {
+      "type": "object",
+      "required": [ "type", "id", "model", "state" ],
+      "properties": {
+        "type": { "const": "warmup.result" },
+        "id": { "type": "integer", "minimum": 0 },
+        "model": { "type": "string" },
+        "state": { "$ref": "#/$defs/ModelState" },
+        "took_ms": { "$ref": "#/$defs/Ms" }
+      },
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "ServerNotice": {
+      "type": "object",
+      "required": [ "type", "kind" ],
+      "properties": {
+        "type": { "const": "server.notice" },
+        "kind": { "enum": [ "draining", "model_state" ] },
+        "model": { "type": "string" },
+        "state": { "$ref": "#/$defs/ModelState" },
+        "retry_after_ms": { "$ref": "#/$defs/Ms" },
+        "message": { "type": "string" }
+      },
+      "allOf": [
+        { "if": { "properties": { "kind": { "const": "model_state" } } }, "then": { "required": [ "model", "state" ] } }
+      ],
+      "patternProperties": { "^x_": true },
+      "additionalProperties": false
+    },
+
+    "CleanupReason": { "enum": [ "filler", "punctuation", "casing", "spacing", "self_correction", "grammar", "formatting" ] },
+
+    "CleanupLLMInput": {
+      "description": "Serialized as JSON into the user message of an OpenAI-compatible /v1/chat/completions request (system prompt: fixed text 'hark-cleanup-v1'). Words are the client's tokenization of the canonicalized text.",
+      "type": "object",
+      "required": [ "v", "words", "protected", "style" ],
+      "properties": {
+        "v": { "const": 1 },
+        "lang": { "$ref": "#/$defs/Lang" },
+        "app_kind": { "enum": [ "terminal", "editor", "chat", "email", "browser", "document", "other" ] },
+        "style": {
+          "type": "object",
+          "properties": {
+            "fillers": { "enum": [ "keep", "remove" ] },
+            "punctuation": { "enum": [ "keep", "fix" ] },
+            "casing": { "enum": [ "keep", "sentence" ] },
+            "self_corrections": { "enum": [ "keep", "apply" ] },
+            "numbers": { "enum": [ "keep" ] }
+          },
+          "additionalProperties": false
+        },
+        "words": { "type": "array", "maxItems": 2000, "items": { "type": "string" } },
+        "protected": { "description": "Indices of words that must not be touched.", "type": "array", "items": { "type": "integer", "minimum": 0 }, "uniqueItems": true }
+      },
+      "additionalProperties": false
+    },
+
+    "CleanupLLMOutput": {
+      "description": "response_format json_schema for the cleanup LLM (name 'hark_edits_v1', strict). Client generates a per-request copy with from/to maximum = len(words) and maxItems = max_edits. Client validation (proposal-b.md section 6.2) is authoritative.",
+      "type": "object",
+      "required": [ "edits" ],
+      "properties": {
+        "edits": {
+          "type": "array", "maxItems": 8,
+          "items": {
+            "type": "object",
+            "required": [ "from", "to", "expect", "replace", "reason" ],
+            "properties": {
+              "from": { "type": "integer", "minimum": 0 },
+              "to": { "type": "integer", "minimum": 0 },
+              "expect": { "description": "Original words [from,to) joined by single spaces (self-check).", "type": "string" },
+              "replace": { "type": "string", "maxLength": 400 },
+              "reason": { "$ref": "#/$defs/CleanupReason" }
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+
+    "CleanupResolvedEdit": {
+      "description": "Client-side resolved edit kept in history for undo/swap-to-raw. Offsets are code points into the pre-cleanup text.",
+      "type": "object",
+      "required": [ "start", "end", "before", "after", "reason" ],
+      "properties": {
+        "start": { "type": "integer", "minimum": 0 },
+        "end": { "type": "integer", "minimum": 0 },
+        "before": { "type": "string" },
+        "after": { "type": "string" },
+        "reason": { "$ref": "#/$defs/CleanupReason" }
+      },
+      "additionalProperties": false
+    }
+  }
+}
