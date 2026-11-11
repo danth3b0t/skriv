@@ -6,7 +6,7 @@ differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.
 
 Services:
 - `hark.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance), `Recognize` (unary), `Warmup`.
-- `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` that returns validated edits. Only registered when `[cleanup] base_url` is set.
+- `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` that returns validated edits. Only registered when `[cleanup] base_url` is set. Two engines: `s1` (default; "S1-mini" by "Superwhisper" rewrites the text, the rewrite is aligned into edits) and `edits` (a Qwen3 instruction model returns a JSON edit list).
 - `grpc.health.v1.Health`: services `""` and `hark.v1.Asr` are SERVING once the model is READY; `hark.v1.TextCleanup` is SERVING when cleanup is configured.
 
 ## Run
@@ -59,6 +59,7 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 | `backend.options` | | `{}` | backend constructor kwargs (checked at startup) |
 | `cleanup.base_url` | `--cleanup-url` | `""` (off) | OpenAI-compatible base, e.g. `http://127.0.0.1:8080/v1` |
 | `cleanup.model` | `--cleanup-model` | | model name sent upstream |
+| `cleanup.engine` | `--cleanup-engine` | `s1` | `s1` (S1-mini rewrite → edits) or `edits` (JSON edit list) |
 | `cleanup.api_key_env` | | | env var holding the upstream bearer token |
 
 **Transport security.** Plaintext is accepted only on loopback or `unix:` addresses. Any other address needs TLS, or
@@ -92,11 +93,17 @@ eager finalize are handled by the server (`session.py`), not by backends.
 - Finalize budget: the primary decode is never shed. Then the anchor and then N-best are run if their estimated cost fits; otherwise they are marked `SKIPPED_BUDGET`. `required_features` are never shed. `finalize_budget_exceeded` is set when end_to_final > budget.
 - Every optional field reports a `FieldStatus`. Bias hits are derived by matching the output against the anchor (APPLIED / ALREADY_IN_ANCHOR).
 - Privacy: this server retains, logs and caches nothing, so every `allow_*` flag is rejected with `PRIVACY_UNSATISFIABLE`. Logs contain only ids, sizes and timings.
-- Cleanup profiles: `terminal` (terminal or coding-agent prompt, single line), `chat` (light touch, single line) and `prose` (email/documents; full punctuation, paragraph breaks; the default). All three allow punctuation, capitalization, spacing, filler_removal and self_correction. The prompt is a static prefix (shared policy, then profile rules, then few-shot turns) followed by the request, so llama-server's prompt cache reuses the prefix. The JSON schema's `kind` enum is limited to the profile's kinds.
+- Cleanup profiles: `terminal` (terminal or coding-agent prompt, single line), `chat` (light touch, single line) and `prose` (email/documents; full punctuation, paragraph breaks; the default). All three allow punctuation, capitalization, spacing, filler_removal and self_correction, plus number_format with the `s1` engine.
+- Language guard (both engines): text that looks non-English (more foreign than English stopwords, or over a quarter of the words with non-ASCII letters), or a `language` other than `en*`, gets no edits and no LLM call.
+- `s1` engine: the request is S1-mini's exact system prompt and a control line (`[Styling: semi-formal] [Structure: prose] [Context: general]` for every profile: ASR output arrives cased and punctuated, and `casual`/`semi-casual` lowercase sentence starts and drop final periods), with `chat_template_kwargs.enable_thinking = false`, temperature 0. The rewrite is aligned with the input on whitespace tokens (words compared without case and punctuation, `difflib`). Each changed stretch becomes a quoted edit: deletions and insertions take a neighbouring token along, non-unique quotes grow by a token per side, and a stretch with a correction cue grows until it has the self-correction shape below. Single-line profiles turn line breaks in the rewrite into spaces. The edits then go through the validator below, **all or nothing**: one rejected edit (or more than `max_edits`) and the text stays raw. A rewrite cut off by `max_tokens` is dropped.
+- `edits` engine: the prompt is a static prefix (shared policy, then profile rules, then few-shot turns) followed by the request, so llama-server's prompt cache reuses the prefix. The JSON schema's `kind` enum is limited to the profile's kinds.
 - Cleanup validation: unique-quote edits are resolved to UTF-8 byte ranges and validated: unique find, overlap, protected spans, allowed kinds, per-kind invariants, plus the >50% invalid / negation / digit / changed-bytes rules. If the budget runs out, the response is `truncated` with no edits. Additions:
   - A mislabelled edit takes the first allowed kind whose invariant it passes.
   - A quote that combines kinds (e.g. a whole sentence re-cased and re-punctuated) is split into minimal token-level edits. It is accepted only if every part passes an allowed kind and stays off protected spans.
-  - `self_correction` has a mechanical check: `find` = kept words + 1–8 retracted words + a cue (`no wait`, `I mean`, `scratch that`, …) set off by punctuation + the correction; `replace` = kept words + the correction. The negation and digit rules compare against the text with the self-corrections applied.
+  - `self_correction` has a mechanical check: `find` = kept words + 1–8 retracted words + a cue (`no wait`, `I mean`, `scratch that`, …) set off by punctuation + the correction; `replace` = kept words + the correction. The negation and digit rules compare against the text with the self-corrections applied. Protected spans may be retracted with the words and the cue (`port 8080, sorry, I mean port 8081`; the `no` of `no wait`); protected spans in the kept words and the correction must reappear unchanged in `replace`.
+  - `filler_removal` may delete um/uh-type fillers, `like`, `basically`, `literally`, the phrases `you know`, `I mean`, `kind of`, `sort of`, and a word repeated right after itself (`the the`). Fillers may make up at most half of the words.
+  - `number_format`: runs of spoken numbers become digits of the same value (`twenty three thousand` → `23,000`, `ten percent` → `10%`, `fifty dollars` → `$50`, `fifth` → `5th`); other words keep their letters. Times, dates, years and decimals are not checked, so they are rejected.
+  - `punctuation` may only add, remove or change `. , ; : ? ! ' ’ -` (no quotes, brackets or symbols), and the result may not lose a `!`.
   - Single-line profiles reject added line breaks.
   - No-op echoes don't count towards the >50% rule.
   - Changed bytes exclude quoted context, filler removal and self-corrections.
@@ -123,5 +130,5 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 - nemo_gpupb is a stub.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, Opus, gRPC reflection, `SUPERSEDED` handling of retried attempts, server-side session expiry, hit scores, and REJECTED hits for `bias_diagnostics`.
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.
-- Cleanup: no in-budget retry, non-streaming upstream call. `number_format` and `grammar` have no mechanical check, so no profile enables them. The `self_correction` check and the stricter rules above exist only on the server; the client validator (authoritative) must mirror them or reject `self_correction`. A cue word inside a span the client marks as a protected negation (`no` in `no wait`) blocks that self-correction.
+- Cleanup: no in-budget retry, non-streaming upstream call. `grammar` has no mechanical check, so no profile enables it. The client validator (authoritative) mirrors the per-kind checks, the protected-span rule for self-corrections and the negation/digit/removed-words/`!` rules, but not the changed-bytes budget or the "sloppy result" patterns. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).
 - grpcio's *Python* client replaces the server's status with `INTERNAL` if it is still writing when the server ends the call. Clients should rely on the in-band `session_ended`/`final_result` and stop writing after it (tonic does not have this problem).

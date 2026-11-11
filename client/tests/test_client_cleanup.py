@@ -81,6 +81,69 @@ def test_validator_applies_valid_edits_and_checks_negations():
         )
 
 
+CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
+
+
+@pytest.mark.parametrize(
+    ("text", "find", "replace", "kind", "result", "error"),
+    [
+        (  # retracted number and the cue's "no" (protected negation) may go
+            CORRECTION, "on port 8080, no wait, on port 8081", "on port 8081",
+            K.EDIT_KIND_SELF_CORRECTION, "Run kubectl on port 8081!", "",
+        ),
+        (  # ... a kept protected identifier may not change
+            CORRECTION, "kubectl on port 8080, no wait, on port 8081", "Kubectl on port 8081",
+            K.EDIT_KIND_SELF_CORRECTION, "", "protected span",
+        ),
+        ("so I like want the the report", "like want the the", "want the",
+         K.EDIT_KIND_FILLER_REMOVAL, "so I want the report", ""),
+        ("it is, uh, you know, broken", "is, uh, you know, broken", "is broken",
+         K.EDIT_KIND_FILLER_REMOVAL, "it is broken", ""),
+        ("it is, uh, I don't know, broken", "uh, I don't know,", "uh,",
+         K.EDIT_KIND_FILLER_REMOVAL, "", "protected span"),
+        ("move it to twenty five", "twenty five", "25.", K.EDIT_KIND_NUMBER_FORMAT,
+         "move it to 25.", ""),
+        ("move it to twenty five", "twenty five", "52", K.EDIT_KIND_NUMBER_FORMAT, "", "invariant"),
+        ("say hello", "hello", '"hello"', K.EDIT_KIND_PUNCTUATION, "", "invariant"),
+        ("It works!", "works!", "works.", K.EDIT_KIND_PUNCTUATION, "", "exclamation"),
+        ("um uh like you know ok", "um uh like you know ok", "ok", K.EDIT_KIND_FILLER_REMOVAL,
+         "", "too many words"),
+    ],
+)  # fmt: skip
+def test_validator_s1_edit_kinds(
+    text: str, find: str, replace: str, kind: pb.EditKind.ValueType, result: str, error: str
+):
+    edits, spans = [make_edit(find, replace, kind, text)], cleanup.protected_spans(text, [KUBECTL])
+    if error:
+        with pytest.raises(ValueError, match=error):
+            cleanup.validate_edits(text, edits, spans)
+    else:
+        assert cleanup.validate_edits(text, edits, spans) == result
+
+
+@pytest.mark.parametrize(
+    ("text", "language", "skipped"),
+    [
+        ("Tohle je test diktování v češtině.", "", True),
+        ("Ich glaube, das ist nicht richtig.", "", True),
+        ("please run it", "cs", True),
+        ("Grüße! I think the café on main street is fine", "", False),
+        ("ls -la ~/projects", "", False),
+        ("please run it", "en-US", False),
+    ],
+)
+def test_non_english_text_is_not_cleaned(text: str, language: str, *, skipped: bool):
+    with grpc.insecure_channel("127.0.0.1:1") as nowhere:  # English text gets an RPC error
+        out = cleanup.run(
+            nowhere, text=text, terms=[], utterance_id="u1", profile_id="prose",
+            app_category="prose", language=language, deadline_ms=200,
+        )  # fmt: skip
+    assert out.text == text
+    assert (
+        (out.status, out.reason) == ("skipped", "non_english") if skipped else out.status == "error"
+    )
+
+
 class BadCleanup(pb_grpc.TextCleanupServicer):
     """A server whose validator let an edit of a protected identifier through."""
 

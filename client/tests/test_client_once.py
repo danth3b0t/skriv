@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, cast
 from hark_client.__main__ import main
 from hark_client.context import ContextSnapshot
 
-from .conftest import edit, snapshot, write_wav
+from .conftest import snapshot, write_wav
 
 if TYPE_CHECKING:
     from pathlib import Path
@@ -51,8 +51,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
     capsys: pytest.CaptureFixture[str],
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes")]
-    # The server drops edit sets that change more than max(8 bytes, 15%) of the text.
-    fake_llm.respond([edit("please", "Please", "capitalization")])
+    fake_llm.respond("Please run kubectl get")
 
     # 48 kHz stereo input exercises the resampler; 1 s = 5 mock words.
     code, rec = run_once(tmp_path, hark_server.target, wav_rate=48000, channels=2)
@@ -75,8 +74,6 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
         "keyup_to_paste_ms",
     ):
         assert stage in timings
-    # Identifiers from the shortlist were sent as protected spans.
-    assert fake_llm.user_payload()["protected"] == ["kubectl"]
 
 
 def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
@@ -87,22 +84,23 @@ def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     capsys: pytest.CaptureFixture[str],
 ):
     fake_context.snapshots = [snapshot("com.mitchellh.ghostty")]
+    # Re-casing the shortlist identifier (a protected span) drops the whole rewrite.
+    fake_llm.respond("Please run Kubectl get.")
 
     code, rec = run_once(tmp_path, hark_server.target)
 
     assert code == 0
     assert "[dry-run] would terminal paste: 'please run kubectl get'" in capsys.readouterr().out
     assert rec["profile"] == "terminal"
-    assert len(fake_llm.requests) == 1
-    messages = cast("list[dict[str, str]]", fake_llm.requests[0]["messages"])
-    assert 'Profile "terminal"' in messages[0]["content"]
+    assert cast("dict[str, object]", rec["cleanup"])["status"] == "no_edits"
+    assert fake_llm.user_message().endswith("\nplease run kubectl get")
 
 
 def test_cleanup_timeout_falls_back_to_canonical_text(
     tmp_path: Path, hark_server: HarkServer, fake_llm: FakeLLM, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot()]
-    fake_llm.respond([edit("please run", "Please run", "capitalization")], delay=1.0)
+    fake_llm.respond("Please run kubectl get", delay=1.0)
 
     t0 = time.perf_counter()
     code, rec = run_once(tmp_path, hark_server.target, cleanup_deadline_ms=200)

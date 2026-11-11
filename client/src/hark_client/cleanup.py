@@ -11,7 +11,9 @@ import logging
 import re
 import time
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from difflib import SequenceMatcher
+from functools import cache
+from typing import TYPE_CHECKING, cast
 
 import grpc
 
@@ -21,7 +23,7 @@ from hark_client.asr import rpc_error_text
 from hark_client.context import TermKind
 
 if TYPE_CHECKING:
-    from collections.abc import Sequence
+    from collections.abc import Callable, Sequence
 
     from hark_client.context import Term
 
@@ -30,7 +32,17 @@ log = logging.getLogger("hark.cleanup")
 K = pb.EditKind
 S = pb.ProtectedSpanKind
 
+# Mirrors the server validator (hark_server.cleanup); keep the two in step.
 FILLERS = {"um", "umm", "uh", "uhh", "uhm", "er", "erm", "ah", "hmm", "mm", "mhm"}
+DISCOURSE_FILLERS = {"like", "basically", "literally"}  # only the model knows where
+FILLER_PHRASES = {("you", "know"), ("i", "mean"), ("kind", "of"), ("sort", "of")}
+CORRECTION_CUES = (
+    ("no", "wait"), ("wait", "no"), ("no", "sorry"), ("sorry", "no"), ("i", "mean"),
+    ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),
+)  # fmt: skip
+MAX_RETRACTED_WORDS = 8
+MAX_REMOVED_SHARE = 0.5  # of the words, by filler removal
+PUNCTUATION = set(".,;:?!'\u2019-")  # marks a punctuation edit may add or remove
 NEGATIONS = {
     "not", "no", "never", "nothing", "none", "nobody", "nowhere", "neither", "nor",
     "cannot", "dont", "don't", "doesn't", "didn't", "isn't", "aren't", "wasn't", "weren't",
@@ -108,17 +120,169 @@ def _words(s: str) -> list[str]:
     return _WORDS.findall(s.lower())
 
 
+def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
+    """find = kept words + 1..MAX_RETRACTED_WORDS retracted words + a cue set off
+    by punctuation + correction; replace = kept words + correction. Returns the
+    character range of `find` that is dropped (retracted words + cue)."""
+    tokens = [(m.group().lower(), m.start(), m.end()) for m in _WORDS.finditer(find)]
+    before, after = [t[0] for t in tokens], _words(replace)
+    for i in range(1, len(before)):
+        for cue in CORRECTION_CUES:
+            n = len(cue)
+            tail = before[i + n :]
+            j = len(after) - len(tail)  # kept words before the retracted ones
+            if (
+                tuple(before[i : i + n]) == cue
+                and tail
+                and 0 <= j < i
+                and i - j <= MAX_RETRACTED_WORDS
+                and after == before[:j] + tail
+                and not (
+                    find[tokens[i - 1][2] : tokens[i][1]].isspace()
+                    and find[tokens[i + n - 1][2] : tokens[i + n][1]].isspace()
+                )
+            ):
+                return tokens[j][1], tokens[i + n][1]
+    return None
+
+
+def _only_fillers_removed(before: list[str], after: list[str]) -> bool:
+    """`after` is `before` minus fillers, filler phrases and repeated words."""
+
+    @cache
+    def ok(i: int, j: int) -> bool:
+        if i == len(before):
+            return j == len(after)
+        w = before[i]
+        return (
+            (j < len(after) and w == after[j] and ok(i + 1, j + 1))
+            or ((w in FILLERS or w in DISCOURSE_FILLERS) and ok(i + 1, j))
+            or (tuple(before[i : i + 2]) in FILLER_PHRASES and ok(i + 2, j))
+            or (i + 1 < len(before) and before[i + 1] == w and ok(i + 1, j))
+        )
+
+    return len(after) < len(before) and ok(0, 0)
+
+
+_UNITS = {w: i for i, w in enumerate((
+    "zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+    "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+    "nineteen",
+))}  # fmt: skip
+_TENS = {w: 10 * i for i, w in enumerate(
+    ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"), 2
+)}  # fmt: skip
+_SCALES = {"thousand": 1000, "million": 10**6, "billion": 10**9}
+_ORDINALS = {
+    **{w: i for i, w in enumerate((
+        "first", "second", "third", "fourth", "fifth", "sixth", "seventh", "eighth", "ninth",
+        "tenth", "eleventh", "twelfth", "thirteenth", "fourteenth", "fifteenth", "sixteenth",
+        "seventeenth", "eighteenth", "nineteenth",
+    ), 1)},
+    **{w.removesuffix("y") + "ieth": v for w, v in _TENS.items()},
+}  # fmt: skip
+_NUMERAL = re.compile(r"\$?\d[\d,]*(?:st|nd|rd|th|%)?|[^\W\d_][\w']*")
+
+
+def _spoken_numbers(words: list[str]) -> list[str]:
+    """Runs of number words -> digits ("twenty three percent" -> "23%")."""
+    out: list[str] = []
+    total = current = 0
+    last = ""  # unit | teen | ten | hundred | scale | ""
+
+    def flush() -> None:
+        nonlocal total, current, last
+        if last:
+            out.append(str(total + current))
+        total = current = 0
+        last = ""
+
+    for w in words:
+        if w in _UNITS:
+            v = _UNITS[w]
+            if last in ("unit", "teen") or (last == "ten" and v >= 10) or (last and v == 0):
+                flush()
+            current += v
+            last = "teen" if v >= 10 else "unit"
+        elif w in _TENS:
+            if last in ("unit", "teen", "ten"):
+                flush()
+            current += _TENS[w]
+            last = "ten"
+        elif w == "hundred" and last in ("unit", "teen", "ten") and current < 100:
+            current *= 100
+            last = "hundred"
+        elif w in _SCALES and last in ("unit", "teen", "ten", "hundred"):
+            total += current * _SCALES[w]
+            current = 0
+            last = "scale"
+        elif w == "and" and last == "hundred":
+            continue
+        elif w in _ORDINALS and last in ("", "ten", "hundred", "scale"):
+            n = total + current + _ORDINALS[w]
+            total = current = 0
+            last = ""
+            suffix = (
+                "th" if n % 100 in (11, 12, 13) else {1: "st", 2: "nd", 3: "rd"}.get(n % 10, "th")
+            )
+            out.append(f"{n}{suffix}")
+        elif w == "percent" and last:
+            flush()
+            out[-1] += "%"
+        elif w in ("dollar", "dollars") and last:
+            flush()
+            out[-1] = "$" + out[-1]
+        else:
+            flush()
+            out.append(w)
+    flush()
+    return out
+
+
+def _number_format_ok(find: str, replace: str) -> bool:
+    spoken = _words(find)
+    written = [t.replace(",", "") for t in cast("list[str]", _NUMERAL.findall(replace.lower()))]
+    converted = _spoken_numbers(spoken)
+    return converted != spoken and converted == written
+
+
+def _punctuation_ok(find: str, replace: str) -> bool:
+    if [c for c in find if c.isalnum()] != [c for c in replace if c.isalnum()]:
+        return False
+    ops = SequenceMatcher(None, find, replace, autojunk=False).get_opcodes()
+    changed = "".join(find[i1:i2] + replace[j1:j2] for tag, i1, i2, j1, j2 in ops if tag != "equal")
+    return all(c in PUNCTUATION or c.isspace() for c in changed)
+
+
+_INVARIANTS: dict[pb.EditKind.ValueType, Callable[[str, str], bool]] = {
+    K.EDIT_KIND_PUNCTUATION: _punctuation_ok,
+    K.EDIT_KIND_CAPITALIZATION: lambda f, r: f.casefold() == r.casefold(),
+    K.EDIT_KIND_SPACING: lambda f, r: "".join(f.split()) == "".join(r.split()),
+    K.EDIT_KIND_FILLER_REMOVAL: lambda f, r: _only_fillers_removed(_words(f), _words(r)),
+    K.EDIT_KIND_SELF_CORRECTION: lambda f, r: self_correction_cut(f, r) is not None,
+    K.EDIT_KIND_NUMBER_FORMAT: _number_format_ok,
+}
+
+
 def _invariant_ok(kind: pb.EditKind.ValueType, find: str, replace: str) -> bool:
-    if kind == K.EDIT_KIND_PUNCTUATION:
-        return [c for c in find if c.isalnum()] == [c for c in replace if c.isalnum()]
-    if kind == K.EDIT_KIND_CAPITALIZATION:
-        return find.casefold() == replace.casefold()
-    if kind == K.EDIT_KIND_SPACING:
-        return "".join(find.split()) == "".join(replace.split())
-    if kind == K.EDIT_KIND_FILLER_REMOVAL:
-        before, after = _words(find), _words(replace)
-        return len(after) < len(before) and [w for w in before if w not in FILLERS] == after
-    return False  # no mechanical check => not accepted by the client
+    check = _INVARIANTS.get(kind)
+    return check is not None and check(find, replace)  # no check => not accepted
+
+
+def _touches_protected(e: pb.Edit, spans: Sequence[Span], raw: bytes) -> bool:
+    """A self-correction may drop protected spans with the words it retracts
+    (the "no" of "no wait", "port 8080, sorry, I mean ..."); the ones it keeps
+    must reappear unchanged in `replace`."""
+    cut = self_correction_cut(e.find, e.replace) if e.kind == K.EDIT_KIND_SELF_CORRECTION else None
+    lo = hi = e.byte_start
+    if cut is not None:
+        lo += len(e.find[: cut[0]].encode())
+        hi += len(e.find[: cut[1]].encode())
+    return any(
+        e.byte_start < s.end and s.start < e.byte_end and not (lo <= s.start and s.end <= hi)
+        and (cut is None or raw[s.start : s.end].decode() not in e.replace)
+        for s in spans
+    )  # fmt: skip
 
 
 def _count(text: str, find: str) -> int:
@@ -142,7 +306,7 @@ def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -
             raise ValueError("edit not on a character boundary") from None
         if quoted != e.find or _count(text, e.find) != 1:
             raise ValueError(f"edit {e.find!r} does not quote a unique substring")
-        if any(e.byte_start < s.end and s.start < e.byte_end for s in spans):
+        if _touches_protected(e, spans, raw):
             raise ValueError(f"edit {e.find!r} touches a protected span")
         if e.find == e.replace or not _invariant_ok(e.kind, e.find, e.replace):
             raise ValueError(
@@ -152,12 +316,67 @@ def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -
         last = e.byte_end
     out += raw[last:]
     after = out.decode()
-    negations = len(_NEGATION.findall(text)), len(_NEGATION.findall(after))
-    if negations[0] != negations[1]:
+    # What was meant: the text with spoken corrections and number formatting applied.
+    meant = _apply(text, [e for e in edits if e.kind in _MEANING])
+    if len(_NEGATION.findall(meant)) != len(_NEGATION.findall(after)):
         raise ValueError("negation count changed")
-    if sorted(c for c in text if c.isdigit()) != sorted(c for c in after if c.isdigit()):
+    if sorted(c for c in meant if c.isdigit()) != sorted(c for c in after if c.isdigit()):
         raise ValueError("digits changed")
+    words = len(_words(meant))
+    if words - len(_words(after)) > max(2, MAX_REMOVED_SHARE * words):
+        raise ValueError("too many words removed")
+    if after.count("!") < meant.count("!"):
+        raise ValueError("exclamation mark removed")
     return after
+
+
+_MEANING = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
+
+
+def _apply(text: str, edits: Sequence[pb.Edit]) -> str:
+    raw = text.encode()
+    out, last = bytearray(), 0
+    for e in sorted(edits, key=lambda e: e.byte_start):
+        out += raw[last : e.byte_start] + e.replace.encode()
+        last = e.byte_end
+    return (out + raw[last:]).decode()
+
+
+# S1-mini is English-only and the edit-list model re-cased Czech: skip
+# cleanup for other languages. Stopwords that are not also English words.
+_EN_STOPWORDS = {
+    "the", "a", "an", "and", "or", "but", "is", "are", "was", "were", "be", "been", "to", "of",
+    "in", "on", "at", "for", "with", "it", "this", "that", "i", "you", "we", "they", "he", "she",
+    "not", "do", "does", "did", "can", "will", "would", "what", "how", "why", "my", "your", "me",
+    "so", "if", "have", "has", "just", "there", "from", "by", "as",
+}  # fmt: skip
+_FOREIGN_STOPWORDS = {
+    # cs/sk
+    "je", "jsem", "jsi", "jsme", "jste", "jsou", "tohle", "toto", "tento", "tato", "tady", "že",
+    "se", "si", "na", "ve", "v", "z", "ze", "k", "ke", "s", "ale", "nebo", "jak", "kde", "co",
+    "proč", "když", "už", "taky", "také", "není", "bude", "byl", "bylo", "mám", "máme", "ještě",
+    "jen", "tak", "aby", "který", "která", "které", "protože", "prosím", "děkuji", "ano", "ne",
+    "mi", "mě", "tam", "teď", "som", "sa", "nie", "áno", "aj", "ako",
+    # de
+    "der", "das", "und", "ist", "nicht", "ich", "du", "wir", "ein", "eine", "mit", "auf", "für",
+    "zu", "dem", "sie", "von", "nein", "dass", "sind", "auch", "oder", "aber",
+    # fr / es / it / pl / pt
+    "le", "la", "les", "et", "est", "une", "des", "tu", "nous", "vous", "pas", "que", "qui",
+    "avec", "dans", "ce", "sur", "el", "los", "las", "y", "es", "por", "para", "con", "una", "lo",
+    "pero", "como", "il", "che", "di", "sono", "è", "się", "não", "você",
+}  # fmt: skip
+
+
+def likely_non_english(text: str) -> bool:
+    """At least two foreign stopwords and more than English ones, or over a
+    quarter of the words have non-ASCII letters (diacritics, other scripts)."""
+    words = _words(text)
+    if not words:
+        return False
+    english = sum(w in _EN_STOPWORDS for w in words)
+    foreign = sum(w in _FOREIGN_STOPWORDS for w in words)
+    accented = sum(any(c.isalpha() and not c.isascii() for c in w) for w in words)
+    return foreign > max(1, english) or accented > 0.25 * len(words)
 
 
 def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
@@ -182,6 +401,8 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
 
     if not text.strip():
         return done("skipped", "empty text")
+    if (language and not language.lower().startswith("en")) or likely_non_english(text):
+        return done("skipped", "non_english")
     spans = protected_spans(text, terms)
     request = pb.CleanupRequest(
         request_id=utterance_id + "/cleanup",

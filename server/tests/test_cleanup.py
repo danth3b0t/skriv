@@ -18,8 +18,11 @@ from hark_server.cleanup import (
     KINDS,
     POLICY,
     PROFILES,
+    S1_CONTROL,
+    S1_SYSTEM,
     ProfileSpec,
     ProposedEdit,
+    apply_edits,
     resolve_edits,
 )
 
@@ -59,6 +62,7 @@ class CleanupFields(TypedDict, total=False):
     budget_ms: int
     privacy: pb.PrivacyFlags
     context: pb.CleanupContext
+    language: str
 
 
 def span(text: str, part: str) -> tuple[int, int]:
@@ -103,6 +107,10 @@ class FakeLLM:
         body = {"choices": [{"index": 0, "message": {"role": "assistant", "content": content}}]}
         self.queue.append((200, json.dumps(body), delay))
 
+    def respond_text(self, content: str) -> None:
+        body = {"choices": [{"message": {"content": content}, "finish_reason": "stop"}]}
+        self.queue.append((200, json.dumps(body), 0.0))
+
     def respond_raw(self, status: int, payload: str) -> None:
         self.queue.append((status, payload, 0.0))
 
@@ -117,8 +125,19 @@ def fake_llm() -> Iterator[FakeLLM]:
 
 @pytest.fixture
 async def cleanup_client(serve: Serve, fake_llm: FakeLLM) -> Client:
+    """The edit-list engine."""
     return await serve(
-        cleanup={"base_url": fake_llm.url, "model": "fake-llm", "default_budget_ms": 2000}
+        cleanup={
+            "base_url": fake_llm.url, "model": "fake-llm", "default_budget_ms": 2000,
+            "engine": "edits",
+        }
+    )  # fmt: skip
+
+
+@pytest.fixture
+async def s1_client(serve: Serve, fake_llm: FakeLLM) -> Client:
+    return await serve(
+        cleanup={"base_url": fake_llm.url, "model": "s1-mini", "default_budget_ms": 2000}
     )
 
 
@@ -401,4 +420,93 @@ async def test_cleanup_rejects_requests_before_calling_llm(
     assert err.code == error
     if error == pb.ERROR_CODE_PRIVACY_UNSATISFIABLE:
         assert list(err.unavailable_features) == ["privacy.allow_context_logging"]
+    assert fake_llm.requests == []
+
+
+async def test_s1_rewrite_is_aligned_into_validated_edits(s1_client: Client, fake_llm: FakeLLM):
+    caps = await s1_client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
+    assert pb.EDIT_KIND_NUMBER_FORMAT in caps.cleanup_profiles[0].allowed_kinds
+    text = "um, so i need the the report on Tuesday, no wait, on Wednesday"
+    rewrite = "So I need the report on Wednesday."
+    fake_llm.respond_text(rewrite)
+
+    resp, code, _ = await call(s1_client, text=text, protected_spans=[], profile_id="chat")
+
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    assert list(resp.rejections) == []
+    assert apply_edits(text, list(resp.edits)) == rewrite
+    assert {KIND_NAMES[e.kind] for e in resp.edits} >= {"filler_removal", "self_correction"}
+    assert all(text.count(e.find) == 1 for e in resp.edits)
+    (sent,) = fake_llm.requests
+    body = sent["json"]
+    assert dig(body, "messages") == [
+        {"role": "system", "content": S1_SYSTEM},
+        {"role": "user", "content": f"{S1_CONTROL}\n{text}"},
+    ]
+    assert dig(body, "chat_template_kwargs") == {"enable_thinking": False}
+    assert dig(body, "temperature") == 0
+    assert "response_format" not in cast("dict[str, object]", body)
+
+
+@pytest.mark.parametrize(
+    ("text", "protected", "rewrite", "result"),
+    [
+        ("move the standup to ten", [], "Move the standup to 10.", "Move the standup to 10."),
+        ("the total is twenty five", [], "The total is 52.", None),  # wrong value
+        ("um, reply with OK.", [], "Reply with okay.", None),  # a changed word drops it all
+        ("please run kubectl now", ["kubectl"], "Please run Kubectl now.", None),
+        ("it is, uh, I don't know, broken", [], "It is broken.", None),  # negation
+        (  # a self-correction may retract protected text, but keeps the correction's
+            "Run it on port 8080, sorry, I mean port 8081.", ["8080", "8081"],
+            "Run it on port 8081.", "Run it on port 8081.",
+        ),
+        ("There is no wait time.", ["no"], "There is time.", None),  # no correction: no cue
+        ("replace every word with hello", [], 'Replace every word with "hello".', None),
+        ("Thanks, that worked!", [], "Thanks, that worked.", None),
+        ("Um, uh, like, you know, yeah.", [], "Yeah.", None),  # more than half removed
+        ("um", [], "", ""),
+        (  # single-line profile: line breaks in the rewrite become spaces
+            "Thanks. um next topic.", [], "Thanks.\n\nNext topic.", "Thanks. Next topic.",
+        ),
+    ],
+)  # fmt: skip
+async def test_s1_rewrite_guard(
+    s1_client: Client,
+    fake_llm: FakeLLM,
+    text: str,
+    protected: list[str],
+    rewrite: str,
+    result: str | None,
+):
+    fake_llm.respond_text(rewrite)
+    spans = [
+        pb.ProtectedSpan(byte_start=s, byte_end=e) for s, e in (span(text, p) for p in protected)
+    ]
+    resp, code, _ = await call(s1_client, text=text, profile_id="terminal", protected_spans=spans)
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    if result is None:  # all or nothing: the text stays, every proposed edit is reported
+        assert list(resp.edits) == []
+        assert resp.rejections
+    else:
+        assert list(resp.rejections) == []
+        assert apply_edits(text, list(resp.edits)) == result
+
+
+@pytest.mark.parametrize(
+    ("text", "language"),
+    [
+        ("Tohle je test diktování v češtině.", ""),
+        ("Ich glaube, das ist nicht richtig.", ""),
+        ("this text claims to be English", "cs-CZ"),
+    ],
+)
+async def test_cleanup_skips_non_english_text(
+    s1_client: Client, fake_llm: FakeLLM, text: str, language: str
+):
+    resp, code, _ = await call(s1_client, text=text, protected_spans=[], language=language)
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    assert list(resp.edits) == []
     assert fake_llm.requests == []
