@@ -13,8 +13,8 @@ Public API (stable contract; implementations live in submodules):
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
-
+from hark_client.context.canon import canonicalize
+from hark_client.context.engine import collect
 from hark_client.context.types import (
     ContextSnapshot,
     FocusInfo,
@@ -24,9 +24,6 @@ from hark_client.context.types import (
     TermSource,
     WordInfo,
 )
-
-if TYPE_CHECKING:
-    from collections.abc import Sequence
 
 __all__ = [
     "ContextSnapshot",
@@ -39,18 +36,3 @@ __all__ = [
     "canonicalize",
     "collect",
 ]
-
-
-def collect(deadline_s: float, max_terms: int = 60) -> ContextSnapshot:
-    """Placeholder: returns an empty snapshot. Replaced by the context-engine branch."""
-    return ContextSnapshot()
-
-
-def canonicalize(
-    text: str,
-    words: Sequence[WordInfo],
-    terms: Sequence[Term],
-    min_confidence: float = 0.5,
-) -> tuple[str, list[Replacement]]:
-    """Placeholder: identity. Replaced by the context-engine branch."""
-    return text, []
