@@ -14,6 +14,7 @@ import logging
 import os
 import re
 import time
+from typing import TYPE_CHECKING, TypedDict, TypeGuard, cast
 
 import grpc
 import httpx
@@ -21,8 +22,10 @@ import httpx
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
 
-from .config import CleanupConfig
 from .errors import E, HarkError, check_privacy, protocol_violation
+
+if TYPE_CHECKING:
+    from .config import CleanupConfig
 
 log = logging.getLogger("hark_server.cleanup")
 
@@ -58,7 +61,30 @@ Never touch strings listed in "protected", never change numbers, negations or
 meaning, never add content. If nothing needs fixing reply {"edits": []}."""
 
 
-def edit_schema(max_edits: int) -> dict:
+class ProposedEdit(TypedDict):
+    """One edit as returned by the LLM (see edit_schema)."""
+
+    find: str
+    replace: str
+    kind: str
+    reason: str
+
+
+class _ChatMessage(TypedDict):
+    content: str
+
+
+class _ChatChoice(TypedDict):
+    message: _ChatMessage
+
+
+class _ChatCompletion(TypedDict):
+    """The part of an OpenAI-compatible chat completion that is read here."""
+
+    choices: list[_ChatChoice]
+
+
+def edit_schema(max_edits: int) -> dict[str, object]:
     return {
         "type": "object",
         "additionalProperties": False,
@@ -83,7 +109,11 @@ def edit_schema(max_edits: int) -> dict:
     }
 
 
-def _invariant_ok(kind: int, find: str, replace: str) -> bool:
+def _words(s: str) -> list[str]:
+    return _WORDS.findall(s)
+
+
+def _invariant_ok(kind: pb.EditKind.ValueType, find: str, replace: str) -> bool:
     """Mechanical check per kind. Kinds without one (number_format,
     self_correction, grammar) pass here; they are off in the default profile."""
     if kind == K.EDIT_KIND_PUNCTUATION:
@@ -93,13 +123,14 @@ def _invariant_ok(kind: int, find: str, replace: str) -> bool:
     if kind == K.EDIT_KIND_SPACING:
         return "".join(find.split()) == "".join(replace.split())
     if kind == K.EDIT_KIND_FILLER_REMOVAL:
-        before, after = _WORDS.findall(find.lower()), _WORDS.findall(replace.lower())
+        before, after = _words(find.lower()), _words(replace.lower())
         return len(after) < len(before) and [w for w in before if w not in FILLERS] == after
     return kind in KIND_NAMES
 
 
 def _occurrences(text: str, find: str) -> list[int]:
-    out, i = [], text.find(find)
+    out: list[int] = []
+    i = text.find(find)
     while i >= 0:
         out.append(i)
         i = text.find(find, i + 1)  # overlapping occurrences count
@@ -116,7 +147,7 @@ def _global_ok(text: str, edits: list[pb.Edit]) -> bool:
     after = new.decode()
 
     def negations(s: str) -> int:
-        return sum(w in NEGATIONS for w in _WORDS.findall(s.lower()))
+        return sum(w in NEGATIONS for w in _words(s.lower()))
 
     changed = sum(max(len(e.find.encode()), len(e.replace.encode())) for e in edits)
     return (
@@ -128,9 +159,9 @@ def _global_ok(text: str, edits: list[pb.Edit]) -> bool:
 
 def resolve_edits(
     text: str,
-    proposed: list[dict],
+    proposed: list[ProposedEdit],
     protected: list[tuple[int, int]],
-    allowed_kinds: list[int],
+    allowed_kinds: list[pb.EditKind.ValueType],
 ) -> tuple[list[pb.Edit], list[pb.EditRejection]]:
     """Resolve quoted `find`s to byte ranges and validate (proposal-a §8.2)."""
     rejections: list[pb.EditRejection] = []
@@ -139,7 +170,9 @@ def resolve_edits(
         find, replace = p["find"], p["replace"]
         kind = KINDS.get(p["kind"], K.EDIT_KIND_UNSPECIFIED)
 
-        def reject(reason: int, find: str = find, replace: str = replace) -> None:
+        def reject(
+            reason: pb.EditRejectionReason.ValueType, find: str = find, replace: str = replace
+        ) -> None:
             rejections.append(pb.EditRejection(find=find, replace=replace, reason=reason))
 
         if find == replace:
@@ -171,7 +204,9 @@ def resolve_edits(
     for c in sorted(candidates, key=lambda e: e.byte_start):
         if edits and c.byte_start < edits[-1].byte_end:
             rejections.append(
-                pb.EditRejection(find=c.find, replace=c.replace, reason=R.EDIT_REJECTION_REASON_OVERLAP)
+                pb.EditRejection(
+                    find=c.find, replace=c.replace, reason=R.EDIT_REJECTION_REASON_OVERLAP
+                )
             )
             continue
         edits.append(c)
@@ -185,27 +220,40 @@ def resolve_edits(
     return edits, rejections
 
 
-def _parse_edits(body: dict, max_edits: int) -> list[dict]:
+def _is_proposed_edit(e: object) -> TypeGuard[ProposedEdit]:
+    if not isinstance(e, dict):
+        return False
+    fields = cast("dict[str, object]", e)
+    return all(isinstance(fields.get(k), str) for k in ("find", "replace", "kind", "reason"))
+
+
+def _parse_edits(body: object, max_edits: int) -> list[ProposedEdit]:
     """Strictly check the JSON-schema shape; engines differ in how strictly they
-    enforce it. Raises ValueError."""
-    content = body["choices"][0]["message"]["content"]
-    data = json.loads(content)
-    if not isinstance(data, dict) or not isinstance(data.get("edits"), list):
-        raise ValueError("no edits array")
-    edits = data["edits"]
-    if len(edits) > max_edits:
+    enforce it. Raises ValueError, TypeError, KeyError or IndexError."""
+    content = cast("_ChatCompletion", body)["choices"][0]["message"]["content"]
+    data = cast("object", json.loads(content))
+    if not isinstance(data, dict):
+        raise TypeError("no edits array")
+    raw_items = cast("dict[str, object]", data).get("edits")
+    if not isinstance(raw_items, list):
+        raise TypeError("no edits array")
+    items = cast("list[object]", raw_items)
+    if len(items) > max_edits:
         raise ValueError("too many edits")
-    for e in edits:
-        if not isinstance(e, dict) or not all(
-            isinstance(e.get(k), str) for k in ("find", "replace", "kind", "reason")
-        ):
-            raise ValueError("malformed edit")
+    edits: list[ProposedEdit] = []
+    for e in items:
+        if not _is_proposed_edit(e):
+            raise TypeError("malformed edit")
+        edits.append(e)
     return edits
 
 
 class CleanupServicer(pb_grpc.TextCleanupServicer):
     def __init__(
-        self, cfg: CleanupConfig, privacy: pb.PrivacyCapabilities, http: httpx.AsyncClient | None = None
+        self,
+        cfg: CleanupConfig,
+        privacy: pb.PrivacyCapabilities,
+        http: httpx.AsyncClient | None = None,
     ) -> None:
         self.cfg = cfg
         self.privacy = privacy
@@ -229,7 +277,11 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
     async def close(self) -> None:
         await self.http.aclose()
 
-    async def Cleanup(self, request: pb.CleanupRequest, context):
+    async def Cleanup(
+        self,
+        request: pb.CleanupRequest,
+        context: grpc.aio.ServicerContext[pb.CleanupRequest, pb.CleanupResponse],
+    ) -> pb.CleanupResponse:
         t0 = time.perf_counter()
         try:
             check_privacy(request.privacy, self.privacy)
@@ -238,17 +290,22 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 raise protocol_violation("unknown profile_id")
             raw = request.text.encode()
             if len(raw) > profile.max_input_bytes:
-                raise protocol_violation(f"text is {len(raw)} bytes (max {profile.max_input_bytes})")
-            protected = []
+                raise protocol_violation(
+                    f"text is {len(raw)} bytes (max {profile.max_input_bytes})"
+                )
+            protected: list[tuple[int, int]] = []
             for s in request.protected_spans:
                 if not (0 <= s.byte_start < s.byte_end <= len(raw)) or any(
                     b < len(raw) and raw[b] & 0xC0 == 0x80 for b in (s.byte_start, s.byte_end)
                 ):
-                    raise protocol_violation("protected span out of range or not on a character boundary")
+                    raise protocol_violation(
+                        "protected span out of range or not on a character boundary"
+                    )
                 protected.append((s.byte_start, s.byte_end))
             max_edits = min(request.max_edits or self.cfg.max_edits, self.cfg.max_edits)
             budget_s = (request.budget_ms or self.cfg.default_budget_ms) / 1000
-            remaining = context.time_remaining()
+            # Typed `float` in grpc-stubs, but grpc.aio returns None without a deadline.
+            remaining = cast("float | None", context.time_remaining())
             if remaining is not None:
                 budget_s = min(budget_s, remaining)
 
@@ -264,7 +321,9 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 response.total_ms = int((time.perf_counter() - t0) * 1000)
                 return response
             response.generation_ms = int((time.perf_counter() - t_gen) * 1000)
-            edits, rejections = resolve_edits(request.text, proposed, protected, list(profile.allowed_kinds))
+            edits, rejections = resolve_edits(
+                request.text, proposed, protected, list(profile.allowed_kinds)
+            )
             response.edits.extend(edits)
             response.rejections.extend(rejections)
             response.rejected_by_server = len(rejections)
@@ -280,9 +339,9 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
     async def _generate(
         self, request: pb.CleanupRequest, profile: pb.CleanupProfile,
         protected: list[tuple[int, int]], max_edits: int,
-    ) -> list[dict]:  # fmt: skip
+    ) -> list[ProposedEdit]:  # fmt: skip
         raw = request.text.encode()
-        user = {
+        user: dict[str, str | list[str]] = {
             "text": request.text,
             "protected": [raw[s:e].decode() for s, e in protected],
             "allowed_kinds": [KIND_NAMES[k] for k in profile.allowed_kinds],
@@ -304,10 +363,14 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
             ],
             "response_format": {
                 "type": "json_schema",
-                "json_schema": {"name": "hark_edits_v1", "strict": True, "schema": edit_schema(max_edits)},
+                "json_schema": {
+                    "name": "hark_edits_v1",
+                    "strict": True,
+                    "schema": edit_schema(max_edits),
+                },
             },
         }
-        headers = {}
+        headers: dict[str, str] = {}
         token = os.environ.get(self.cfg.api_key_env, "") if self.cfg.api_key_env else ""
         if token:
             headers["Authorization"] = f"Bearer {token}"
@@ -324,9 +387,8 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 retryable=r.status_code >= 500, grpc_code=_UNAVAILABLE,
             )  # fmt: skip
         try:
-            return _parse_edits(r.json(), max_edits)
+            return _parse_edits(cast("object", r.json()), max_edits)
         except (ValueError, KeyError, IndexError, TypeError) as e:
             raise HarkError(
                 E.ERROR_CODE_BACKEND_FAILURE, f"cleanup LLM returned a malformed edit list ({e})"
             ) from e
-

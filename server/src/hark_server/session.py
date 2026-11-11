@@ -15,6 +15,7 @@ import platform
 import time
 import uuid
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 import numpy as np
 
@@ -24,6 +25,9 @@ from . import __version__
 from .backends import SAMPLE_RATE, Backend, BiasPlan, DecodeOut
 from .errors import E, HarkError, check_privacy, protocol_violation
 from .hits import derive_hits, word_byte_spans
+
+if TYPE_CHECKING:
+    from .backends import Pcm
 
 log = logging.getLogger("hark_server.session")
 
@@ -35,7 +39,9 @@ def _now_us() -> int:
     return time.time_ns() // 1000
 
 
-def _warning(code: int, message: str, term_ids: list[str] | None = None) -> pb.ServerWarning:
+def _warning(
+    code: pb.WarningCode.ValueType, message: str, term_ids: list[str] | None = None
+) -> pb.ServerWarning:
     return pb.ServerWarning(code=code, message=message, term_ids=term_ids or [])
 
 
@@ -127,7 +133,7 @@ class _Context:
 
 @dataclass
 class _Eager:
-    task: asyncio.Task
+    task: asyncio.Task[pb.FinalResult]
     samples: int
     revision: int
 
@@ -257,37 +263,56 @@ class Session:
                     )
                 )
         else:
-            kept = []
-            for t in terms:
-                if bias.max_term_bytes and len(t.canonical.encode()) > bias.max_term_bytes:
-                    dropped.append(t.id)
-                    continue
-                if bias.max_aliases_per_term and len(t.aliases) > bias.max_aliases_per_term:
-                    cut = pb.BiasTerm()
-                    cut.CopyFrom(t)
-                    del cut.aliases[bias.max_aliases_per_term :]
-                    aliases_cut.append(t.id)
-                    t = cut
-                kept.append(t)
-            if bias.max_terms and len(kept) > bias.max_terms:
-                dropped += [t.id for t in kept[bias.max_terms :]]
-                kept = kept[: bias.max_terms]
+            kept, dropped, aliases_cut = self._limit_terms(terms)
             if dropped:
                 warnings.append(
-                    _warning(pb.WARNING_CODE_BIAS_TERMS_TRUNCATED, f"{len(dropped)} terms dropped", dropped)
+                    _warning(
+                        pb.WARNING_CODE_BIAS_TERMS_TRUNCATED,
+                        f"{len(dropped)} terms dropped",
+                        dropped,
+                    )
                 )
             if aliases_cut:
                 warnings.append(
-                    _warning(pb.WARNING_CODE_ALIASES_DROPPED, "aliases over limit dropped", aliases_cut)
+                    _warning(
+                        pb.WARNING_CODE_ALIASES_DROPPED, "aliases over limit dropped", aliases_cut
+                    )
                 )
         free = ctx.free_text
         if (free.description or free.preceding_text) and not self._feature_available("free_text"):
             warnings.append(
-                _warning(pb.WARNING_CODE_CONTEXT_IGNORED, "free-text context not supported by this model")
+                _warning(
+                    pb.WARNING_CODE_CONTEXT_IGNORED, "free-text context not supported by this model"
+                )
             )
         plan = self.backend.plan_bias(kept, strength) if boosting else None
         self.dropped_ids = dropped
         return _Context(ctx.revision, plan, kept, bool(dropped or aliases_cut)), warnings
+
+    def _limit_terms(
+        self, terms: list[pb.BiasTerm]
+    ) -> tuple[list[pb.BiasTerm], list[str], list[str]]:
+        """Apply the model's bias limits: (kept terms, dropped ids, ids with aliases cut)."""
+        bias = self.caps.bias
+        kept: list[pb.BiasTerm] = []
+        dropped: list[str] = []
+        aliases_cut: list[str] = []
+        for t in terms:
+            if bias.max_term_bytes and len(t.canonical.encode()) > bias.max_term_bytes:
+                dropped.append(t.id)
+                continue
+            if bias.max_aliases_per_term and len(t.aliases) > bias.max_aliases_per_term:
+                cut = pb.BiasTerm()
+                cut.CopyFrom(t)
+                del cut.aliases[bias.max_aliases_per_term :]
+                aliases_cut.append(t.id)
+                kept.append(cut)
+            else:
+                kept.append(t)
+        if bias.max_terms and len(kept) > bias.max_terms:
+            dropped += [t.id for t in kept[bias.max_terms :]]
+            kept = kept[: bias.max_terms]
+        return kept, dropped, aliases_cut
 
     # ------------------------------------------------------------------ messages
     def accepted(self) -> pb.SessionAccepted:
@@ -300,8 +325,7 @@ class Session:
             free_text_used=False,
             n_best=min(n_req, c.n_best.max_n) if n_req > 1 else 1,
             anchor_planned=self._anchor_policy(plan) in (None, "decode"),
-            word_timestamps=o.word_timestamps
-            and self._feature_available("result.word_timestamps"),
+            word_timestamps=o.word_timestamps and self._feature_available("result.word_timestamps"),
             word_confidence=o.word_confidence and c.timestamps.word_confidence,
         )
         if plan:
@@ -339,8 +363,10 @@ class Session:
                 f"overlapping audio: start_sample {chunk.start_sample} < received {received}"
             )
         if chunk.start_sample + chunk.num_samples > self.max_samples:
-            raise HarkError(E.ERROR_CODE_AUDIO_TOO_LONG, f"audio exceeds {self.max_samples} samples")
-        warnings = []
+            raise HarkError(
+                E.ERROR_CODE_AUDIO_TOO_LONG, f"audio exceeds {self.max_samples} samples"
+            )
+        warnings: list[pb.ServerWarning] = []
         gap = chunk.start_sample - received
         if gap:
             self.pcm.extend(bytes(2 * gap))
@@ -366,7 +392,9 @@ class Session:
             pb.MIDSTREAM_UPDATE_UNSPECIFIED,
             pb.MIDSTREAM_UPDATE_UNSUPPORTED,
         ):
-            return [_warning(pb.WARNING_CODE_CONTEXT_IGNORED, "mid-stream context updates unsupported")]
+            return [
+                _warning(pb.WARNING_CODE_CONTEXT_IGNORED, "mid-stream context updates unsupported")
+            ]
         self.ctx, warnings = self._build_context(ctx)
         self._invalidate_eager()
         return warnings
@@ -413,7 +441,7 @@ class Session:
     async def finalize(self) -> pb.FinalResult:
         received = len(self.pcm) // 2
         eager, self.eager = self.eager, None
-        result = None
+        result: pb.FinalResult | None = None
         if eager and eager.samples == received and eager.revision == self.ctx.revision:
             try:
                 result = await eager.task
@@ -454,7 +482,9 @@ class Session:
             return "NOT_REQUESTED"
         return "decode"
 
-    async def _compute(self, pcm: np.ndarray, ctx: _Context, t0: float) -> pb.FinalResult:
+    async def _compute(  # noqa: PLR0912, PLR0915 - one pipeline sharing budget, flags and timings
+        self, pcm: Pcm, ctx: _Context, t0: float
+    ) -> pb.FinalResult:
         """Primary decode, then optional work in shedding order (anchor before
         N-best: N-best is shed first). Required features are never shed."""
         opts, req, caps = self.start.options, set(self.start.required_features), self.caps
@@ -504,7 +534,9 @@ class Session:
         else:
             t = time.perf_counter()
             try:
-                alternatives = await self.backend.n_best(pcm, ctx.plan, min(n_req, caps.n_best.max_n))
+                alternatives = await self.backend.n_best(
+                    pcm, ctx.plan, min(n_req, caps.n_best.max_n)
+                )
                 flags.n_best = FS.FIELD_STATUS_PRESENT
             except Exception:
                 log.exception("session %s: n-best failed", self.session_id)
@@ -542,20 +574,27 @@ class Session:
                 spans,
                 anchor.words if anchor else None,
                 ctx.hit_terms,
-                caps.bias.mechanism if ctx.plan else pb.BIAS_MECHANISM_NONE,
-                ctx.plan.term_boosts if ctx.plan else {},
+                mechanism=caps.bias.mechanism if ctx.plan else pb.BIAS_MECHANISM_NONE,
+                term_boosts=ctx.plan.term_boosts if ctx.plan else {},
             )
             flags.bias_hits = FS.FIELD_STATUS_PRESENT
         else:
             flags.bias_hits = FS.FIELD_STATUS_NOT_REQUESTED
 
-        def hyp(out: DecodeOut, origin: int, words: bool, terms: list[str] | None = None) -> pb.Hypothesis:
+        def hyp(
+            out: DecodeOut,
+            origin: pb.HypothesisOrigin.ValueType,
+            *,
+            words: bool,
+            terms: list[str] | None = None,
+        ) -> pb.Hypothesis:
             h = pb.Hypothesis(text=out.text, origin=origin)
             if out.score is not None:
                 h.score = out.score
                 h.score_kind = caps.n_best.score_kind
             if words:
-                for k, (w, (bs, be)) in enumerate(zip(out.words, word_byte_spans(out.text, out.words))):
+                out_spans = word_byte_spans(out.text, out.words)
+                for k, (w, (bs, be)) in enumerate(zip(out.words, out_spans, strict=True)):
                     pw = h.words.add(
                         text=w.text, start_ms=w.start_ms, end_ms=w.end_ms,
                         text_byte_start=bs, text_byte_end=be,
@@ -568,11 +607,13 @@ class Session:
         biased = ctx.plan is not None
         result = pb.FinalResult(utterance_id=self.utterance_id, context_revision=ctx.revision)
         origin = pb.HYPOTHESIS_ORIGIN_BIASED if biased else pb.HYPOTHESIS_ORIGIN_UNBIASED
-        result.n_best.append(hyp(primary, origin, with_words, word_terms))
+        result.n_best.append(hyp(primary, origin, words=with_words, terms=word_terms))
         for alt in alternatives:
-            result.n_best.append(hyp(alt, pb.HYPOTHESIS_ORIGIN_BEAM, with_words and opts.n_best_words))
+            result.n_best.append(
+                hyp(alt, pb.HYPOTHESIS_ORIGIN_BEAM, words=with_words and opts.n_best_words)
+            )
         if anchor is not None:
-            result.anchor.CopyFrom(hyp(anchor, pb.HYPOTHESIS_ORIGIN_UNBIASED, with_words))
+            result.anchor.CopyFrom(hyp(anchor, pb.HYPOTHESIS_ORIGIN_UNBIASED, words=with_words))
         result.bias_hits.extend(hits)
         flags.no_speech = not primary.text.strip()
         timings.postprocess_ms = int((time.perf_counter() - t_post) * 1000)

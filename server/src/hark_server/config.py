@@ -8,7 +8,13 @@ import ipaddress
 import socket
 import tomllib
 from dataclasses import dataclass, field
-from typing import Any
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
+
+if TYPE_CHECKING:
+    from collections.abc import Mapping
+
+    from _typeshed import DataclassInstance
 
 
 class ConfigError(ValueError):
@@ -51,7 +57,7 @@ class BackendConfig:
     kind: str = "mock"  # mock | parakeet_mlx | nemo_gpupb
     model: str = ""  # backend-specific model name / path ("" => backend default)
     model_id: str = ""  # id clients use in SessionStart.model_id ("" => derived)
-    options: dict[str, Any] = field(default_factory=dict)  # backend constructor kwargs
+    options: dict[str, object] = field(default_factory=dict)  # backend constructor kwargs
 
 
 @dataclass
@@ -62,16 +68,18 @@ class Config:
     log_level: str = "INFO"
 
 
-def _fill(obj: Any, data: dict[str, Any], where: str) -> None:
+def _fill(
+    obj: DataclassInstance | type[DataclassInstance], data: Mapping[str, object], where: str
+) -> None:
     names = {f.name: f for f in dataclasses.fields(obj)}
     for key, value in data.items():
         if key not in names:
             raise ConfigError(f"unknown config key {where}{key}")
-        current = getattr(obj, key)
+        current = cast("object", getattr(obj, key))
         if dataclasses.is_dataclass(current):
             if not isinstance(value, dict):
                 raise ConfigError(f"{where}{key} must be a table")
-            _fill(current, value, f"{where}{key}.")
+            _fill(current, cast("dict[str, object]", value), f"{where}{key}.")
         else:
             setattr(obj, key, value)
 
@@ -79,7 +87,7 @@ def _fill(obj: Any, data: dict[str, Any], where: str) -> None:
 def load(path: str | None) -> Config:
     cfg = Config()
     if path:
-        with open(path, "rb") as f:
+        with Path(path).open("rb") as f:
             _fill(cfg, tomllib.load(f), "")
     return cfg
 
@@ -102,13 +110,34 @@ def validate(cfg: Config) -> None:
         raise ConfigError("server.tls.cert and server.tls.key must be set together")
     if tls.client_ca and not tls.cert:
         raise ConfigError("server.tls.client_ca (mTLS) requires server.tls.cert/key")
-    if not tls.cert and not is_loopback(cfg.server.listen) and not cfg.server.allow_insecure_non_local:
+    if (
+        not tls.cert
+        and not is_loopback(cfg.server.listen)
+        and not cfg.server.allow_insecure_non_local
+    ):
         raise ConfigError(
             f"refusing plaintext on non-loopback address {cfg.server.listen!r}: configure "
             "server.tls (mTLS recommended) or set server.allow_insecure_non_local = true"
         )
     if cfg.server.max_concurrent_sessions < 1:
         raise ConfigError("server.max_concurrent_sessions must be >= 1")
+
+
+class _Args(argparse.Namespace):
+    # Annotations only: argparse fills in the defaults for attributes that are not set.
+    config: str | None
+    listen: str | None
+    backend: str | None
+    model: str | None
+    model_id: str | None
+    tls_cert: str | None
+    tls_key: str | None
+    tls_client_ca: str | None
+    allow_insecure_non_local: bool | None
+    no_warmup: bool
+    cleanup_url: str | None
+    cleanup_model: str | None
+    log_level: str | None
 
 
 def parse_args(argv: list[str] | None = None) -> Config:
@@ -126,10 +155,10 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p.add_argument("--cleanup-url", help="OpenAI-compatible base URL for TextCleanup")
     p.add_argument("--cleanup-model")
     p.add_argument("--log-level")
-    a = p.parse_args(argv)
+    a = p.parse_args(argv, namespace=_Args())
 
     cfg = load(a.config)
-    overrides = [
+    overrides: list[tuple[str | bool | None, object, str]] = [
         (a.listen, cfg.server, "listen"),
         (a.backend, cfg.backend, "kind"),
         (a.model, cfg.backend, "model"),

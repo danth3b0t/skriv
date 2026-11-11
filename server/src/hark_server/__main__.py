@@ -6,13 +6,17 @@ import asyncio
 import logging
 import signal
 import sys
+from typing import TYPE_CHECKING
 
 from .backends import BackendUnavailable
 from .config import ConfigError, parse_args
 from .server import start
 
+if TYPE_CHECKING:
+    from .config import Config
 
-async def _serve(cfg) -> None:
+
+async def _serve(cfg: Config) -> None:
     running = await start(cfg)
     stop = asyncio.Event()
     loop = asyncio.get_running_loop()

@@ -5,25 +5,38 @@ from __future__ import annotations
 import logging
 import time
 from dataclasses import dataclass
+from pathlib import Path
+from typing import TYPE_CHECKING, cast
 
 import grpc
-from grpc_health.v1 import health, health_pb2, health_pb2_grpc
+from grpc_health.v1 import health_pb2, health_pb2_grpc
+
+# grpc_health.v1.health.aio is this module; typeshed's grpcio-health-checking stubs omit it.
+from grpc_health.v1._async import (  # pyright: ignore[reportMissingTypeStubs]
+    HealthServicer,
+)
 
 from hark.v1 import hark_pb2_grpc as pb_grpc
 
 from .asr import AsrServicer
 from .backends import Backend, create_backend
 from .cleanup import CleanupServicer
-from .config import Config
 from .session import AsrCore, CoreSettings
+
+if TYPE_CHECKING:
+    from hark.v1 import hark_pb2 as pb
+
+    from .config import Config
 
 log = logging.getLogger("hark_server")
 
 MAX_MESSAGE_BYTES = 32 * 1024 * 1024
 ASR_SERVICE = "hark.v1.Asr"
 CLEANUP_SERVICE = "hark.v1.TextCleanup"
-SERVING = health_pb2.HealthCheckResponse.SERVING
-NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
+# typeshed's health_pb2 stub (basedpyright) types ServingStatus values as Incomplete (Any);
+# grpcio-health-checking's own stub (ty) types them as ServingStatus, an int subclass.
+SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)
+NOT_SERVING = cast("int", health_pb2.HealthCheckResponse.NOT_SERVING)
 
 
 @dataclass
@@ -31,7 +44,7 @@ class Running:
     server: grpc.aio.Server
     port: int
     core: AsrCore
-    health: health.aio.HealthServicer
+    health: HealthServicer
     cleanup: CleanupServicer | None
 
     async def stop(self, grace: float | None = 1.0) -> None:
@@ -45,19 +58,23 @@ class Running:
 class _Asr(AsrServicer):
     """AsrServicer that flips health to SERVING once Warmup made the model ready."""
 
-    def __init__(self, core: AsrCore, health_servicer: health.aio.HealthServicer) -> None:
+    def __init__(self, core: AsrCore, health_servicer: HealthServicer) -> None:
         super().__init__(core)
         self._health = health_servicer
 
-    async def Warmup(self, request, context):
+    async def Warmup(
+        self,
+        request: pb.WarmupRequest,
+        context: grpc.aio.ServicerContext[pb.WarmupRequest, pb.WarmupResponse],
+    ) -> pb.WarmupResponse:
         response = await super().Warmup(request, context)
-        await set_asr_health(self._health, True)
+        await set_asr_health(self._health, ready=True)
         return response
 
 
-async def set_asr_health(h: health.aio.HealthServicer, ready: bool) -> None:
+async def set_asr_health(h: HealthServicer, *, ready: bool) -> None:
     for name in ("", ASR_SERVICE):
-        await h.set(name, SERVING if ready else NOT_SERVING)
+        await h.set(name, SERVING if ready else NOT_SERVING)  # ty: ignore[invalid-argument-type]
 
 
 def _credentials(cfg: Config) -> grpc.ServerCredentials | None:
@@ -66,8 +83,7 @@ def _credentials(cfg: Config) -> grpc.ServerCredentials | None:
         return None
 
     def read(path: str) -> bytes:
-        with open(path, "rb") as f:
-            return f.read()
+        return Path(path).read_bytes()
 
     return grpc.ssl_server_credentials(
         [(read(tls.key), read(tls.cert))],
@@ -102,8 +118,8 @@ async def start(cfg: Config, backend: Backend | None = None) -> Running:
             ("grpc.max_send_message_length", MAX_MESSAGE_BYTES),
         ]
     )
-    health_servicer = health.aio.HealthServicer()
-    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)
+    health_servicer = HealthServicer()
+    health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)  # pyright: ignore[reportUnknownMemberType] - untyped stub
     pb_grpc.add_AsrServicer_to_server(_Asr(core, health_servicer), server)
     cleanup = None
     if cfg.cleanup.base_url:
@@ -116,9 +132,9 @@ async def start(cfg: Config, backend: Backend | None = None) -> Running:
         port = server.add_insecure_port(cfg.server.listen)
     else:
         port = server.add_secure_port(cfg.server.listen, creds)
-    await set_asr_health(health_servicer, False)
+    await set_asr_health(health_servicer, ready=False)
     if cleanup is not None:
-        await health_servicer.set(CLEANUP_SERVICE, SERVING)
+        await health_servicer.set(CLEANUP_SERVICE, SERVING)  # ty: ignore[invalid-argument-type]
     await server.start()
     log.info(
         "listening on %s (port %d, %s), backend=%s model_id=%s",
@@ -140,5 +156,5 @@ async def start(cfg: Config, backend: Backend | None = None) -> Running:
             "model ready: load %d ms, warmup decodes %d ms, perf rtfx=%.1f finalize_ms_10s=%d",
             load_ms, warm_ms, backend.perf.rtfx, backend.perf.finalize_ms_10s,
         )  # fmt: skip
-        await set_asr_health(health_servicer, True)
+        await set_asr_health(health_servicer, ready=True)
     return running

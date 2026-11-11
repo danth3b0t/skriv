@@ -6,9 +6,11 @@ and the wire); use sizes, ids and counts only.
 
 from __future__ import annotations
 
+from typing import Never
+
 import grpc
 from google.protobuf import any_pb2
-from google.rpc import status_pb2
+from google.rpc.status_pb2 import Status
 from grpc_status import rpc_status
 
 from hark.v1 import hark_pb2 as pb
@@ -34,9 +36,9 @@ _GRPC_CODE = {
 
 
 class HarkError(Exception):
-    def __init__(
+    def __init__(  # noqa: PLR0913 - keyword-only, mirrors ErrorDetail
         self,
-        code: int,
+        code: pb.ErrorCode.ValueType,
         message: str,
         *,
         retryable: bool = False,
@@ -62,14 +64,14 @@ class HarkError(Exception):
             unavailable_features=self.unavailable_features,
         )
 
-    async def abort(self, context: grpc.aio.ServicerContext, utterance_id: str = ""):
+    async def abort[Req, Resp](
+        self, context: grpc.aio.ServicerContext[Req, Resp], utterance_id: str = ""
+    ) -> Never:
         """End the RPC with this error; ErrorDetail goes into grpc-status-details-bin."""
         detail = any_pb2.Any()
         detail.Pack(self.detail(utterance_id))
-        status = rpc_status.to_status(
-            status_pb2.Status(
-                code=self.grpc_code.value[0], message=self.message, details=[detail]
-            )
+        status = rpc_status.to_status(  # pyright: ignore[reportUnknownMemberType] - typeshed: untyped param
+            Status(code=self.grpc_code.value[0], message=self.message, details=[detail])
         )
         await context.abort(status.code, status.details, status.trailing_metadata)
 

@@ -9,12 +9,14 @@ anchor words over the same time span decide APPLIED vs ALREADY_IN_ANCHOR.
 from __future__ import annotations
 
 import string
+from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
 
-from .backends import WordOut
+if TYPE_CHECKING:
+    from .backends import WordOut
 
-_STRIP = string.punctuation + "“”‘’«»…"
+_STRIP = string.punctuation + "\u201c\u201d\u2018\u2019«»…"  # curly double/single quotes
 
 
 def norm(token: str) -> str:
@@ -23,7 +25,8 @@ def norm(token: str) -> str:
 
 def word_byte_spans(text: str, words: list[WordOut]) -> list[tuple[int, int]]:
     """UTF-8 byte span of each word in `text`, searched left to right."""
-    spans, cursor, cursor_b = [], 0, 0
+    spans: list[tuple[int, int]] = []
+    cursor = cursor_b = 0
     for w in words:
         i = text.find(w.text, cursor)
         if i < 0:  # backend text/word mismatch: no span rather than a wrong one
@@ -36,20 +39,20 @@ def word_byte_spans(text: str, words: list[WordOut]) -> list[tuple[int, int]]:
     return spans
 
 
-def derive_hits(
+def derive_hits(  # noqa: PLR0913 - independent inputs, one caller
     words: list[WordOut],
     spans: list[tuple[int, int]],
     anchor: list[WordOut] | None,
     terms: list[pb.BiasTerm],
-    mechanism: int,
+    *,
+    mechanism: pb.BiasMechanism.ValueType,
     term_boosts: dict[str, float],
 ) -> tuple[list[pb.BiasHit], list[str]]:
     """Returns (hits, term id per word or "")."""
-    forms = []  # (tokens, term, form text, via_alias)
+    forms: list[tuple[list[str], pb.BiasTerm, str, bool]] = []  # (tokens, term, form, via_alias)
     for t in terms:
         forms.append(([norm(x) for x in t.canonical.split()], t, t.canonical, False))
-        for a in t.aliases:
-            forms.append(([norm(x) for x in a.text.split()], t, a.text, True))
+        forms.extend(([norm(x) for x in a.text.split()], t, a.text, True) for a in t.aliases)
     forms = [f for f in forms if f[0] and all(f[0])]
     forms.sort(key=lambda f: -len(f[0]))
 
@@ -81,7 +84,9 @@ def derive_hits(
             if anchor is None:
                 hit.decision = pb.BIAS_HIT_DECISION_UNSPECIFIED
             else:
-                over = [w.text for w in anchor if w.start_ms < last.end_ms and w.end_ms > first.start_ms]
+                over = [
+                    w.text for w in anchor if w.start_ms < last.end_ms and w.end_ms > first.start_ms
+                ]
                 hit.anchor_text = " ".join(over)
                 over_n = [norm(x) for x in over]
                 present = any(over_n[k : k + n] == tokens for k in range(len(over_n) - n + 1))
