@@ -25,7 +25,7 @@ from . import SAMPLE_RATE, Backend, BiasPlan, DecodeOut, WordOut
 DEFAULT_SCRIPT = (
     "please run cube control get pods in the default name space "
     "and then show me the logs of the failing one"
-).split()
+).split()  # noqa: SIM905
 
 
 class MockBackend(Backend):

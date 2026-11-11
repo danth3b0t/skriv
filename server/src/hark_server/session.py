@@ -102,7 +102,7 @@ class AsrCore:
         caps.etag = hashlib.sha256(caps.SerializeToString(deterministic=True)).hexdigest()[:16]
         return caps
 
-    def open(self, start: pb.SessionStart) -> "Session":
+    def open(self, start: pb.SessionStart) -> Session:
         """Validate and admit. Raises HarkError (session is then REJECTED)."""
         session = Session(self, start)  # validation only, no side effects
         if self.active >= self.settings.max_concurrent_sessions:

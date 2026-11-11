@@ -139,7 +139,7 @@ def resolve_edits(
         find, replace = p["find"], p["replace"]
         kind = KINDS.get(p["kind"], K.EDIT_KIND_UNSPECIFIED)
 
-        def reject(reason: int) -> None:
+        def reject(reason: int, find: str = find, replace: str = replace) -> None:
             rejections.append(pb.EditRejection(find=find, replace=replace, reason=reason))
 
         if find == replace:

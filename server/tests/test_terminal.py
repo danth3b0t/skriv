@@ -6,8 +6,8 @@ from __future__ import annotations
 
 import grpc
 import pytest
+from conftest import audio_reqs, eoa_req, speech, start_req, utterance
 
-from conftest import audio_reqs, eoa_req, start_req, speech, utterance
 from hark.v1 import hark_pb2 as pb
 from hark_server.backends.mock import MockBackend
 

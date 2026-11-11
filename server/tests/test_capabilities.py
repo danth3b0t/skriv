@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import grpc
+from conftest import kubectl_term, speech, utterance
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-from conftest import kubectl_term, speech, utterance
 from hark.v1 import hark_pb2 as pb
 from hark_server.backends.mock import MockBackend
 
