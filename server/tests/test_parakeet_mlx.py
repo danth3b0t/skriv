@@ -99,6 +99,10 @@ class FakeParakeet(ParakeetMlxBackend):
     def _from_pretrained(self) -> FakeModel:
         return self.fake
 
+    def held(self) -> int:
+        """Per-session state still referenced by the backend."""
+        return len(self._utterances) + len(self._plan_boosters)
+
 
 def bias_ctx(*terms: pb.BiasTerm, strength: float | None = None) -> pb.RecognitionContext:
     return pb.RecognitionContext(revision=1, bias=pb.BiasList(terms=terms, strength=strength))
@@ -106,7 +110,8 @@ def bias_ctx(*terms: pb.BiasTerm, strength: float | None = None) -> pb.Recogniti
 
 async def test_biased_decode_is_boosted_beam_with_reused_greedy_anchor(serve: Serve):
     model = FakeModel(BOOSTED)
-    client = await serve(backend=FakeParakeet(model))
+    backend = FakeParakeet(model)
+    client = await serve(backend=backend)
     model.encoder_calls = 0
     model.configs.clear()
     out = await client.transcribe(
@@ -142,6 +147,7 @@ async def test_biased_decode_is_boosted_beam_with_reused_greedy_anchor(serve: Se
     assert (beam.beam_size, beam.patience) == (4, 20.0)
     owner: object = getattr(cast("Machine[State, int]", beam.booster).step, "__self__", None)
     assert isinstance(owner, TrieBooster)
+    assert backend.held() == 0  # audio features, greedy text and booster died with the session
 
 
 async def test_beam_that_skips_speech_is_replaced_by_greedy(serve: Serve):

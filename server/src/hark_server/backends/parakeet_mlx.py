@@ -39,9 +39,15 @@ Anchor and deletion guard: a biased decode first runs greedy over the same
 encoder output, then the boosted beam. If the beam leaves >= 2 consecutive
 greedy words without any word over their time span (boosted beams can skip
 speech, see the bench doc), the greedy result is returned instead and
-backend_ms["beam_discarded"] is set. The greedy result is cached with the
-encoding (by audio), so the session's anchor decode returns it for free
-(ANCHOR_COST_FREE; its cost is in the primary's decode_ms).
+backend_ms["beam_discarded"] is set. The greedy result is kept with the
+encoder output for as long as the session holds that audio array, so the
+session's anchor decode returns it for free (ANCHOR_COST_FREE; its cost is in
+the primary's decode_ms).
+
+Nothing outlives a session (the server promises to cache nothing; BiasList
+.content_hash, which would allow caching compiled bias, does not reach the
+backend): the booster is built when the plan is made, on the worker thread
+while audio streams, and dropped with the plan.
 CTC models have no beam search here: bias mechanism NONE, anchor == primary.
 """
 
@@ -52,7 +58,8 @@ import importlib
 import re
 import time
 import unicodedata
-from collections import OrderedDict, deque
+import weakref
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
@@ -65,6 +72,7 @@ from . import SAMPLE_RATE, Backend, BackendUnavailable, BiasPlan, DecodeOut, Wor
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from concurrent.futures import Future
 
     import mlx.core as mx
     from parakeet_mlx import AlignedToken, DecodingConfig  # pyright: ignore[reportMissingTypeStubs]
@@ -107,9 +115,7 @@ DEFAULT_PATIENCE = 20.0
 DEFAULT_BOOST_MIN = 1.0
 DEFAULT_BOOST_MAX = 3.0
 _SPECIAL_TOKEN = re.compile(r"<.*>")  # "<unk>", "<|nospeech|>": never part of the text
-_BOOSTERS_CACHED = 8  # boosters memoize steps and tables: reuse them across utterances
 _STEPS_CACHED = 2**18
-_UTTERANCES_CACHED = 4  # primary and anchor of concurrent sessions interleave
 _GUARD_WORDS = 2  # see uncovered_run
 _TABLES_CACHED = 4096
 
@@ -333,10 +339,19 @@ def install_fast_tabulate() -> None:
 
 @dataclass
 class _Utterance:
-    pcm: Pcm
+    """Encoder output (and greedy decode, once run) of one session's audio."""
+
+    pcm: weakref.ref[Pcm]
     features: mx.array
     lengths: mx.array
     greedy: DecodeOut | None = None
+
+
+@dataclass
+class _PlanBooster:
+    plan: weakref.ref[BiasPlan]
+    forms: dict[str, float]
+    build: Future[TrieBooster]
 
 
 class ParakeetMlxBackend(Backend):
@@ -382,8 +397,10 @@ class ParakeetMlxBackend(Backend):
         self._time_ratio = 0.08
         self._chars: frozenset[str] = frozenset()
         self._vocab = VocabIndex([])
-        self._recent: deque[_Utterance] = deque(maxlen=_UTTERANCES_CACHED)
-        self._boosters: OrderedDict[tuple[tuple[str, float], ...], TrieBooster] = OrderedDict()
+        # Both live only as long as the session's audio array / bias plan (by
+        # identity, through weakrefs): this server caches nothing across calls.
+        self._utterances: dict[int, _Utterance] = {}
+        self._plan_boosters: dict[int, _PlanBooster] = {}
 
     def capabilities(self) -> pb.ModelCapabilities:
         if self.boosting:
@@ -443,6 +460,13 @@ class ParakeetMlxBackend(Backend):
         # strength > 1 must not leave the advertised range: deletions start above it.
         plan.term_boosts = {k: min(v, self.boost_max) for k, v in plan.term_boosts.items()}
         forms, unspellable = boost_forms(plan.terms, plan.term_boosts, self._chars)
+        if forms:  # build on the worker thread while the audio streams in
+            key = id(plan)
+            self._plan_boosters[key] = _PlanBooster(
+                weakref.ref(plan, lambda _: self._plan_boosters.pop(key, None)),
+                forms,
+                self._executor.submit(TrieBooster, forms, self._vocab),
+            )
         plan.backend_params.update(
             decoder=f"tdt_beam{self.beam_size}+greedy" if forms else "greedy",
             boosted_forms=str(len(forms)),
@@ -484,34 +508,31 @@ class ParakeetMlxBackend(Backend):
         )  # unbiased; noise makes few tokens, so beam would be optimistic
         self.perf.rtfx = 10_000 / ms if ms > 0 else 0.0
 
-    def _booster(self, forms: dict[str, float]) -> TrieBooster:
-        key = tuple(sorted(forms.items()))
-        booster = self._boosters.get(key)
-        if booster is None:
-            booster = TrieBooster(forms, self._vocab)
-            self._boosters[key] = booster
-            if len(self._boosters) > _BOOSTERS_CACHED:
-                self._boosters.popitem(last=False)
-        else:
-            self._boosters.move_to_end(key)
-        return booster
+    def _booster(self, plan: BiasPlan, forms: dict[str, float]) -> TrieBooster:
+        """The booster plan_bias started building; built here if it is not ready
+        (this runs on the worker thread, so waiting for a queued build would hang)."""
+        entry = self._plan_boosters.get(id(plan))
+        if entry and entry.plan() is plan and entry.forms == forms and entry.build.done():
+            return entry.build.result()
+        return TrieBooster(forms, self._vocab)
 
     def _utterance(self, model: _Model, pcm: Pcm) -> tuple[_Utterance, int]:
-        """Encoder output (and greedy decode, once run) for `pcm`, and the
-        encoder ms spent now (0: reused, e.g. for the anchor after the primary)."""
+        """Encoder output for `pcm` and the encoder ms spent now (0: reused, e.g.
+        for the anchor: the session passes the same array to both decodes)."""
         import mlx.core as mx  # noqa: PLC0415 - platform-specific, see __init__
         from parakeet_mlx.audio import get_logmel  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
 
-        for u in self._recent:
-            if u.pcm is pcm or np.array_equal(u.pcm, pcm):
-                return u, 0
+        key = id(pcm)
+        u = self._utterances.get(key)
+        if u is not None and u.pcm() is pcm:
+            return u, 0
         t0 = time.perf_counter()
         audio = mx.array(pcm).astype(mx.float32) / 32768.0
         mel = get_logmel(audio, model.preprocessor_config)
         features, lengths = model.encoder(mel)
         mx.eval(features, lengths)  # pyright: ignore[reportUnknownMemberType] - mlx stub: untyped *args
-        u = _Utterance(pcm, features, lengths)
-        self._recent.appendleft(u)
+        ref = weakref.ref(pcm, lambda _: self._utterances.pop(key, None))
+        u = self._utterances[key] = _Utterance(ref, features, lengths)
         return u, int((time.perf_counter() - t0) * 1000)
 
     def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
@@ -543,7 +564,7 @@ class ParakeetMlxBackend(Backend):
             )
 
         t1 = time.perf_counter()
-        booster = self._booster(forms)
+        booster = self._booster(plan, forms) if plan else TrieBooster(forms, self._vocab)
         t2 = time.perf_counter()
         beam = Beam(beam_size=self.beam_size, patience=self.patience, booster=booster.machine)
         tokens = _tokens(model.decode(u.features, u.lengths, config=DecodingConfig(decoding=beam)))
