@@ -42,7 +42,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 if TYPE_CHECKING:
-    from collections.abc import Iterator
+    from collections.abc import Iterable, Iterator
 
 CONFIDENT = 0.7
 TAIL_BYTES = 4 * 1024 * 1024  # only the end of a session file is read
@@ -309,6 +309,79 @@ def read_codex(path: Path) -> list[Group]:
     return groups.result()
 
 
+# --------------------------------------------------------------------------- all prompts
+
+_USER_LINE_RE = re.compile(r'"(?:role|type)":\s?"user"')
+
+
+def user_prompts(agent: str, lines: Iterable[str]) -> Iterator[tuple[str, str | None]]:
+    """(prompt text, cwd if the entry records one) of every human prompt in ``lines`` of a
+    session file, any branch; injected, tool-result and sidechain entries are skipped."""
+    for line in lines:
+        if not _USER_LINE_RE.search(line) or '"tool_result"' in line:
+            continue
+        entry = _parse(line)
+        if entry is None:
+            continue
+        text = _prompt_text(agent, entry)
+        if text and text.strip():
+            yield text, _str(entry.get("cwd"))
+
+
+def _prompt_text(agent: str, entry: Json) -> str | None:
+    if agent == "codex":
+        payload = _obj(entry.get("payload"))
+        if payload is None or payload.get("type") != "message" or payload.get("role") != "user":
+            return None
+        text = _texts(_blocks(payload.get("content")), "input_text")
+        return None if text.lstrip().startswith(_CODEX_INJECTED) else text
+    msg = _obj(entry.get("message"))
+    if msg is None or msg.get("role") != "user":
+        return None
+    content = msg.get("content")
+    text = content if isinstance(content, str) else _texts(_blocks(content), "text")
+    if agent == "claude" and (
+        entry.get("type") != "user"
+        or entry.get("isSidechain") is True
+        or not _is_human_turn(msg)
+        or _claude_injected(entry, text)
+    ):
+        return None
+    if agent == "pi" and entry.get("type") != "message":
+        return None
+    return text
+
+
+def session_header(agent: str, path: Path) -> tuple[str | None, bool]:
+    """(cwd from the first line, whether it is a Codex subagent session)."""
+    try:
+        head = _first_line(path)
+    except OSError:
+        return None, False
+    if head is None:
+        return None, False
+    if agent != "codex":
+        return _str(head.get("cwd")), False
+    payload = _obj(head.get("payload")) or {}
+    sub = bool(payload.get("parent_thread_id")) or isinstance(payload.get("source"), dict)
+    return _str(payload.get("cwd")), sub
+
+
+def session_files() -> Iterator[tuple[str, Path]]:
+    """(agent, path) of every main session file (pi, Claude Code, Codex); subagent
+    directories are not searched."""
+    override = os.environ.get("PI_CODING_AGENT_SESSION_DIR")
+    if override:
+        pi = Path(override).expanduser().glob("*.jsonl")
+    else:
+        agent_dir = Path(os.environ.get("PI_CODING_AGENT_DIR") or _home() / ".pi" / "agent")
+        pi = (agent_dir.expanduser() / "sessions").glob("*/*.jsonl")
+    yield from (("pi", p) for p in pi)
+    claude = Path(os.environ.get("CLAUDE_CONFIG_DIR") or _home() / ".claude").expanduser()
+    yield from (("claude", p) for p in (claude / "projects").glob("*/*.jsonl"))
+    yield from (("codex", p) for p in codex_sessions_dir().glob("*/*/*/rollout-*.jsonl"))
+
+
 # --------------------------------------------------------------------------- locating
 
 
@@ -363,16 +436,7 @@ def _candidates(agent: str, cwd: str) -> list[tuple[float, Path]]:
 
 
 def _session_cwd(agent: str, path: Path) -> str | None:
-    try:
-        head = _first_line(path)
-    except OSError:
-        return None
-    if head is None:
-        return None
-    if agent == "codex":
-        payload = _obj(head.get("payload"))
-        return _str(payload.get("cwd")) if payload is not None else None
-    return _str(head.get("cwd"))
+    return session_header(agent, path)[0]
 
 
 _READERS = {"pi": read_pi, "claude": read_claude, "codex": read_codex}

@@ -256,6 +256,7 @@ def spoken_forms(canonical: str, kind: TermKind) -> tuple[str, ...]:
 # --------------------------------------------------------------------------- extraction
 
 _BACKTICK_RE = re.compile(r"`([^`\n]{1,120})`")
+_SPAN_RE = re.compile(r"[\w.:#@$+~/=-]+(?:\(\))?")  # a single backticked term
 _PATH_RE = re.compile(
     r"(?<![\w/.~-])(?:~|\.{1,2})?/?(?:[\w.@+-]+/)+[\w.@+-]*\w\.[A-Za-z][A-Za-z0-9]{0,9}(?![\w/])"
     r"|(?<![\w/.~-])[\w@+-]*[A-Za-z0-9]\.(?:py|pyi|ts|tsx|js|jsx|mjs|cjs|rs|go|md|json|jsonl|toml|yaml|yml|"
@@ -546,6 +547,8 @@ def _backtick_kind(span: str, *, prose: bool) -> TermKind | None:
         if _ACRONYM_NUMBER_RE.fullmatch(span):
             return TermKind.NAME
         return TermKind.COMMAND if len(span) <= 60 and _COMMAND_RE.fullmatch(span) else None
+    if not _SPAN_RE.fullmatch(span):
+        return None  # globs, calls with arguments, templates: `*.ts(x)`, `/a/<id>`
     checks = (
         (_FLAG_RE.fullmatch(span) is not None, TermKind.FLAG),
         ("/" in span or _PATH_RE.fullmatch(span) is not None, TermKind.PATH),

@@ -1,17 +1,19 @@
 import json
 import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import cast
 
 import pytest
 
-from hark_client.context import TermSource, engine
+from hark_client.context import TermSource, engine, vocab
 from hark_client.context.__main__ import main
 from hark_client.context.agents import AgentSession, Group
 from hark_client.context.focus import FocusResult
+from hark_client.context.rank import Candidate, Origin
 from hark_client.context.repo import RepoInfo
 from hark_client.context.terminal import TerminalState
-from hark_client.context.types import Evidence, FocusInfo
+from hark_client.context.types import Evidence, FocusInfo, TermKind
 
 TERMINAL = FocusInfo(app="kitty", app_id="kitty", title="nvim", pid=4242, is_terminal=True)
 
@@ -33,6 +35,11 @@ def fake_repo(cwd: str) -> RepoInfo:
     return RepoInfo(cwd, "main", "abc", ("src/repoTerm.py",), ("src/recentTerm.py",), ())
 
 
+def fake_vocab(repo: str) -> list[Candidate]:
+    assert repo == "/w"
+    return [Candidate("learnedTerm", TermKind.IDENTIFIER, Origin.PERSIST_REPO, 0.9)]
+
+
 def fake_terminal(pid: int) -> TerminalState:
     return TerminalState(cwd="/w", pid=pid, agent="pi")
 
@@ -43,13 +50,14 @@ def providers(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(engine, "resolve", fake_terminal)
     monkeypatch.setattr(engine, "find_session", sessions(0.95))
     monkeypatch.setattr(engine, "repo_info", fake_repo)
+    monkeypatch.setattr(engine, "vocab_candidates", fake_vocab)
 
 
 @pytest.mark.usefixtures("providers")
 def test_terms_are_ranked_by_source():
     snap = engine.collect(1.0)
     order = [t.canonical for t in snap.terms if t.canonical.endswith("Term")]
-    assert order == ["selTerm", "agentTerm", "recentTerm", "repoTerm"]
+    assert order == ["selTerm", "agentTerm", "learnedTerm", "recentTerm", "repoTerm"]
     assert (snap.cwd, snap.repo_root, snap.agent, snap.errors) == ("/w", "/w", "pi", ())
 
 
@@ -122,3 +130,13 @@ def test_debug_cli_prints_json(capsys: pytest.CaptureFixture[str]):
     out = cast("dict[str, dict[str, dict[str, object]]]", json.loads(capsys.readouterr().out))
     assert out["canonicalized"]["text"] == "fix selTerm"
     assert out["diagnostics"]["terminal"]["agent"] == "pi"
+
+
+def test_vocab_cli_lists_and_clears(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
+    store = vocab.store(str(tmp_path))
+    store.path.write_text('{"version": 1, "user": {"fooBar": ["identifier", 2, 0, "s"]}}')
+    assert main(["vocab", "list", "--data-dir", str(tmp_path)]) == 0
+    out = cast("dict[str, object]", json.loads(capsys.readouterr().out))
+    assert (out["user_terms"], out["path"]) == (1, str(store.path))
+    assert main(["vocab", "clear", "--data-dir", str(tmp_path)]) == 0
+    assert not store.path.exists()

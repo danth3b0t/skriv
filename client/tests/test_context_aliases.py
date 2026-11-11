@@ -211,7 +211,8 @@ def test_word_list_keeps_inflections_tags_contractions_ids_and_fragments_out():
     text = (
         "Configures it. Running it. Libraries break. Don't. WHERE </system-reminder> is "
         "toolu_01ABCDEF123 or call_abc123XYZ, commit 3f9a2b1c4d5e6f7a, id "
-        "123e4567-e89b-12d3, token a8f3k2l9x0q1w7e5z4 in \u00dcnicode caf\u00e9 well-known text."
+        "123e4567-e89b-12d3, token a8f3k2l9x0q1w7e5z4 in \u00dcnicode caf\u00e9 well-known text "
+        "matching `*.qa.test.ts(x)` and `/clients/<id>/docs`."
     )
     assert extract_terms(text, prose=True) == []
     assert extract_terms("toolu_01ABCDEF123 call_abc123XYZ a8f3k2l9x0q1w7e5z4 sha256sum") == [

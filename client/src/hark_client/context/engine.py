@@ -17,8 +17,10 @@ import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeout
 from dataclasses import dataclass, field, replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hark_client.context import vocab
 from hark_client.context.agents import CONFIDENT, AgentSession, find_session
 from hark_client.context.aliases import extract_terms, scrub
 from hark_client.context.focus import FocusResult, get_focus
@@ -35,6 +37,7 @@ PROVIDER_TIMEOUT_S: dict[str, float] = {
     "terminal": 0.2,
     "repo": 0.5,
     "agent": 0.3,
+    "vocab": 0.2,
 }
 MAX_SELECTION_CHARS = 2000
 
@@ -46,6 +49,7 @@ class Diagnostics:
     terminal: TerminalState | None = None
     session: AgentSession | None = None
     repo: RepoInfo | None = None
+    learned: list[Candidate] = field(default_factory=list[Candidate])  # persistent vocabulary
     stage_ms: dict[str, float] = field(default_factory=dict[str, float])
 
 
@@ -96,8 +100,10 @@ def collect_detailed(
             started = diag.terminal.agent_started if diag.terminal else None
             repo_job = run.start("repo", lambda: repo_info(cwd))
             agent_job = run.start("agent", lambda: find_session(cwd, agent_hint, started))
+            vocab_job = run.start("vocab", lambda: vocab_candidates(repo_root(cwd)))
             diag.repo = run.result(repo_job)
             diag.session = run.result(agent_job)
+            diag.learned = run.result(vocab_job) or []
         snapshot = _snapshot(focus_res, diag, cwd, max_terms)
     except Exception as exc:  # noqa: BLE001 - collect() must never raise
         run.errors.append(f"collect: {type(exc).__name__}: {exc}")
@@ -108,6 +114,19 @@ def collect_detailed(
     diag.stage_ms = run.stage_ms
     elapsed_ms = round((time.monotonic() - t0) * 1000, 1)
     return replace(snapshot, collected_ms=elapsed_ms, errors=tuple(errors)), diag
+
+
+def repo_root(cwd: str) -> str:
+    """The nearest ancestor of ``cwd`` with a ``.git`` entry (worktrees too), else ``cwd``."""
+    for d in (Path(cwd), *Path(cwd).parents):
+        if (d / ".git").exists():
+            return str(d)
+    return cwd
+
+
+def vocab_candidates(repo: str) -> list[Candidate]:
+    """Terms learned from earlier sessions for the repository (or directory) ``repo``."""
+    return vocab.store().candidates(repo)
 
 
 def session_candidates(session: AgentSession) -> list[Candidate]:
@@ -150,6 +169,7 @@ def _snapshot(
         cands.extend(text_candidates(focus.title, Origin.WINDOW_TITLE))
     if diag.repo is not None:
         cands.extend(repo_candidates(diag.repo))
+    cands.extend(diag.learned)
     ranking = rank(cands, max_terms)
     return ContextSnapshot(
         focus=focus,
