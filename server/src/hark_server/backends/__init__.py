@@ -16,7 +16,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from hark.v1 import hark_pb2 as pb
 
@@ -57,6 +57,20 @@ class BiasPlan:
     terms: list[pb.BiasTerm]  # after server-side truncation, in rank order
     term_boosts: dict[str, float]  # id -> native boost (after strength)
     backend_params: dict[str, str] = field(default_factory=dict)
+
+
+class AudioStream(Protocol):
+    """Per-session work done while audio streams in (Backend.open_stream).
+
+    Called from the event loop: `feed` with every sample the session appends
+    (zero-filled gaps included), `set_plan` on a context update, `finish` instead
+    of Backend.decode(pcm, plan) for the primary decode, `close` when the
+    session ends."""
+
+    def feed(self, data: bytes) -> None: ...
+    def set_plan(self, plan: BiasPlan | None) -> None: ...
+    async def finish(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut: ...
+    def close(self) -> None: ...
 
 
 class BackendUnavailable(RuntimeError):  # noqa: N818 - public name, imported by __main__ and tests
@@ -102,6 +116,10 @@ class Backend(abc.ABC):
             w = t.weight if t.HasField("weight") else 1.0
             boosts[t.id] = strength * (bias.boost_min + w * (bias.boost_max - bias.boost_min))
         return BiasPlan(terms=list(terms), term_boosts=boosts)
+
+    def open_stream(self, plan: BiasPlan | None) -> AudioStream | None:
+        """A per-session incremental decoder, or None: decode at end of audio only."""
+        return None
 
     # ----- work (async wrappers around the worker thread) ----------------
     async def run[*Ts, T](self, fn: Callable[[*Ts], T], *args: *Ts) -> T:

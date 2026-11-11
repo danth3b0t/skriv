@@ -29,6 +29,8 @@ model_id = ""                     # "" => last path component of `model`
 
 [backend.options]                 # passed to the backend constructor
 dtype = "bfloat16"
+# parakeet_mlx: incremental_min_ms = 30000 (decode while streaming from this length; -1: never),
+# incremental_stride_ms = 6000, beam_size, patience, boost_min, boost_max
 # mock backend options: word_ms, decode_ms, decode_ms_per_s, load_ms, max_n_best, script
 
 [cleanup]

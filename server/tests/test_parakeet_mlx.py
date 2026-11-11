@@ -14,9 +14,10 @@ import string
 import subprocess
 import wave
 from collections import deque
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, ClassVar, cast
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from conftest import kubectl_term, speech, utterance
 
@@ -30,6 +31,7 @@ from parakeet_mlx import parakeet as pp  # pyright: ignore[reportMissingTypeStub
 from parakeet_mlx.audio import PreprocessArgs  # pyright: ignore[reportMissingTypeStubs]
 
 from hark_server.backends.parakeet_mlx import (
+    DEFAULT_INCREMENTAL_MIN_MS,
     ParakeetMlxBackend,
     TrieBooster,
     VocabIndex,
@@ -92,8 +94,16 @@ class FakeModel:
 
 
 class FakeParakeet(ParakeetMlxBackend):
-    def __init__(self, model: FakeModel) -> None:
-        super().__init__()
+    def __init__(
+        self,
+        model: FakeModel,
+        *,
+        incremental_min_ms: int = DEFAULT_INCREMENTAL_MIN_MS,
+        incremental_stride_ms: int = 6000,
+    ) -> None:
+        super().__init__(
+            incremental_min_ms=incremental_min_ms, incremental_stride_ms=incremental_stride_ms
+        )
         self.fake = model
 
     def _from_pretrained(self) -> FakeModel:
@@ -159,6 +169,91 @@ async def test_beam_that_skips_speech_is_replaced_by_greedy(serve: Serve):
     assert final.n_best[0].text == final.anchor.text == "please run cube control get pods"
     assert "beam_discarded" in final.timings.backend_ms
     assert [h.decision for h in final.bias_hits] == [pb.BIAS_HIT_DECISION_ALREADY_IN_ANCHOR]
+
+
+class SentenceModel(FakeModel):
+    """Audio is one value per 80 ms frame (value * 100 as PCM); the encoder passes
+    the values through and the decoder emits WORDS[value] where a value starts.
+    Like parakeet's TDT decoder, a decode that starts inside a sentence (not in
+    a pause of 3+ frames) emits nothing until that sentence has ended."""
+
+    WORDS: ClassVar[dict[int, str]] = {v: f" w{v}" for v in range(1, 99)} | {99: "."}
+
+    def __init__(self) -> None:
+        super().__init__(GREEDY)
+        self.vocabulary = sorted(set(self.WORDS.values()))
+
+    def encoder(self, mel: mx.array, /) -> tuple[mx.array, mx.array]:
+        features = mel[:, ::8]  # (see fake_logmel) one row per 80 ms
+        return features, mx.array([features.shape[1]])
+
+    def decode(
+        self, features: mx.array, lengths: mx.array, *, config: DecodingConfig
+    ) -> tuple[list[list[AlignedToken]], object]:
+        column = np.array(features[0, : int(lengths[0]), 0], dtype=np.float64)
+        values = [round(v * 327.68) for v in cast("list[float]", column.tolist())]
+        tokens: list[AlignedToken] = []
+        armed, prev = not any(values[:3]), 0
+        for i, v in enumerate(values):
+            if v in self.WORDS and v != prev:  # (warmup decodes noise)
+                if armed:
+                    text = self.WORDS[v]
+                    tokens.append(AlignedToken(self.vocabulary.index(text), text, i * 0.08, 0.08))
+                armed = armed or v == 99
+            prev = v
+        return [tokens], [None]
+
+
+def fake_logmel(audio: mx.array, args: PreprocessArgs) -> mx.array:
+    hops = audio.shape[0] // args.hop_length
+    samples = np.array(audio, dtype=np.float32)[: hops * args.hop_length]
+    return mx.array(samples.reshape(1, hops, args.hop_length)[:, :, :1])
+
+
+def sentences(*lengths: int) -> tuple[npt.NDArray[np.int16], str]:
+    """Sentences of `lengths` words (2 frames each, 1 frame apart), ". ", 6 frames of
+    pause; (PCM, the text a decoder should write)."""
+    frames: list[int] = [0] * 4
+    words: list[str] = []
+    v = 1
+    for n in lengths:
+        for _ in range(n):
+            frames += [v, v, 0]
+            words.append(f"w{v}")
+            v += 1
+        frames += [99, 0, 0, 0, 0, 0, 0]
+        words[-1] += "."
+    pcm = np.repeat(np.array(frames, np.int16) * 100, 1280)
+    return pcm, " ".join(words)
+
+
+async def test_long_audio_is_decoded_in_sentences_while_it_streams(
+    serve: Serve, monkeypatch: pytest.MonkeyPatch
+):
+    monkeypatch.setattr("parakeet_mlx.audio.get_logmel", fake_logmel)
+    backend = FakeParakeet(SentenceModel(), incremental_min_ms=0, incremental_stride_ms=2000)
+    client = await serve(backend=backend)
+    # 13 s; the 20-word sentence is longer than a window: it must not be cut.
+    pcm, text = sentences(5, 4, 20, 6, 3, 5, 4, 2)
+    reqs = utterance(pcm)
+    paced: list[pb.TranscribeRequest | float] = [reqs[0]]
+    for i, r in enumerate(reqs[1:]):  # 20 ms per 400 ms of audio: the windows keep up
+        paced += [r, 0.02] if i % 10 == 9 else [r]
+    final = (await client.transcribe(paced)).final
+    assert final.n_best[0].text == final.anchor.text == text
+    ms = final.timings.backend_ms
+    assert ms["windows"] >= 4
+    assert ms["tail_audio"] < len(pcm) // 16
+    assert backend.held() == 0
+
+
+async def test_short_audio_is_decoded_offline(serve: Serve, monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr("parakeet_mlx.audio.get_logmel", fake_logmel)
+    client = await serve(backend=FakeParakeet(SentenceModel(), incremental_stride_ms=2000))
+    pcm, text = sentences(5, 4, 20, 6, 3, 5, 4, 2)  # 13 s < incremental_min_ms (30 s)
+    final = (await client.transcribe(utterance(pcm))).final
+    assert final.n_best[0].text == text
+    assert "windows" not in final.timings.backend_ms
 
 
 @pytest.mark.parametrize("ctx", [pb.RecognitionContext(), bias_ctx(kubectl_term(), strength=0.0)])

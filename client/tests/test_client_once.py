@@ -7,6 +7,9 @@ import socket
 import time
 from typing import TYPE_CHECKING, cast
 
+import pytest
+
+from hark_client import context
 from hark_client.__main__ import main
 from hark_client.context import ContextSnapshot
 
@@ -14,8 +17,6 @@ from .conftest import snapshot, write_wav
 
 if TYPE_CHECKING:
     from pathlib import Path
-
-    import pytest
 
     from .conftest import FakeContext, FakeLLM, HarkServer
 
@@ -94,6 +95,27 @@ def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     assert rec["profile"] == "terminal"
     assert cast("dict[str, object]", rec["cleanup"])["status"] == "no_edits"
     assert fake_llm.user_message().endswith("\nplease run kubectl get")
+
+
+@pytest.mark.parametrize(
+    ("profile", "pasted"), [("terminal", "open canon.py"), ("prose", "open canon dot py")]
+)
+def test_spoken_symbols_are_written_in_the_terminal_profile_only(
+    tmp_path: Path,
+    hark_server: HarkServer,
+    fake_llm: FakeLLM,
+    fake_context: FakeContext,
+    monkeypatch: pytest.MonkeyPatch,
+    profile: str,
+    pasted: str,
+):
+    def canonicalize(text: str, words: object, terms: object) -> tuple[str, list[object]]:
+        return "open canon dot py", []
+
+    monkeypatch.setattr(context, "canonicalize", canonicalize)
+    fake_context.snapshots = [snapshot("com.mitchellh.ghostty")]
+    code, rec = run_once(tmp_path, hark_server.target, "--profile", profile)
+    assert (code, rec["final_text"]) == (0, pasted)
 
 
 def test_cleanup_timeout_falls_back_to_canonical_text(

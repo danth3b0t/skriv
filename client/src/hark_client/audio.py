@@ -112,3 +112,25 @@ def rms_dbfs(pcm16: bytes) -> float:
     x = np.frombuffer(pcm16[: len(pcm16) // 2 * 2], "<i2").astype(np.float64) / 32768.0
     rms = float(np.linalg.norm(x)) / math.sqrt(len(x))
     return 20 * math.log10(rms) if rms > 0 else float("-inf")
+
+
+SPEECH_FRAME_MS = 20
+SPEECH_OVER_FLOOR_DB = 12.0
+SPEECH_THRESHOLD_DBFS = (-55.0, -40.0)  # louder than -40 always counts, -55 or less never
+
+
+def speech_ms(pcm16: bytes) -> int:
+    """Rough amount of speech in 16 kHz PCM16: 20 ms frames louder than the noise
+    floor (the 10th percentile frame) + 12 dB, the threshold kept within
+    SPEECH_THRESHOLD_DBFS."""
+    n = SAMPLE_RATE * SPEECH_FRAME_MS // 1000
+    usable = len(pcm16) // (2 * n) * 2 * n
+    if not usable:
+        return 0
+    frames = np.frombuffer(pcm16[:usable], "<i2").astype(np.float64).reshape(-1, n) / 32768.0
+    db: npt.NDArray[np.float64] = 10 * np.log10(np.mean(frames**2, axis=1) + 1e-12)
+    floor = float(np.percentile(db, 10))
+    threshold = min(
+        max(floor + SPEECH_OVER_FLOOR_DB, SPEECH_THRESHOLD_DBFS[0]), SPEECH_THRESHOLD_DBFS[1]
+    )
+    return int((db > threshold).sum()) * SPEECH_FRAME_MS

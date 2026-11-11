@@ -6,7 +6,7 @@ Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) serve
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
           └─ Transcribe stream opens; 40 ms PCM16 chunks (+ pre-roll) queue behind SessionStart
-key up ───► EndOfAudio ► FinalResult ► canonicalize ► cleanup (optional, deadline) ► guardrails
+key up ───► EndOfAudio ► FinalResult ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
           ► focus re-check ► paste (or clipboard + notification) ► history.jsonl
 ```
 
@@ -98,7 +98,8 @@ deadline_ms = 600             # timeout/failure => uncleaned text
 device = ""                   # PortAudio name or index
 preroll_ms = 200              # needs keep_open
 keep_open = true              # mic stream stays open between dictations
-min_ms = 300                  # shorter presses are cancelled
+min_ms = 300                  # shorter presses are cancelled (short "cancel" sound, nothing pasted)
+min_speech_ms = 300           # less speech energy than this is discarded too (status no_speech); 0 = off
 max_ms = 120000
 
 [hotkey]
@@ -109,6 +110,8 @@ listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
 restore_clipboard = true
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
+join_space = true             # same window within join_window_ms, previous paste ended with a non-space
+join_window_ms = 60000        #   => leading space; a real Enter press (hotkey listener) resets it
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
@@ -132,6 +135,10 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 - All profiles: escape sequences (CSI incl. the bracketed-paste markers `ESC[200~`/`ESC[201~`, OSC, 8-bit CSI), C0/C1
   control characters and bidi overrides are removed.
 - Terminal profile: every whitespace run, newlines included, becomes one space; no trailing newline. Nothing ever sends Enter.
+- Terminal profile, before cleanup: spoken symbols are written as symbols, conservatively (`hark_client/symbols.py`):
+  "canon dot py" → `canon.py`, "commit dash m fix colon" → `commit -m fix:`, "dash dash verbose" → `--verbose`,
+  "src slash main dot rs" → `src/main.rs`, "cd slash tmp" → `cd /tmp`. A single "slash" between ordinary words
+  ("the slash command") and "dash" after a non-command stay words.
 - Cleanup: protected spans (shortlist identifiers, code-like tokens, numbers, negations) are sent with the request.
   The client re-validates every returned edit (unique quote, byte range, protected spans, per-kind invariant incl.
   self-corrections and spoken numbers, negation and digit preservation, at most half the words removed, no lost `!`).
@@ -142,9 +149,11 @@ A profile is chosen by the first `apps` match, else `terminal` if the context en
 
 ## History and recordings
 
-`history.jsonl` gets one line per dictation: status, profile, app, raw/canonical/final text, replacements, cleanup
+`history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result, client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
-`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`)
+`keyup_to_final_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `paste_ms`, `keyup_to_paste_ms`),
+wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
+`final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 and the server's `Timings`. Files are created 0600 in a 0700 directory.
 
 With `save_recordings = true`, each dictation also writes `recordings/YYYY/MM/<utterance_id>/`:

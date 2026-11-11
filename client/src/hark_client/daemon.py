@@ -10,8 +10,9 @@ import threading
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
+from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
-from hark_client.pipeline import Utterance
+from hark_client.pipeline import LastPaste, Utterance
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -37,6 +38,7 @@ class Controller:
         self.current: Utterance | None = None
         self.busy = 0  # utterances still finishing
         self._max_hit = False
+        self.last_paste: LastPaste | None = None
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -73,6 +75,7 @@ class Controller:
         return utt
 
     def stop(self) -> str:
+        keyup = unix_us()
         utt = self._detach()
         if utt is None:
             return "ok idle"
@@ -82,7 +85,11 @@ class Controller:
 
         def work() -> None:
             try:
-                res = utt.finish(min_ms=self.svc.cfg.audio.min_ms)
+                res = utt.finish(
+                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, previous=self.last_paste
+                )
+                if res.pasted_as is not None:
+                    self.last_paste = res.pasted_as
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
@@ -108,6 +115,10 @@ class Controller:
         self.svc.feedback.sound("error")
         log.info("cancelled")
         return "ok cancelled"
+
+    def typed_enter(self) -> None:
+        """The user pressed Enter (hark never does): the next dictation starts afresh."""
+        self.last_paste = None
 
     def status(self) -> str:
         with self._lock:
@@ -150,7 +161,9 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
             log.warning(
                 "no Input Monitoring permission: the hotkey will not fire (see `hark doctor`)"
             )
-    return PushToTalk(cfg.key, controller.start, controller.stop, controller.cancel)
+    return PushToTalk(
+        cfg.key, controller.start, controller.stop, controller.cancel, controller.typed_enter
+    )
 
 
 def _make_mic(svc: Services, controller: Controller) -> Mic:

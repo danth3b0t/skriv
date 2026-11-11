@@ -6,8 +6,9 @@ hotkey down -> Utterance():
     empty context then); audio fed meanwhile queues behind it.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
-    EndOfAudio -> FinalResult -> canonicalize -> optional cleanup (deadline, falls back
-    to the canonical text) -> guardrails -> focus re-check -> paste -> history.
+    EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
+    optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
+    focus re-check -> paste -> history.
 """
 
 from __future__ import annotations
@@ -22,8 +23,9 @@ from typing import TYPE_CHECKING
 from google.protobuf import json_format
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, cleanup, context, guardrails, history
+from hark_client import asr, cleanup, context, guardrails, history, symbols
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
+from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import ContextSnapshot, FocusInfo, WordInfo
@@ -41,6 +43,37 @@ if TYPE_CHECKING:
 log = logging.getLogger("hark")
 
 FOCUS_RECHECK_DEADLINE_S = 0.1
+_NO_SPACE_BEFORE = frozenset(".,;:!?)]}%")
+
+
+@dataclass(frozen=True)
+class LastPaste:
+    """The daemon's previous paste: target (focus_target), time.monotonic(), last character."""
+
+    target: tuple[str, str]
+    at: float
+    last_char: str
+
+
+def focus_target(focus: FocusInfo) -> tuple[str, str] | None:
+    """(app, window) identity of a paste target; None if unknown."""
+    app = focus.app_id or focus.app
+    return (app, focus.window_id) if app or focus.window_id else None
+
+
+def join_prefix(
+    prev: LastPaste | None, target: tuple[str, str] | None, text: str, now: float, window_s: float
+) -> str:
+    """ " " if `text` continues the previous paste: same target, within `window_s`, the
+    previous text ended with a non-space and `text` does not start with whitespace or
+    closing punctuation."""
+    if prev is None or target is None or prev.target != target or now - prev.at > window_s:
+        return ""
+    if not prev.last_char or prev.last_char.isspace():
+        return ""
+    if not text or text[0].isspace() or text[0] in _NO_SPACE_BEFORE:
+        return ""
+    return " "
 
 
 @dataclass
@@ -56,7 +89,7 @@ class Services:
 @dataclass
 class Result:
     utterance_id: str
-    status: str  # pasted | copied | paste_failed | focus_changed | empty | too_short | cancelled | error
+    status: str  # pasted | copied | paste_failed | focus_changed | empty | too_short | no_speech | cancelled | error
     profile: str = ""
     raw_text: str = ""
     canonical_text: str = ""
@@ -67,6 +100,9 @@ class Result:
     paste: PasteResult | None = None
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
+    symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
+    joined: bool = False  # pasted with a leading space (join_prefix)
+    pasted_as: LastPaste | None = None  # set when the paste went through
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -93,6 +129,7 @@ class Utterance:
         self._ctx: Future[ContextSnapshot] = Future()
         self._lock = threading.Lock()
         self._done = False
+        self.keyup_unix_us = 0
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
         self.stream = TranscribeStream(svc.channel)
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
@@ -171,20 +208,40 @@ class Utterance:
             self.svc.out(f"{stage:<9} {text}")
 
     def finish(
-        self, *, min_ms: int = 0, reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP
+        self,
+        *,
+        min_ms: int = 0,
+        reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
+        keyup_unix_us: int | None = None,
+        previous: LastPaste | None = None,
     ) -> Result:
+        """keyup_unix_us: when the key was released, if earlier than this call.
+        previous: the last paste, to join this one to it with a space."""
+        self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
-        if held_ms < min_ms:
+        with self._lock:
+            speech = speech_ms(bytes(self.pcm))
+        if held_ms < min_ms or speech < self.svc.cfg.audio.min_speech_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
-            return Result(self.id, "too_short", timings={"held_ms": held_ms})
+            self.svc.feedback.sound("cancel")
+            res = Result(
+                self.id,
+                "too_short" if held_ms < min_ms else "no_speech",
+                timings={"held_ms": held_ms, "audio_ms": self.audio_ms, "speech_ms": speech},
+            )
+            self._report("gate", f"{res.status}: {res.timings}")
+            if res.status == "no_speech":
+                self._record(res)
+            return res
         with self._lock:
             self._done = True
             self.stream.end(reason)
         t_up = time.perf_counter()
         self.timings["held_ms"] = held_ms
+        self.timings["speech_ms"] = speech
         self.timings["audio_ms"] = self.audio_ms
         try:
-            result = self._finish(t_up)
+            result = self._finish(t_up, previous)
         except AsrError as e:
             result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
             self._report("asr", f"FAILED: {e}")
@@ -193,7 +250,7 @@ class Utterance:
         self._record(result)
         return result
 
-    def _finish(self, t_up: float) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
+    def _finish(self, t_up: float, previous: LastPaste | None) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
         final = self.stream.wait_final(cfg.server.final_timeout_ms / 1000)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
@@ -248,6 +305,11 @@ class Utterance:
             "canon", f"{canon!r} ({len(replacements)} replacements, {t['canonicalize_ms']:.1f} ms)"
         )
 
+        if prof.terminal:
+            canon, res.symbols = symbols.apply(canon)
+            if res.symbols:
+                self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
+
         res.cleanup = self._cleanup(canon, snap, profile_name)
         t["cleanup_ms"] = round(res.cleanup.ms, 1)
         detail = f" [{res.cleanup.reason}]" if res.cleanup.reason else ""
@@ -288,10 +350,19 @@ class Utterance:
                 if ok else "Focus changed and the clipboard write failed; see history"
             )  # fmt: skip
         else:
-            res.paste = svc.injector.paste(res.final_text, terminal=prof.terminal)
+            target, now = focus_target(snap.focus), time.monotonic()
+            prefix = (
+                join_prefix(previous, target, res.final_text, now, cfg.paste.join_window_ms / 1000)
+                if cfg.paste.join_space
+                else ""
+            )
+            res.joined = bool(prefix)
+            res.paste = svc.injector.paste(prefix + res.final_text, terminal=prof.terminal)
             res.status = "pasted" if res.paste.ok else "paste_failed"
             if not res.paste.ok:
                 svc.feedback.notify(f"Paste failed: {res.paste.detail}")
+            elif target is not None:
+                res.pasted_as = LastPaste(target, now, res.final_text[-1])
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
         self._report(
@@ -353,11 +424,14 @@ class Utterance:
             "raw_text": res.raw_text,
             "canonical_text": res.canonical_text,
             "final_text": res.final_text,
+            "joined": res.joined,
             "replacements": res.replacements,
+            "symbols": res.symbols,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
             "timings_ms": res.timings,
+            "client_unix_us": {"keyup": self.keyup_unix_us, **self.stream.unix_us},
             "context": {
                 "terms": len(snap.terms),
                 "collected_ms": snap.collected_ms,

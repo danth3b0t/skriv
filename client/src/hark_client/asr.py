@@ -60,6 +60,10 @@ class AsrError(RuntimeError):
     pass
 
 
+def unix_us() -> int:
+    return time.time_ns() // 1000
+
+
 def uuid7() -> str:
     """RFC 9562 UUIDv7: 48-bit Unix ms timestamp, version, variant, random."""
     ms = time.time_ns() // 1_000_000
@@ -188,6 +192,11 @@ class TranscribeStream:
         self.t_accepted: float | None = None
         self.t_end: float | None = None
         self.t_final: float | None = None
+        # Wall-clock marks (us), comparable with the server's *_unix_us timings:
+        # end_enqueued (end() called), end_dequeued (the request iterator took it),
+        # end_sent (gRPC asked for the next request, i.e. the EndOfAudio write
+        # completed), final_received.
+        self.unix_us: dict[str, int] = {}
         self._call = self._stub.Transcribe(self._requests(), timeout=timeout_s)
         self._reader = threading.Thread(target=self._read, daemon=True, name="hark-asr-read")
         self._reader.start()
@@ -201,8 +210,12 @@ class TranscribeStream:
             item = self._q.get()
             if item is None or self._terminal.is_set():
                 return
+            last = item.WhichOneof("msg") in ("end_of_audio", "cancel")
+            if last:
+                self.unix_us["end_dequeued"] = unix_us()
             yield item
-            if item.WhichOneof("msg") in ("end_of_audio", "cancel"):
+            if last:
+                self.unix_us["end_sent"] = unix_us()
                 return  # half-close
 
     def _read(self) -> None:
@@ -215,6 +228,7 @@ class TranscribeStream:
                     self.warnings.append(resp.warning)
                 elif kind == "final_result":
                     self.final, self.t_final = resp.final_result, time.perf_counter()
+                    self.unix_us["final_received"] = unix_us()
                     self._terminal.set()
                 elif kind == "session_ended":
                     self.ended = resp.session_ended
@@ -261,6 +275,7 @@ class TranscribeStream:
         self._pending.clear()
         self._closed = True
         self.t_end = time.perf_counter()
+        self.unix_us["end_enqueued"] = unix_us()
         self._q.put(
             pb.TranscribeRequest(
                 end_of_audio=pb.EndOfAudio(

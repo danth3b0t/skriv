@@ -75,7 +75,7 @@ Tailscale use.
 | | `mock` | `parakeet_mlx` | `nemo_gpupb` |
 |---|---|---|---|
 | Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | Linux + NVIDIA + NeMo. **Stub.** |
-| Streaming | BUFFERED | BUFFERED | BUFFERED (planned) |
+| Streaming | BUFFERED | INCREMENTAL from 30 s of audio (sentence segments decoded while audio streams), BUFFERED below | BUFFERED (planned) |
 | Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) |
 | Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FULL_PASS (batch of two) |
 | N-best | up to 3 (unbiased, RANK_ONLY) | 1 | unbiased beam (planned) |
@@ -129,7 +129,7 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 
 ## Known limitations
 
-- BUFFERED only: no partials and no incremental decoding, so finalize time grows with utterance length (see [bench](../docs/bench/2026-11-11-mac-parakeet-mlx.md)).
+- No partials. Below `incremental_min_ms` (30 s) parakeet_mlx decodes at end of audio, so finalize time grows with utterance length up to ~1 s at 30 s with bias terms; longer dictations are decoded a sentence at a time while they stream ([bench](../docs/bench/2026-11-12-parakeet-mlx-incremental.md)). mock and nemo_gpupb are BUFFERED only.
 - One model per process. `backend_params` from clients are ignored (none are used yet). Free-text context is ignored by all backends (`CONTEXT_IGNORED`).
 - parakeet_mlx: N-best is 1 (beam result + greedy anchor), boosting costs ~2.3× greedy finalize latency, `detected_language` is not reported, and confidence is uncalibrated.
 - nemo_gpupb is a stub.

@@ -49,18 +49,27 @@ Nothing outlives a session (the server promises to cache nothing; BiasList
 backend): the booster is built when the plan is made, on the worker thread
 while audio streams, and dropped with the plan.
 CTC models have no beam search here: bias mechanism NONE, anchor == primary.
+
+Long utterances (>= incremental_min_ms, default 30 s) are decoded while they
+stream in, a sentence at a time (IncrementalStream); end of audio then decodes
+only the last few seconds. See docs/bench/2026-11-12-parakeet-mlx-incremental.md.
 """
 
 from __future__ import annotations
 
+import asyncio
 import bisect
+import contextlib
 import importlib
+import itertools
+import logging
 import re
+import threading
 import time
 import unicodedata
 import weakref
 from collections import OrderedDict
-from dataclasses import dataclass
+from dataclasses import dataclass, field, replace
 from typing import TYPE_CHECKING, Protocol, cast
 
 import numpy as np
@@ -114,10 +123,13 @@ DEFAULT_BEAM_SIZE = 4
 DEFAULT_PATIENCE = 20.0
 DEFAULT_BOOST_MIN = 1.0
 DEFAULT_BOOST_MAX = 3.0
+DEFAULT_INCREMENTAL_MIN_MS = 30_000
 _SPECIAL_TOKEN = re.compile(r"<.*>")  # "<unk>", "<|nospeech|>": never part of the text
 _STEPS_CACHED = 2**18
 _GUARD_WORDS = 2  # see uncovered_run
 _TABLES_CACHED = 4096
+
+log = logging.getLogger("hark_server.parakeet_mlx")
 
 
 def spellable_chars(vocabulary: list[str]) -> frozenset[str]:
@@ -339,12 +351,39 @@ def install_fast_tabulate() -> None:
 
 @dataclass
 class _Utterance:
-    """Encoder output (and greedy decode, once run) of one session's audio."""
+    """Encoder output (and greedy tokens, once decoded) of one session's audio. An
+    incremental decode leaves only the greedy tokens, for the anchor."""
 
     pcm: weakref.ref[Pcm]
-    features: mx.array
-    lengths: mx.array
-    greedy: DecodeOut | None = None
+    features: mx.array | None
+    lengths: mx.array | None
+    greedy: list[AlignedToken] | None = None
+
+
+@dataclass(frozen=True)
+class Incremental:
+    """Windowed decoding while audio streams in (IncrementalStream). Times in ms."""
+
+    min_ms: int = DEFAULT_INCREMENTAL_MIN_MS  # shorter: one offline decode; < 0: never
+    stride_ms: int = 6_000  # a window is tried once this much audio follows the cut
+    left_ms: int = 16_000  # encoder-only left context (a multiple of 80 ms)
+    right_ms: int = 2_000  # a cut needs this much audio after it
+    min_segment_ms: int = 1_000  # no cut closer than this to the previous one
+    retry_ms: int = 3_000  # no sentence end found: try again with this much more audio
+    max_pending_ms: int = 30_000  # stop trying past this much uncut audio (finish decodes it)
+
+
+@dataclass
+class _Segment:
+    """Decode of [start, end) of an utterance; token times are utterance-absolute.
+    A window that found no sentence end returns an empty segment ending at start."""
+
+    greedy: list[AlignedToken]
+    primary: list[AlignedToken]
+    end: int  # sample
+    encoder_ms: int = 0
+    decode_ms: int = 0
+    backend_ms: dict[str, int] = field(default_factory=dict[str, int])
 
 
 @dataclass
@@ -366,6 +405,8 @@ class ParakeetMlxBackend(Backend):
         patience: float = DEFAULT_PATIENCE,
         boost_min: float = DEFAULT_BOOST_MIN,
         boost_max: float = DEFAULT_BOOST_MAX,
+        incremental_min_ms: int = DEFAULT_INCREMENTAL_MIN_MS,
+        incremental_stride_ms: int = Incremental.stride_ms,
     ) -> None:
         try:  # mlx and parakeet-mlx are imported lazily: macOS on Apple Silicon only
             importlib.import_module("mlx.core")
@@ -379,6 +420,8 @@ class ParakeetMlxBackend(Backend):
             raise ValueError("need beam_size >= 1 and patience >= 1")
         if not 0 <= boost_min <= boost_max:
             raise ValueError("need 0 <= boost_min <= boost_max")
+        if incremental_stride_ms < 1000:
+            raise ValueError("need incremental_stride_ms >= 1000")
         model = model or DEFAULT_MODEL
         super().__init__(model_id or model.rstrip("/").rsplit("/", 1)[-1])
         self.hf_model = model
@@ -390,6 +433,7 @@ class ParakeetMlxBackend(Backend):
         self.patience = patience
         self.boost_min = boost_min
         self.boost_max = boost_max
+        self.incremental = Incremental(min_ms=incremental_min_ms, stride_ms=incremental_stride_ms)
         # CTC checkpoints have greedy decoding only (TDT-CTC hybrids decode with TDT).
         name = self.hf_model.lower()
         self.boosting = "ctc" not in name or "tdt" in name
@@ -412,7 +456,7 @@ class ParakeetMlxBackend(Backend):
                 per_term_weight=True,
                 aliases_supported=True,
                 case_insensitive=True,
-                midstream_update=pb.MIDSTREAM_UPDATE_FULL,  # BUFFERED: the decode starts at the end
+                midstream_update=pb.MIDSTREAM_UPDATE_FULL,  # incremental windows are redone
                 bias_with_n_best=False,
                 hit_scores=False,
                 boost_min=self.boost_min,
@@ -428,7 +472,9 @@ class ParakeetMlxBackend(Backend):
             is_default=True,
             languages=self.languages,
             language_detection=len(self.languages) > 1,
-            streaming_mode=pb.STREAMING_MODE_BUFFERED,
+            streaming_mode=pb.STREAMING_MODE_INCREMENTAL
+            if self.incremental.min_ms >= 0
+            else pb.STREAMING_MODE_BUFFERED,
             partials=False,
             audio_formats=[
                 pb.AudioFormatSupport(
@@ -536,56 +582,177 @@ class ParakeetMlxBackend(Backend):
         return u, int((time.perf_counter() - t0) * 1000)
 
     def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
-        from parakeet_mlx import Beam, DecodingConfig  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
-
-        model = self._model
-        if model is None:
-            raise RuntimeError("model not loaded")
+        model = self._loaded()
         if len(pcm) < model.preprocessor_config.hop_length:
             return DecodeOut(text="", words=[])
-
         u, encoder_ms = self._utterance(model, pcm)
+        t0 = time.perf_counter()
+        if plan is None and u.greedy is not None:  # the anchor of a biased decode
+            out = _result(u.greedy)
+            out.encoder_ms = encoder_ms
+            return out
+        if u.features is None or u.lengths is None:
+            raise RuntimeError("no encoder output for this audio")
+        seg = self._decode_segment(model, u.features, u.lengths, plan, greedy=u.greedy)
+        u.greedy = seg.greedy
+        out = _result(seg.primary)
+        out.encoder_ms = encoder_ms
+        out.decode_ms = int((time.perf_counter() - t0) * 1000)
+        out.backend_ms = seg.backend_ms
+        return out
+
+    def _loaded(self) -> _Model:
+        if self._model is None:
+            raise RuntimeError("model not loaded")
+        return self._model
+
+    def _decode_segment(  # noqa: PLR0913 - one decode, all of its inputs
+        self,
+        model: _Model,
+        features: mx.array,
+        lengths: mx.array,
+        plan: BiasPlan | None,
+        *,
+        greedy: list[AlignedToken] | None = None,
+        shift_s: float = 0.0,
+    ) -> _Segment:
+        """Greedy and primary decode of `features` (a fresh decoder state).
+
+        Greedy is the anchor and the reference of the deletion guard; primary is
+        the boosted beam, or greedy without effective bias or when the guard
+        discards the beam. Decoded token times are shifted by `shift_s` (a given
+        `greedy` is taken as already shifted); `end` is left 0."""
+        from parakeet_mlx import Beam, DecodingConfig  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+
         backend_ms: dict[str, int] = {}
         t0 = time.perf_counter()
-        if u.greedy is None:  # unbiased: the anchor, and the reference of the deletion guard
-            u.greedy = _result(
-                _tokens(model.decode(u.features, u.lengths, config=DecodingConfig()))
-            )
+        if greedy is None:
+            greedy = _shift(_decode(model, features, lengths, DecodingConfig()), shift_s)
             backend_ms["greedy"] = int((time.perf_counter() - t0) * 1000)
-        greedy = u.greedy
         forms = boost_forms(plan.terms, plan.term_boosts, self._chars)[0] if plan else {}
         if plan is None or not forms:
-            return DecodeOut(
-                greedy.text,
-                list(greedy.words),
-                encoder_ms=encoder_ms,
-                decode_ms=int((time.perf_counter() - t0) * 1000),
-                backend_ms=backend_ms,
-            )
+            return _Segment(greedy, greedy, 0, backend_ms=backend_ms)
 
         t1 = time.perf_counter()
         booster = self._booster(plan, forms)
         t2 = time.perf_counter()
         beam = Beam(beam_size=self.beam_size, patience=self.patience, booster=booster.machine)
-        tokens = _tokens(model.decode(u.features, u.lengths, config=DecodingConfig(decoding=beam)))
-        biased = _result(tokens)
+        tokens = _shift(_decode(model, features, lengths, DecodingConfig(decoding=beam)), shift_s)
         t3 = time.perf_counter()
         backend_ms.update(booster_build=int((t2 - t1) * 1000), beam=int((t3 - t2) * 1000))
         spans = [(int(t.start * 1000), int(t.end * 1000)) for t in tokens]
-        if uncovered_run(spans, greedy.words) >= _GUARD_WORDS:
+        if uncovered_run(spans, _result(greedy).words) >= _GUARD_WORDS:
             backend_ms["beam_discarded"] = backend_ms["beam"]  # deleted speech: use the anchor
-            biased = DecodeOut(greedy.text, list(greedy.words))
-        biased.encoder_ms = encoder_ms
-        biased.decode_ms = int((t3 - t0) * 1000)
-        biased.backend_ms = backend_ms
-        return biased
+            tokens = greedy
+        return _Segment(greedy, tokens, 0, backend_ms=backend_ms)
+
+    # --- incremental decoding (IncrementalStream) ---
+    def open_stream(self, plan: BiasPlan | None) -> IncrementalStream | None:
+        return IncrementalStream(self, plan) if self.incremental.min_ms >= 0 else None
+
+    def start_window(
+        self, pcm: Pcm, offset: int, cut: int, plan: BiasPlan | None
+    ) -> Future[_Segment]:
+        """window_sync on the worker thread."""
+        return self._executor.submit(self.window_sync, pcm, offset, cut, plan)
+
+    def _encode_from(
+        self, model: _Model, pcm: Pcm, offset: int, start: int
+    ) -> tuple[mx.array, mx.array, int]:
+        """Encoder output of `pcm` (utterance samples from `offset`, full attention)
+        from sample `start` on (a frame boundary): (features, lengths, ms)."""
+        import mlx.core as mx  # noqa: PLC0415 - platform-specific, see __init__
+        from parakeet_mlx.audio import get_logmel  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+
+        t0 = time.perf_counter()
+        audio = mx.array(pcm).astype(mx.float32) / 32768.0
+        features, lengths = model.encoder(get_logmel(audio, model.preprocessor_config))
+        frame0 = min((start - offset) // _frame(model), features.shape[1])
+        features, lengths = features[:, frame0:], lengths - frame0
+        mx.eval(features, lengths)  # pyright: ignore[reportUnknownMemberType] - mlx stub: untyped *args
+        return features, lengths, int((time.perf_counter() - t0) * 1000)
+
+    def window_sync(self, pcm: Pcm, offset: int, cut: int, plan: BiasPlan | None) -> _Segment:
+        """Decode from `cut` to the next sentence end. `pcm` holds utterance samples
+        from `offset` (left context) to the end of the window: a greedy pass over
+        all of it finds the sentence ends, the segment up to the widest pause
+        after one (at least `right_ms` before the end) is decoded like an
+        utterance of its own."""
+        from parakeet_mlx import DecodingConfig  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+
+        model = self._loaded()
+        inc, frame = self.incremental, _frame(model)
+        features, lengths, encoder_ms = self._encode_from(model, pcm, offset, cut)
+        t0 = time.perf_counter()
+        shift = cut / SAMPLE_RATE
+        ahead = _shift(_decode(model, features, lengths, DecodingConfig()), shift)
+        end = offset + len(pcm)
+        lo, hi = (
+            cut + inc.min_segment_ms * SAMPLE_RATE // 1000,
+            end - inc.right_ms * SAMPLE_RATE // 1000,
+        )
+        at = sentence_cut(ahead, lo / SAMPLE_RATE, hi / SAMPLE_RATE)
+        if at is None:
+            return _Segment([], [], cut, encoder_ms, int((time.perf_counter() - t0) * 1000))
+        frames = max(1, round((at * SAMPLE_RATE - cut) / frame))
+        new_cut = cut + frames * frame
+        seg = self._decode_segment(
+            model, features[:, :frames], _mx_min(lengths, frames), plan, shift_s=shift,
+            greedy=[t for t in ahead if t.start < new_cut / SAMPLE_RATE],
+        )  # fmt: skip
+        seg.end = new_cut
+        seg.encoder_ms, seg.decode_ms = encoder_ms, int((time.perf_counter() - t0) * 1000)
+        return seg
+
+    def tail_sync(self, pcm: Pcm, done: _Committed, plan: BiasPlan | None) -> DecodeOut:
+        """Decode the audio after the committed cut and append it to the
+        committed tokens."""
+        model = self._loaded()
+        seg = _Segment([], [], len(pcm))
+        if len(pcm) - done.cut >= model.preprocessor_config.hop_length:
+            lo = max(0, done.cut - self.incremental.left_ms * SAMPLE_RATE // 1000)
+            features, lengths, encoder_ms = self._encode_from(model, pcm[lo:], lo, done.cut)
+            t0 = time.perf_counter()
+            seg = self._decode_segment(
+                model, features, lengths, plan, shift_s=done.cut / SAMPLE_RATE
+            )
+            seg.encoder_ms, seg.decode_ms = encoder_ms, int((time.perf_counter() - t0) * 1000)
+        greedy, primary = done.greedy + seg.greedy, done.primary + seg.primary
+        key = id(pcm)  # the session's anchor decode of the same array returns greedy
+        ref = weakref.ref(pcm, lambda _: self._utterances.pop(key, None))
+        self._utterances[key] = _Utterance(ref, None, None, greedy)
+        out = _result(primary)
+        out.encoder_ms, out.decode_ms = seg.encoder_ms, seg.decode_ms
+        out.backend_ms = {
+            **seg.backend_ms,
+            "windows": done.windows,
+            "windows_discarded": done.discarded,
+            "tail_audio": (len(pcm) - done.cut) * 1000 // SAMPLE_RATE,
+        }
+        return out
 
 
-def _tokens(
-    out: tuple[list[list[AlignedToken]], object] | list[list[AlignedToken]],
+def _frame(model: _Model) -> int:
+    """Samples per encoder frame (1280 for parakeet: 10 ms hop x 8)."""
+    return round(model.time_ratio * SAMPLE_RATE)
+
+
+def _mx_min(lengths: mx.array, n: int) -> mx.array:
+    import mlx.core as mx  # noqa: PLC0415 - platform-specific
+
+    return mx.minimum(lengths, n)
+
+
+def _decode(
+    model: _Model, features: mx.array, lengths: mx.array, config: DecodingConfig
 ) -> list[AlignedToken]:
+    out = model.decode(features, lengths, config=config)
     hyps = out[0] if isinstance(out, tuple) else out
     return hyps[0]
+
+
+def _shift(tokens: list[AlignedToken], s: float) -> list[AlignedToken]:
+    return [replace(t, start=t.start + s) for t in tokens] if s else tokens
 
 
 def _result(tokens: list[AlignedToken]) -> DecodeOut:
@@ -618,3 +785,153 @@ def uncovered_run(primary: list[tuple[int, int]], anchor: list[WordOut], slack_m
         run = 0 if covered else run + 1
         longest = max(longest, run)
     return longest
+
+
+def sentence_cut(tokens: list[AlignedToken], lo_s: float, hi_s: float) -> float | None:
+    """A cut point in [lo_s, hi_s] between a sentence-final token and the next
+    word: halfway between their starts (TDT token durations run up to the next
+    token, so starts are the only reliable word timing), at the widest such
+    pause, the later on ties; None if no sentence ends there."""
+    best, width = None, -1.0
+    for t, nxt in itertools.pairwise(tokens):
+        if t.text.rstrip()[-1:] in {".", "?", "!"} and nxt.text.startswith(" "):
+            at = (t.start + nxt.start) / 2
+            if lo_s <= at <= hi_s and nxt.start - t.start >= width:
+                best, width = at, nxt.start - t.start
+    return best
+
+
+@dataclass(frozen=True)
+class _Committed:
+    """Decoded audio before sample `cut`, by `windows` windows."""
+
+    cut: int = 0
+    greedy: list[AlignedToken] = field(default_factory=list["AlignedToken"])
+    primary: list[AlignedToken] = field(default_factory=list["AlignedToken"])
+    windows: int = 0
+    discarded: int = 0
+
+
+class IncrementalStream:
+    """Decodes a session's audio in sentence-sized segments while it streams in,
+    so that end of audio only has to decode the tail.
+
+    Segments end at sentence ends and each is decoded like an utterance of its
+    own (fresh decoder state, greedy + boosted beam + deletion guard), with
+    `left_ms` of earlier audio as encoder-only context and full attention
+    (parakeet-mlx's own streaming mode uses local attention and loses 15-30
+    WER points). Cutting anywhere else is unsafe: a TDT decoder that starts,
+    or continues with a carried state, in the middle of a sentence often emits
+    nothing until the next sentence starts, dropping whole clauses.
+
+    A window covers [cut - left, cut + stride + right] at first: a greedy pass
+    from the cut finds the sentence ends, and the segment up to the widest
+    pause after one is decoded. Without a sentence end the window is retried
+    with `retry_ms` more audio (up to `max_pending_ms` of uncut audio). Windows
+    run on the worker thread, one at a time, in line with other sessions'
+    decodes, and only once the audio reaches `min_ms`; shorter utterances are
+    decoded offline at the end.
+
+    Thread-safety: feed/set_plan/finish/close run on the event loop, window
+    completions on the worker thread; `_lock` guards the state.
+    """
+
+    def __init__(self, backend: ParakeetMlxBackend, plan: BiasPlan | None) -> None:
+        self.backend = backend
+        self.cfg = backend.incremental
+        self._lock = threading.RLock()  # a done-callback may run inside _pump
+        self._audio = bytearray()
+        self._plan = plan
+        self._generation = 0
+        self._done = _Committed()
+        self._need = self._samples(self.cfg.stride_ms + self.cfg.right_ms)  # next window's end
+        self._running: Future[_Segment] | None = None
+        self._finishing = False
+        self._failed = False
+        self._closed = False
+
+    def _samples(self, ms: int) -> int:
+        return ms * SAMPLE_RATE // 1000
+
+    def feed(self, data: bytes) -> None:
+        with self._lock:
+            self._audio += data
+            self._finishing = False
+            self._pump()
+
+    def set_plan(self, plan: BiasPlan | None) -> None:
+        """New context: the boosted segments are stale, start over."""
+        with self._lock:
+            self._plan = plan
+            self._generation += 1
+            self._done = _Committed()
+            self._need = self._samples(self.cfg.stride_ms + self.cfg.right_ms)
+            self._pump()
+
+    def close(self) -> None:
+        with self._lock:
+            self._closed = True
+            if self._running is not None:
+                self._running.cancel()
+
+    def _pump(self) -> None:
+        c, n, cut = self.cfg, len(self._audio) // 2, self._done.cut
+        if self._closed or self._failed or self._finishing or self._running is not None:
+            return
+        if n < max(self._need, self._samples(c.min_ms)):
+            return
+        if self._need - cut > self._samples(c.max_pending_ms):
+            return  # no sentence end in sight: finish decodes the rest
+        lo = max(0, cut - self._samples(c.left_ms))
+        end = self._need
+        pcm = np.frombuffer(bytes(self._audio[2 * lo : 2 * end]), dtype="<i2")
+        fut = self.backend.start_window(pcm, lo, cut, self._plan)
+        self._running = fut
+        generation = self._generation
+        fut.add_done_callback(lambda f: self._on_window(f, generation, end))
+
+    def _on_window(self, fut: Future[_Segment], generation: int, end: int) -> None:
+        with self._lock:
+            if self._running is fut:
+                self._running = None
+            if fut.cancelled() or self._closed:
+                return
+            if generation == self._generation:
+                if (exc := fut.exception()) is not None:
+                    log.warning("incremental window failed (%r); decoding at the end", exc)
+                    self._failed = True
+                    return
+                seg, d = fut.result(), self._done
+                if seg.end > d.cut:
+                    self._done = _Committed(
+                        seg.end, d.greedy + seg.greedy, d.primary + seg.primary, d.windows + 1,
+                        d.discarded + ("beam_discarded" in seg.backend_ms),
+                    )  # fmt: skip
+                    self._need = seg.end + self._samples(self.cfg.stride_ms + self.cfg.right_ms)
+                else:
+                    self._need = end + self._samples(self.cfg.retry_ms)
+            self._pump()
+
+    async def finish(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
+        """The primary decode of `pcm` (all audio fed so far): the committed
+        segments plus a decode of the tail, or an offline decode if no window
+        applies (short audio, other audio or plan, failed window)."""
+        with self._lock:
+            usable = (
+                not self._failed
+                and plan is self._plan
+                and len(pcm) == len(self._audio) // 2
+                and len(pcm) >= self._samples(self.cfg.min_ms)
+            )
+            self._finishing = usable  # no new windows: the tail is cheaper
+            running = self._running
+        if not usable:
+            return await self.backend.decode(pcm, plan)
+        if running is not None:
+            with contextlib.suppress(Exception, asyncio.CancelledError):
+                await asyncio.wrap_future(running)
+        with self._lock:
+            failed, done = self._failed, self._done  # _Committed is replaced, never mutated
+        if failed:
+            return await self.backend.decode(pcm, plan)
+        return await self.backend.run(self.backend.tail_sync, pcm, done, plan)
