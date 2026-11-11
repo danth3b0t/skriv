@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, Protocol, cast
+
 import grpc
 from conftest import kubectl_term, speech, utterance
 from grpc_health.v1 import health_pb2, health_pb2_grpc
@@ -9,16 +11,31 @@ from grpc_health.v1 import health_pb2, health_pb2_grpc
 from hark.v1 import hark_pb2 as pb
 from hark_server.backends.mock import MockBackend
 
-SERVING = health_pb2.HealthCheckResponse.SERVING
-NOT_SERVING = health_pb2.HealthCheckResponse.NOT_SERVING
+if TYPE_CHECKING:
+    from conftest import Serve
+
+# typeshed's grpcio-health-checking stubs type these as Incomplete and give HealthStub
+# no members; the values are ints.
+SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)
+NOT_SERVING = cast("int", health_pb2.HealthCheckResponse.NOT_SERVING)
 
 
-async def test_capabilities_describe_model_limits_and_privacy(serve):
+class _HealthCheckResponse(Protocol):
+    @property
+    def status(self) -> int: ...
+
+
+class _HealthStub(Protocol):
+    Check: grpc.aio.UnaryUnaryMultiCallable[health_pb2.HealthCheckRequest, _HealthCheckResponse]
+
+
+async def test_capabilities_describe_model_limits_and_privacy(serve: Serve):
     client = await serve(max_concurrent_sessions=3)
     caps = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest(client_protocol_minor=0))
     assert (caps.protocol.major, caps.protocol.minor) == (1, 0)
     (model,) = caps.models
-    assert model.model_id == "mock" and model.state == pb.MODEL_STATE_READY
+    assert model.model_id == "mock"
+    assert model.state == pb.MODEL_STATE_READY
     assert model.bias.mechanism == pb.BIAS_MECHANISM_DECODE_TIME_BOOST
     assert (model.bias.boost_min, model.bias.boost_max) == (1.0, 5.0)
     assert {"hark.recognize", "hark.eager_end"} <= set(caps.features)
@@ -33,7 +50,7 @@ async def test_capabilities_describe_model_limits_and_privacy(serve):
     assert out.of("accepted")[0].capabilities_etag == caps.etag
 
 
-async def test_required_features_that_exist_are_accepted(serve):
+async def test_required_features_that_exist_are_accepted(serve: Serve):
     client = await serve()
     out = await client.transcribe(
         utterance(
@@ -48,9 +65,9 @@ async def test_required_features_that_exist_are_accepted(serve):
     assert len(out.final.n_best[0].words) == 3
 
 
-async def test_cold_model_rejects_until_warmup_then_serves(serve):
+async def test_cold_model_rejects_until_warmup_then_serves(serve: Serve):
     client = await serve(backend=MockBackend(load_ms=50), warmup_on_start=False)
-    health = health_pb2_grpc.HealthStub(client.channel)
+    health = cast("_HealthStub", health_pb2_grpc.HealthStub(client.channel))
     check = await health.Check(health_pb2.HealthCheckRequest(service="hark.v1.Asr"))
     assert check.status == NOT_SERVING
     cold = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
@@ -58,10 +75,13 @@ async def test_cold_model_rejects_until_warmup_then_serves(serve):
 
     out = await client.transcribe(utterance(speech(200)))
     assert out.code == grpc.StatusCode.UNAVAILABLE
-    assert out.error.code == pb.ERROR_CODE_MODEL_NOT_READY and out.error.retryable
+    assert out.error is not None
+    assert out.error.code == pb.ERROR_CODE_MODEL_NOT_READY
+    assert out.error.retryable
 
     warm = await client.asr.Warmup(pb.WarmupRequest())
-    assert warm.state == pb.MODEL_STATE_READY and warm.warm_ms >= 50
+    assert warm.state == pb.MODEL_STATE_READY
+    assert warm.warm_ms >= 50
     check = await health.Check(health_pb2.HealthCheckRequest(service=""))
     assert check.status == SERVING
     ready = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest())

@@ -16,7 +16,7 @@ SERVER = Path(__file__).resolve().parents[1]
 
 
 @pytest.mark.parametrize(
-    "args, error",
+    ("args", "error"),
     [
         (["--listen", "127.0.0.1:50051"], None),
         (["--listen", "[::1]:50051"], None),
@@ -30,7 +30,7 @@ SERVER = Path(__file__).resolve().parents[1]
         (["--tls-client-ca", "ca.pem"], "requires"),
     ],
 )
-def test_plaintext_only_on_loopback_unless_overridden(args, error):
+def test_plaintext_only_on_loopback_unless_overridden(args: list[str], error: str | None):
     if error is None:
         parse_args(args)
     else:
@@ -38,7 +38,7 @@ def test_plaintext_only_on_loopback_unless_overridden(args, error):
             parse_args(args)
 
 
-def test_toml_config_rejects_unknown_keys(tmp_path):
+def test_toml_config_rejects_unknown_keys(tmp_path: Path):
     good = tmp_path / "ok.toml"
     good.write_text(
         '[server]\nlisten = "127.0.0.1:6000"\n[backend]\nkind = "mock"\n'
@@ -51,7 +51,7 @@ def test_toml_config_rejects_unknown_keys(tmp_path):
 
     bad = tmp_path / "bad.toml"
     bad.write_text('[server]\nlisten_addr = "127.0.0.1:6000"\n')
-    with pytest.raises(ConfigError, match="server.listen_addr"):
+    with pytest.raises(ConfigError, match=r"server\.listen_addr"):
         parse_args(["--config", str(bad)])
 
 
@@ -62,7 +62,10 @@ def test_nemo_backend_fails_clearly_without_nemo():
         create_backend("nemo_gpupb", "", "", {})
 
 
-def test_checked_in_stubs_match_proto(tmp_path):
-    subprocess.run([str(SERVER / "scripts" / "gen-proto"), str(tmp_path)], check=True)
+def test_checked_in_stubs_match_proto(tmp_path: Path):
+    gen_proto = SERVER / "scripts" / "gen-proto"
+    subprocess.run([str(gen_proto), str(tmp_path)], check=True)  # noqa: S603 - repo script, fixed argv
     for name in ("hark_pb2.py", "hark_pb2.pyi", "hark_pb2_grpc.py"):
-        assert filecmp.cmp(tmp_path / "hark/v1" / name, SERVER / "src/hark/v1" / name, shallow=False), name
+        assert filecmp.cmp(
+            tmp_path / "hark/v1" / name, SERVER / "src/hark/v1" / name, shallow=False
+        ), name

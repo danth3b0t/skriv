@@ -4,12 +4,19 @@ mirrors it (OK, or the ErrorDetail code's canonical status)."""
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING
+
 import grpc
 import pytest
 from conftest import audio_reqs, eoa_req, speech, start_req, utterance
 
 from hark.v1 import hark_pb2 as pb
 from hark_server.backends.mock import MockBackend
+
+if TYPE_CHECKING:
+    from conftest import Script, Serve
+
+    from hark_server.backends import Backend, BiasPlan, DecodeOut, Pcm
 
 C = grpc.StatusCode
 E = pb.ErrorCode
@@ -26,11 +33,11 @@ CANCEL = pb.TranscribeRequest(cancel=pb.Cancel(reason=pb.CANCEL_REASON_USER_ABOR
 
 
 class Exploding(MockBackend):
-    def _decode_sync(self, pcm, plan):
+    def _decode_sync(self, pcm: Pcm, plan: BiasPlan | None) -> DecodeOut:
         raise RuntimeError("boom")
 
 
-def overlapping():
+def overlapping() -> list[pb.TranscribeRequest]:
     bad = pb.TranscribeRequest()
     bad.CopyFrom(CHUNKS[1])
     bad.audio.start_sample = 0
@@ -38,7 +45,16 @@ def overlapping():
 
 
 # Failure scripts end at the offending message (see Client.transcribe).
-CASES = {
+type Case = tuple[
+    Script,
+    Backend | None,
+    pb.SessionEndReason.ValueType | None,
+    grpc.StatusCode,
+    pb.ErrorCode.ValueType | None,
+    list[str] | None,
+]
+
+CASES: dict[str, Case] = {
     # name: (script, backend, terminal reason (None = final), status, error code, unavailable)
     "final": (utterance(PCM), None, None, C.OK, None, None),
     "half-close without end_of_audio": ([start_req(), *CHUNKS], None, None, C.OK, None, None),
@@ -109,7 +125,7 @@ CASES = {
 
 
 @pytest.mark.parametrize("name", list(CASES))
-async def test_exactly_one_terminal_message(serve, name):
+async def test_exactly_one_terminal_message(serve: Serve, name: str):
     script, backend, reason, code, error_code, unavailable = CASES[name]
     client = await serve(backend=backend)
     out = await client.transcribe(script)
@@ -124,13 +140,16 @@ async def test_exactly_one_terminal_message(serve, name):
         assert out.kinds[0] == "accepted"
 
     if reason is None:
-        assert terminal == ["final_result"] and out.error is None
+        assert terminal == ["final_result"]
+        assert out.error is None
         return
     (ended,) = out.of("session_ended")
     assert ended.reason == reason
     assert ended.error.code == error_code
-    assert out.error is not None and out.error.code == error_code  # also in the trailers
-    if script and script[0].WhichOneof("msg") == "start":
-        assert ended.utterance_id == script[0].start.utterance_id
+    assert out.error is not None
+    assert out.error.code == error_code  # also in the trailers
+    first = script[0] if script else None
+    if isinstance(first, pb.TranscribeRequest) and first.WhichOneof("msg") == "start":
+        assert ended.utterance_id == first.start.utterance_id
     if unavailable is not None:
         assert list(ended.error.unavailable_features) == unavailable

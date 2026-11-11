@@ -8,6 +8,7 @@ with a bias plan the alias "cube control" becomes the canonical "kubectl".
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 import grpc
 import pytest
@@ -16,10 +17,13 @@ from conftest import audio_reqs, eoa_req, kubectl_term, silence, speech, start_r
 from hark.v1 import hark_pb2 as pb
 from hark_server.backends.mock import MockBackend
 
+if TYPE_CHECKING:
+    from conftest import Serve
+
 FS = pb.FieldStatus
 
 
-async def test_streaming_happy_path_with_bias(serve):
+async def test_streaming_happy_path_with_bias(serve: Serve):
     client = await serve()
     pcm = speech(1200)  # 6 words
     out = await client.transcribe(
@@ -33,7 +37,8 @@ async def test_streaming_happy_path_with_bias(serve):
         )
     )
     assert out.code == grpc.StatusCode.OK
-    assert out.kinds[0] == "accepted" and out.kinds[-1] == "final_result"
+    assert out.kinds[0] == "accepted"
+    assert out.kinds[-1] == "final_result"
 
     applied = out.of("accepted")[0].applied
     assert applied.bias_mechanism == pb.BIAS_MECHANISM_DECODE_TIME_BOOST
@@ -51,7 +56,8 @@ async def test_streaming_happy_path_with_bias(serve):
     (hit,) = final.bias_hits
     assert hit.term_id == "t-kubectl"
     assert hit.decision == pb.BIAS_HIT_DECISION_APPLIED
-    assert hit.matched_form == "kubectl" and not hit.via_alias
+    assert hit.matched_form == "kubectl"
+    assert not hit.via_alias
     assert hit.anchor_text == "cube control"
     assert primary.text.encode()[hit.text_byte_start : hit.text_byte_end] == b"kubectl"
     assert (hit.start_ms, hit.end_ms) == (400, 750)  # windows 2-3 of 200 ms
@@ -68,14 +74,15 @@ async def test_streaming_happy_path_with_bias(serve):
     assert final.flags.word_confidence == FS.FIELD_STATUS_PRESENT
     assert final.flags.bias_hits == FS.FIELD_STATUS_PRESENT
     assert final.flags.n_best == FS.FIELD_STATUS_NOT_REQUESTED
-    assert not final.flags.audio_gap and not final.flags.no_speech
+    assert not final.flags.audio_gap
+    assert not final.flags.no_speech
     assert final.timings.audio_ms == 1200
     assert final.context_revision == 1
     assert final.utterance_id == "utt-1"
     assert final.privacy == pb.PrivacyAck()
 
 
-async def test_start_sample_gap_is_zero_filled_flagged_and_acked(serve):
+async def test_start_sample_gap_is_zero_filled_flagged_and_acked(serve: Serve):
     client = await serve()
     first = audio_reqs(speech(400))  # seq 0..9, samples [0, 6400)
     # 400 ms never arrive: seq continues, start_sample jumps to 12800.
@@ -97,11 +104,15 @@ async def test_start_sample_gap_is_zero_filled_flagged_and_acked(serve):
 
 
 @pytest.mark.parametrize("after_eager", ["nothing", "more_audio", "context_update"])
-async def test_eager_end_result_used_unless_invalidated(serve, after_eager):
+async def test_eager_end_result_used_unless_invalidated(serve: Serve, after_eager: str):
     client = await serve(backend=MockBackend(decode_ms=300))
     first = speech(800)  # "please run cube control"
     chunks = audio_reqs(first)
-    script = [start_req(), *chunks, pb.TranscribeRequest(eager_end=pb.EagerEnd(total_samples=len(first)))]
+    script: list[pb.TranscribeRequest | float] = [
+        start_req(),
+        *chunks,
+        pb.TranscribeRequest(eager_end=pb.EagerEnd(total_samples=len(first))),
+    ]
     script.append(0.6)  # speculative decode (300 ms) completes meanwhile
     total, last_seq = len(first), len(chunks) - 1
     if after_eager == "more_audio":
@@ -112,7 +123,9 @@ async def test_eager_end_result_used_unless_invalidated(serve, after_eager):
         script.append(
             pb.TranscribeRequest(
                 context_update=pb.ContextUpdate(
-                    context=pb.RecognitionContext(revision=2, bias=pb.BiasList(terms=[kubectl_term()]))
+                    context=pb.RecognitionContext(
+                        revision=2, bias=pb.BiasList(terms=[kubectl_term()])
+                    )
                 )
             )
         )
@@ -135,7 +148,7 @@ async def test_eager_end_result_used_unless_invalidated(serve, after_eager):
         assert final.n_best[0].text == "please run kubectl"
 
 
-async def test_admission_limit_and_cancel_frees_the_slot(serve):
+async def test_admission_limit_and_cancel_frees_the_slot(serve: Serve):
     client = await serve(backend=MockBackend(decode_ms=400), max_concurrent_sessions=1)
     pcm = speech(400)
     chunks = audio_reqs(pcm)
@@ -148,8 +161,10 @@ async def test_admission_limit_and_cancel_frees_the_slot(serve):
     await asyncio.sleep(0.1)  # first session is admitted and finalizing
     busy = await client.transcribe(utterance(pcm, utterance_id="utt-2"))
     assert busy.code == grpc.StatusCode.RESOURCE_EXHAUSTED
+    assert busy.error is not None
     assert busy.error.code == pb.ERROR_CODE_OVERLOADED
-    assert busy.error.retryable and busy.error.retry_after_ms > 0
+    assert busy.error.retryable
+    assert busy.error.retry_after_ms > 0
 
     out = await cancelled  # cancelled during finalize: no result
     assert out.kinds == ["accepted", "session_ended"]
@@ -160,7 +175,7 @@ async def test_admission_limit_and_cancel_frees_the_slot(serve):
 
 
 @pytest.mark.parametrize(
-    "budget_ms, required, anchor, n_best, exceeded",
+    ("budget_ms", "required", "anchor", "n_best", "exceeded"),
     [
         (1000, [], FS.FIELD_STATUS_PRESENT, FS.FIELD_STATUS_PRESENT, False),
         (150, [], FS.FIELD_STATUS_SKIPPED_BUDGET, FS.FIELD_STATUS_SKIPPED_BUDGET, False),
@@ -168,7 +183,14 @@ async def test_admission_limit_and_cancel_frees_the_slot(serve):
         (50, [], FS.FIELD_STATUS_SKIPPED_BUDGET, FS.FIELD_STATUS_SKIPPED_BUDGET, True),
     ],
 )
-async def test_finalize_budget_sheds_optional_work(serve, budget_ms, required, anchor, n_best, exceeded):
+async def test_finalize_budget_sheds_optional_work(
+    serve: Serve,
+    budget_ms: int,
+    required: list[str],
+    anchor: pb.FieldStatus.ValueType,
+    n_best: pb.FieldStatus.ValueType,
+    exceeded: bool,
+):
     # Each decode (primary, anchor, n-best) costs 100 ms on the mock.
     client = await serve(backend=MockBackend(decode_ms=100))
     out = await client.transcribe(
@@ -190,7 +212,7 @@ async def test_finalize_budget_sheds_optional_work(serve, budget_ms, required, a
     assert final.flags.finalize_budget_exceeded == exceeded
 
 
-async def test_recognize_unary_matches_streaming_semantics(serve):
+async def test_recognize_unary_matches_streaming_semantics(serve: Serve):
     client = await serve()
     first = audio_reqs(speech(400))
     second = audio_reqs(speech(400, seed=1), seq=len(first), start_sample=12800)
@@ -202,6 +224,7 @@ async def test_recognize_unary_matches_streaming_semantics(serve):
         ),
     )
     assert code == grpc.StatusCode.OK
+    assert resp is not None
     assert resp.final_result.n_best[0].text == "please run get pods"
     assert resp.final_result.flags.audio_gap
     assert [w.code for w in resp.warnings] == [pb.WARNING_CODE_AUDIO_GAP]
@@ -212,10 +235,12 @@ async def test_recognize_unary_matches_streaming_semantics(serve):
         pb.RecognizeRequest(config=pb.SessionStart(utterance_id="u-r", model_id="nope")),
     )
     assert code == grpc.StatusCode.NOT_FOUND
-    assert err.code == pb.ERROR_CODE_MODEL_NOT_FOUND and err.utterance_id == "u-r"
+    assert err is not None
+    assert err.code == pb.ERROR_CODE_MODEL_NOT_FOUND
+    assert err.utterance_id == "u-r"
 
 
-async def test_silence_yields_empty_final_with_no_speech(serve):
+async def test_silence_yields_empty_final_with_no_speech(serve: Serve):
     client = await serve()
     out = await client.transcribe(utterance(silence(600)))
     final = out.final
