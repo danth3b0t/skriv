@@ -1,0 +1,16 @@
+# systemd user unit for the hark daemon. `omarchy-install-dictation-hark` installs it with @HARK@ replaced by
+# the absolute path of the `hark` executable. The session must export WAYLAND_DISPLAY and
+# HYPRLAND_INSTANCE_SIGNATURE to the user manager (uwsm, which Omarchy uses, does).
+[Unit]
+Description=hark dictation daemon
+PartOf=graphical-session.target
+After=graphical-session.target pipewire.service
+
+[Service]
+ExecStart=@HARK@ run
+Restart=on-failure
+RestartSec=2
+UMask=0077
+
+[Install]
+WantedBy=graphical-session.target

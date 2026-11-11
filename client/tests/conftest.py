@@ -14,12 +14,14 @@ import time
 import wave
 from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, cast, override
 
+import grpc
 import numpy as np
 import pytest
 
-from hark_client import context
+from hark_client import asr, context
+from hark_client.config import Config, FeedbackConfig
 from hark_client.context import (
     CaretContext,
     ContextSnapshot,
@@ -28,6 +30,10 @@ from hark_client.context import (
     TermKind,
     TermSource,
 )
+from hark_client.daemon import Controller
+from hark_client.feedback import Feedback, Sound
+from hark_client.inject import DryRunInjector
+from hark_client.pipeline import Services
 from hark_server.backends.mock import MockBackend
 from hark_server.config import Config as ServerConfig
 from hark_server.server import start
@@ -191,3 +197,48 @@ def snapshot(
         focus=FocusInfo(app=app_id.rsplit(".", 1)[-1], app_id=app_id, window_id=window_id),
         terms=terms,
     )
+
+
+class RecordingFeedback(Feedback):
+    def __init__(self) -> None:
+        super().__init__(FeedbackConfig(sounds=False, notify=False))
+        self.sounds_played: list[Sound] = []
+        self.notifications: list[str] = []
+
+    @override
+    def sound(self, kind: Sound) -> None:
+        self.sounds_played.append(kind)
+
+    @override
+    def notify(self, body: str, title: str = "hark") -> None:
+        self.notifications.append(body)
+
+
+@pytest.fixture
+def controller(
+    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+) -> Iterator[tuple[Controller, DryRunInjector]]:
+    """A daemon controller without a mic: drive it with on_pcm() and handle()."""
+    fake_context.snapshots = [snapshot("kitty")]
+    cfg = Config()
+    cfg.history.dir = str(tmp_path)
+    cfg.audio.min_ms = 0
+    injector = DryRunInjector(out=lambda _: None)
+    with grpc.insecure_channel(hark_server.target) as channel:
+        caps = asr.Capabilities(channel)
+        yield (
+            Controller(Services(cfg, channel, caps, injector, RecordingFeedback()), None),
+            injector,
+        )
+
+
+def wait_idle(c: Controller) -> None:
+    for _ in range(200):
+        if c.status() == "ok idle finishing=0":
+            return
+        time.sleep(0.01)
+    raise AssertionError(c.status())
+
+
+def pcm(seconds: float) -> bytes:
+    return speech(seconds).astype("<i2").tobytes()

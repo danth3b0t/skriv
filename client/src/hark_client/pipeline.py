@@ -8,7 +8,8 @@ audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
-    focus re-check -> caret context / shadow buffer -> smart spacing -> paste -> history.
+    focus re-check -> caret context / shadow buffer -> smart spacing -> paste ->
+    read-back (verdict; correction learning, opt-in) -> history.
 """
 
 from __future__ import annotations
@@ -17,13 +18,23 @@ import logging
 import threading
 import time
 from concurrent.futures import Future
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING
 
 from google.protobuf import json_format
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, cleanup, context, continuation, guardrails, history, symbols
+from hark_client import (
+    asr,
+    cleanup,
+    context,
+    continuation,
+    fields,
+    guardrails,
+    history,
+    learn,
+    symbols,
+)
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
@@ -39,7 +50,9 @@ if TYPE_CHECKING:
     from hark_client.config import Config
     from hark_client.continuation import ShadowBuffer
     from hark_client.feedback import Feedback
+    from hark_client.fields import FieldReader
     from hark_client.inject import Injector
+    from hark_client.learn import LearnedStore, Learner
 
 log = logging.getLogger("hark")
 
@@ -52,6 +65,9 @@ class Services:
     injector: Injector
     feedback: Feedback
     out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
+    field_reader: FieldReader | None = None  # paste read-back; None = verdict "unknown"
+    learned: LearnedStore | None = None  # promoted corrections join every shortlist
+    learner: Learner | None = None  # watches edits after a paste (learn.enabled)
 
 
 @dataclass
@@ -70,6 +86,7 @@ class Result:
     timings: dict[str, float] = field(default_factory=dict[str, float])
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
+    paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -124,6 +141,13 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
+        if self.svc.learned is not None:
+            try:
+                learned = self.svc.learned.terms()
+            except OSError as e:
+                learned = ()
+                log.warning("learned vocabulary unreadable: %s", e)
+            snap = replace(snap, terms=learn.merge_terms(snap.terms, learned, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)
 
@@ -227,7 +251,7 @@ class Utterance:
         self._record(result)
         return result
 
-    def _finish(self, t_up: float, shadow: ShadowBuffer | None) -> Result:  # noqa: PLR0915 - the pipeline, stage by stage
+    def _finish(self, t_up: float, shadow: ShadowBuffer | None) -> Result:  # noqa: PLR0912, PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
         final = self.stream.wait_final(cfg.server.final_timeout_ms / 1000)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
@@ -314,6 +338,7 @@ class Utterance:
         changed_to = self._focus_changed(snap.focus)
         t["focus_check_ms"] = _ms(t1)
         t1 = time.perf_counter()
+        text = res.final_text  # what is pasted (smart spacing below)
         if changed_to is not None:
             ok = svc.injector.copy(res.final_text)
             res.status = "focus_changed"
@@ -327,19 +352,23 @@ class Utterance:
                 if ok else "Focus changed and the clipboard write failed; see history"
             )  # fmt: skip
         else:
-            text = res.final_text
             if cfg.paste.smart_spacing and cfg.paste.join_space:
                 text = self._spacing(snap.focus, res, shadow)
                 t["spacing_ms"] = _ms(t1)
                 t1 = time.perf_counter()
             if shadow is not None:  # before pasting: the listener sees the paste chord
                 shadow.pasted(snap.focus.window_id, text)
-            res.paste = svc.injector.paste(text, terminal=prof.terminal)
+            res.paste = svc.injector.paste(
+                text, terminal=prof.terminal, target=snap.focus.window_id
+            )
             res.status = "pasted" if res.paste.ok else "paste_failed"
-            if not res.paste.ok:
+            if res.paste.focus_changed:
+                res.status = "focus_changed"
+                svc.feedback.notify("Focus moved to another window; the text is in the clipboard")
+            elif not res.paste.ok:
                 svc.feedback.notify(f"Paste failed: {res.paste.detail}")
-                if shadow is not None:
-                    shadow.forget()
+            if not res.paste.ok and shadow is not None:
+                shadow.forget()
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
         self._report(
@@ -348,6 +377,11 @@ class Utterance:
         )
         self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
         svc.feedback.sound("done" if res.paste.ok else "error")
+        if res.status == "pasted" and not prof.terminal:
+            self._read_back(res, snap.focus, text)
+        elif res.status == "pasted" and svc.learner is not None:
+            # terminals expose no editable field: replay the keys typed into it instead
+            svc.learner.after_terminal_paste(snap.focus, text, _focus_token)
         return res
 
     def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
@@ -374,6 +408,23 @@ class Utterance:
             f" -> {sp.text!r}{f' ({caret.detail})' if caret.detail else ''}",
         )
         return sp.text
+
+    def _read_back(self, res: Result, focus: FocusInfo, pasted: str) -> None:
+        """After the paste (off the latency path): verdict, then hand the field to the learner.
+        ``pasted``: the text as pasted (smart spacing/casing applied)."""
+        svc = self.svc
+        reader = svc.field_reader
+        if reader is None or not (svc.cfg.paste.verify or svc.learner is not None):
+            return
+        t1 = time.perf_counter()
+        verdict, field_text = fields.verify(reader, focus, pasted)
+        res.timings["verify_ms"] = _ms(t1)
+        res.paste_verdict = verdict
+        self._report("verify", f"{verdict} ({res.timings['verify_ms']:.1f} ms)")
+        if verdict == "missing":
+            log.info("paste not seen in the target field (verdict recorded only)")
+        if verdict == "landed" and svc.learner is not None:
+            svc.learner.after_paste(focus, pasted, field_text.value, _focus_token)
 
     def _cleanup(self, text: str, snap: ContextSnapshot, profile_name: str) -> CleanupOutcome:
         cfg = self.svc.cfg
@@ -432,6 +483,7 @@ class Utterance:
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
+            "paste_verdict": res.paste_verdict,
             "timings_ms": res.timings,
             "client_unix_us": {"keyup": self.keyup_unix_us, **self.stream.unix_us},
             "context": {

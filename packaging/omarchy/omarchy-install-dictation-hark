@@ -1,0 +1,34 @@
+#!/bin/bash
+
+# omarchy:summary=Install and configure hark dictation
+#
+# Links the Omarchy adapter into ~/.local/bin, installs and starts the hark systemd user unit, then selects hark
+# as Omarchy's dictation backend (omarchy-dictation-use stops the previous backend). Touches nothing else:
+# no shell rc files, no Hyprland config (Omarchy owns the keys: Right Alt hold, Alt+Space toggle).
+
+set -euo pipefail
+
+if (($# > 0)) && [[ $1 != "--background" ]]; then
+  echo "Usage: omarchy-install-dictation-hark [--background]" >&2
+  exit 1
+fi
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+hark=$(command -v hark || true)
+if [[ -z $hark ]]; then
+  echo "hark is not on PATH. From the hark repo: uv tool install --editable ./client" >&2
+  exit 1
+fi
+
+bin="$HOME/.local/bin"
+units="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+mkdir -p "$bin" "$units"
+for script in omarchy-dictation-hark omarchy-remove-dictation-hark; do
+  ln -sfn "$here/$script" "$bin/$script"
+done
+sed "s|@HARK@|$hark|" "$here/../systemd/hark.service" >"$units/hark.service"
+
+systemctl --user daemon-reload
+systemctl --user enable --now hark.service
+omarchy-dictation-use hark
+echo "hark is Omarchy's dictation backend: hold Right Alt or press Alt+Space. Check it with: hark doctor"

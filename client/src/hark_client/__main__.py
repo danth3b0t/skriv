@@ -1,4 +1,5 @@
-"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `doctor`.
+"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `doctor`,
+`learned` (inspect/delete the learned vocabulary).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -32,6 +33,9 @@ class Args(argparse.Namespace):
     cwd: str | None
     realtime: bool
     no_history: bool
+    json: bool
+    learned_action: str
+    text: str | None
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -43,6 +47,9 @@ def parse_args(argv: list[str] | None = None) -> Args:
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
     c.add_argument("action", choices=["start", "stop", "toggle", "cancel", "status", "ping"])
+    c.add_argument(
+        "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
+    )
     o = sub.add_parser("once", help="run the whole pipeline on a WAV file and report each stage")
     o.add_argument(
         "--wav", required=True, help="WAV file (any rate/channels; resampled to 16 kHz mono)"
@@ -59,14 +66,28 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "--cwd", help="pretend the focused terminal is in this directory (repo/agent context)"
     )
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
+    lp = sub.add_parser("learned", help="corrections learned from your edits (learn.enabled)")
+    lp.add_argument(
+        "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
+    )
+    lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
     return p.parse_args(argv, namespace=Args())
 
 
 def cmd_ctl(args: Args) -> int:
+    import json  # noqa: PLC0415
+
     from hark_client import ctl  # noqa: PLC0415
 
     try:
+        if args.json:
+            obj = ctl.send_json(args.action)
+            print(json.dumps(obj))
+            return 0 if obj.get("ok") is True else 1
         reply = ctl.send(args.action)
+    except (ValueError, TypeError) as e:
+        print(f"hark ctl: bad reply ({e})", file=sys.stderr)
+        return 1
     except OSError as e:
         print(
             f"hark ctl: no daemon on {ctl.socket_path()} ({e}); start one with `hark run`",
@@ -129,19 +150,52 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
+    if args.command == "learned":
+        return cmd_learned(args, cfg)
 
     return cmd_pipeline(args, cfg)
 
 
+def cmd_learned(args: Args, cfg: Config) -> int:
+    from hark_client.config import expand  # noqa: PLC0415
+    from hark_client.learn import LearnedStore, store_path  # noqa: PLC0415
+
+    store = LearnedStore(store_path(expand(cfg.history.dir)), cfg.learn.promote_after)
+    if args.learned_action == "forget":
+        if not args.text:
+            print("hark learned forget: give the heard or written form", file=sys.stderr)
+            return 2
+        n = store.forget(args.text)
+        print(f"forgot {n} entr{'y' if n == 1 else 'ies'}")
+        return 0 if n else 1
+    if args.learned_action == "clear":
+        n = store.clear()
+        print(f"cleared {n} entr{'y' if n == 1 else 'ies'} from {store.path}")
+        return 0
+    entries = store.entries()
+    state = "on" if cfg.learn.enabled else "off (learn.enabled = false)"
+    print(f"{store.path}: {len(entries)} entries; learning {state}")
+    for e in entries:
+        mark = "*" if e.count >= store.promote_after else " "
+        print(f"{mark} {e.count:>3}  {e.heard!r} -> {e.written!r}  (last {e.last})")
+    if entries:
+        print(f"* = used for recognition (seen >= {store.promote_after} times)")
+    return 0
+
+
 def cmd_pipeline(args: Args, cfg: Config) -> int:
-    from hark_client import asr, ctl, daemon  # noqa: PLC0415
-    from hark_client.config import ConfigError, FeedbackConfig  # noqa: PLC0415
+    from hark_client import asr, ctl, daemon, fields  # noqa: PLC0415
+    from hark_client.config import ConfigError, FeedbackConfig, expand  # noqa: PLC0415
     from hark_client.feedback import Feedback  # noqa: PLC0415
     from hark_client.inject import make_injector  # noqa: PLC0415
+    from hark_client.learn import LearnedStore, Learner, store_path  # noqa: PLC0415
     from hark_client.pipeline import Services  # noqa: PLC0415
 
     channel = asr.open_channel(cfg.server)
     caps = asr.Capabilities(channel)
+    learned = LearnedStore(
+        store_path(expand(cfg.history.dir)), cfg.learn.promote_after, cfg.learn.max_terms
+    )
     try:
         if args.command == "once":
             if args.no_history:
@@ -152,15 +206,31 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 injector=make_injector(cfg.paste, dry_run=args.dry_run),
                 feedback=Feedback(FeedbackConfig(sounds=False, notify=False)),
                 out=print,
+                learned=learned,
             )  # fmt: skip
             try:
                 return cmd_once(args, svc)
             except ConfigError as e:
                 print(f"hark: {e}", file=sys.stderr)
                 return 2
+        feedback = Feedback(cfg.feedback)
+        reader = fields.make_reader() if cfg.paste.verify or cfg.learn.enabled else None
+        learner = None
+        if cfg.learn.enabled:
+            learner = Learner(
+                learned, reader,
+                window_s=cfg.learn.window_ms / 1000, poll_s=cfg.learn.poll_ms / 1000,
+                on_promoted=lambda e: feedback.notify(f"Learned: {e.heard!r} -> {e.written!r}"),
+            )  # fmt: skip
+            if reader is None:
+                logging.getLogger("hark").warning(
+                    "learn.enabled, but this platform offers no field read-back (see `hark doctor`);"
+                    " learning only from key replay in terminals"
+                )
         svc = Services(
-            cfg, channel, caps, injector=make_injector(cfg.paste), feedback=Feedback(cfg.feedback)
-        )
+            cfg, channel, caps, injector=make_injector(cfg.paste), feedback=feedback,
+            field_reader=reader, learned=learned, learner=learner,
+        )  # fmt: skip
         try:
             return daemon.run(svc)
         except ctl.DaemonRunningError as e:

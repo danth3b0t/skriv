@@ -1,0 +1,25 @@
+#!/bin/bash
+
+# omarchy:summary=Remove hark's Omarchy dictation integration (keeps config, history and learned vocabulary)
+
+set -euo pipefail
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+
+systemctl --user disable --now hark.service 2>/dev/null || true
+rm -f "$config_home/systemd/user/hark.service"
+systemctl --user daemon-reload
+
+backend_config="$config_home/omarchy/defaults/dictation"
+if [[ -f $backend_config && $(<"$backend_config") == "hark" ]]; then
+  rm "$backend_config"
+fi
+
+# Remove only our own links (this script is one of them, so it goes last).
+for script in omarchy-dictation-hark omarchy-remove-dictation-hark; do
+  link="$HOME/.local/bin/$script"
+  if [[ -L $link && $(readlink "$link") == "$here/$script" ]]; then
+    rm "$link"
+  fi
+done

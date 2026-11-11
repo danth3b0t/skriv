@@ -1,7 +1,10 @@
 """Text injection: clipboard + synthetic paste shortcut.
 
 - macOS: NSPasteboard (saved and restored) + CGEvent Cmd+V from a private event source.
-- Linux Wayland: wl-copy, then `hyprctl dispatch sendshortcut` on Hyprland, else wtype.
+- Linux Wayland: wl-copy, then on Hyprland a shortcut sent to the window captured at key-down: with a Lua
+  config (>= 0.55) one `hyprctl repl` chunk re-checks the active window inside the compositor and sends
+  the shortcut to that address; with hyprlang (<= 0.54) `dispatch sendshortcut MODS, V, address:...`.
+  Without a known target: an untargeted shortcut. Else wtype.
 - Linux X11: xclip + xdotool.
 - Terminals get Ctrl+Shift+V on Linux. Nothing ever sends Enter.
 - dry-run prints instead of touching the clipboard; `clipboard` copies without pasting.
@@ -11,6 +14,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import subprocess
 import sys
 import threading
@@ -59,12 +63,16 @@ class PasteResult:
     ok: bool
     method: str
     detail: str = ""
+    focus_changed: bool = False  # the target lost focus; the text is left in the clipboard
 
 
 class Injector(Protocol):
     name: str
 
-    def paste(self, text: str, *, terminal: bool) -> PasteResult: ...
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
+        """target: FocusInfo.window_id captured at key-down ("" = unknown)."""
+        ...
+
     def copy(self, text: str) -> bool: ...
 
 
@@ -76,7 +84,7 @@ class DryRunInjector:
         self.pasted: list[tuple[str, bool]] = []
         self.copied: list[str] = []
 
-    def paste(self, text: str, *, terminal: bool) -> PasteResult:
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         self.pasted.append((text, terminal))
         keys = "terminal paste" if terminal else "paste"
         self.out(f"[dry-run] would {keys}: {text!r}")
@@ -96,12 +104,34 @@ class ClipboardOnlyInjector:
     def __init__(self, inner: Injector) -> None:
         self.inner = inner
 
-    def paste(self, text: str, *, terminal: bool) -> PasteResult:
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         ok = self.inner.copy(text)
         return PasteResult(ok=ok, method=self.name, detail="copied" if ok else "copy failed")
 
     def copy(self, text: str) -> bool:
         return self.inner.copy(text)
+
+
+_HYPR_ADDRESS_RE = re.compile(r"0x([0-9a-fA-F]{1,16})")
+
+
+def hypr_lua_paste(mods: str, address_hex: str) -> str:
+    """Lua expression for `hyprctl repl`: re-check the active window, then send the shortcut to it.
+
+    Returns 'paste_sent', 'dispatch_refused' or 'focus_changed:<active address>'. Addresses are
+    compared as lower-case hex without 0x (a number is formatted as hex), so a format change
+    between Hyprland versions shows up as a mismatch in the log, not as a silent wrong paste.
+    """
+    return (
+        "(function() local w = hl.get_active_window(); local a = w and w.address; "
+        "if type(a) == 'number' then a = string.format('%x', a) end; "
+        "a = tostring(a or ''):lower():gsub('^0x', ''); "
+        f"if a ~= '{address_hex}' then return 'focus_changed:' .. a end; "
+        f"local r = hl.dispatch(hl.dsp.send_shortcut({{ mods = '{mods}', key = 'V', "
+        f"window = 'address:0x{address_hex}' }})); "
+        "if type(r) == 'table' and not r.ok then return 'dispatch_refused' end; "
+        "return 'paste_sent' end)()"
+    )
 
 
 class LinuxInjector:
@@ -120,6 +150,7 @@ class LinuxInjector:
         self.restore = restore
         self.restore_delay_s = restore_delay_s
         self.run = run
+        self._hypr_syntax: str | None = None  # "lua" | "hyprlang" once one has worked
 
     def copy(self, text: str) -> bool:
         argv = (
@@ -137,6 +168,34 @@ class LinuxInjector:
         )
         code, out = self.run(argv)
         return out if code == 0 else None
+
+    def _hypr_targeted(self, *, terminal: bool, address_hex: str) -> tuple[bool | None, str]:
+        """(True: sent | False: focus changed | None: neither syntax worked, detail)."""
+        order = ["lua", "hyprlang"]
+        if self._hypr_syntax == "hyprlang":
+            order.reverse()
+        for syntax in order:
+            if syntax == "lua":
+                mods = "CTRL + SHIFT" if terminal else "CTRL"
+                code, out = self.run(["hyprctl", "repl", hypr_lua_paste(mods, address_hex)])
+                verdict = out.strip().strip("\"'")
+                if code == 0 and verdict == "paste_sent":
+                    self._hypr_syntax = "lua"
+                    return True, f"hyprctl repl send_shortcut {mods}+V to 0x{address_hex}"
+                if code == 0 and verdict.startswith("focus_changed:"):
+                    self._hypr_syntax = "lua"
+                    active = verdict.split(":", 1)[1]
+                    return False, f"focus changed before the paste (active window 0x{active})"
+                log.debug("hyprctl repl paste: %s", out.strip()[:200])
+            else:
+                mods = "CTRL SHIFT" if terminal else "CTRL"
+                arg = f"{mods}, V, address:0x{address_hex}"
+                code, out = self.run(["hyprctl", "dispatch", "sendshortcut", arg])
+                if code == 0 and out.strip() == "ok":
+                    self._hypr_syntax = "hyprlang"
+                    return True, f"hyprctl sendshortcut {mods}+V to 0x{address_hex}"
+                log.debug("hyprctl sendshortcut paste: %s", out.strip()[:200])
+        return None, ""
 
     def _send_keys(self, *, terminal: bool) -> tuple[bool, str]:
         if self.name == "hyprland":
@@ -161,11 +220,24 @@ class LinuxInjector:
         code, _ = self.run(argv, capture=False)
         return code == 0, " ".join(argv)
 
-    def paste(self, text: str, *, terminal: bool) -> PasteResult:
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         previous = self.read_clipboard() if self.restore else None
         if not self.copy(text):
             return PasteResult(ok=False, method=self.name, detail="clipboard write failed")
-        ok, how = self._send_keys(terminal=terminal)
+        sent: bool | None = None
+        how = ""
+        m = _HYPR_ADDRESS_RE.fullmatch(target)
+        if self.name == "hyprland" and m is not None:
+            sent, how = self._hypr_targeted(terminal=terminal, address_hex=m.group(1).lower())
+        if sent is False:
+            return PasteResult(
+                ok=False, method=self.name, detail=f"{how}; text left in clipboard",
+                focus_changed=True,
+            )  # fmt: skip
+        if sent:
+            ok = True
+        else:
+            ok, how = self._send_keys(terminal=terminal)
         if not ok:
             return PasteResult(
                 ok=False, method=self.name, detail=f"{how} failed; text left in clipboard"
@@ -196,7 +268,7 @@ class MacInjector:
         macos.set_clipboard_text(text)
         return True
 
-    def paste(self, text: str, *, terminal: bool) -> PasteResult:
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         if sys.platform != "darwin":
             return PasteResult(ok=False, method=self.name, detail="not macOS")
         from hark_client import macos  # noqa: PLC0415
