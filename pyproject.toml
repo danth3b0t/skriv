@@ -39,6 +39,7 @@ testpaths = ["server/tests"]
 include = ["server/src", "server/tests", "tools"]
 exclude = ["server/src/hark/v1", "**/__pycache__", ".venv"]
 pythonVersion = "3.12"
+extraPaths = ["server/src"]  # resolve workspace sources as project code, not as an editable install
 typeCheckingMode = "strict"
 reportMissingTypeStubs = "warning"   # e.g. parakeet-mlx ships no stubs
 reportUnknownMemberType = "warning"
