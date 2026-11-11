@@ -876,9 +876,14 @@ enum EditRejectionReason {
   EDIT_REJECTION_REASON_KIND_NOT_ALLOWED = 5; // not in profile allowed_kinds
   EDIT_REJECTION_REASON_INVARIANT = 6;        // kind's mechanical check failed
   EDIT_REJECTION_REASON_NO_OP = 7;            // replace == find
-  EDIT_REJECTION_REASON_GLOBAL = 8;           // whole set dropped (>50% invalid,
-                                              // negation/digit change, or
-                                              // too many changed bytes)
+  EDIT_REJECTION_REASON_GLOBAL = 8;           // a whole-result rule failed: the
+                                              // edits it is pinned on (negation,
+                                              // digit, '!' change) and their group,
+                                              // else the whole set (>50% invalid,
+                                              // too many changed bytes or words)
+  EDIT_REJECTION_REASON_DEPENDENT = 9;        // valid, but in a group with a
+                                              // rejected edit (at most one word
+                                              // apart); dropped with it
 }
 
 enum ProtectedSpanKind {

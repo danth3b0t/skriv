@@ -632,7 +632,14 @@ class _EditRejectionReasonEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_E
     EDIT_REJECTION_REASON_NO_OP: _EditRejectionReason.ValueType  # 7
     """replace == find"""
     EDIT_REJECTION_REASON_GLOBAL: _EditRejectionReason.ValueType  # 8
-    """whole set dropped (>50% invalid,"""
+    """a whole-result rule failed: the"""
+    EDIT_REJECTION_REASON_DEPENDENT: _EditRejectionReason.ValueType  # 9
+    """edits it is pinned on (negation,
+    digit, '!' change) and their group,
+    else the whole set (>50% invalid,
+    too many changed bytes or words)
+    valid, but in a group with a
+    """
 
 class EditRejectionReason(_EditRejectionReason, metaclass=_EditRejectionReasonEnumTypeWrapper): ...
 
@@ -652,7 +659,14 @@ EDIT_REJECTION_REASON_INVARIANT: EditRejectionReason.ValueType  # 6
 EDIT_REJECTION_REASON_NO_OP: EditRejectionReason.ValueType  # 7
 """replace == find"""
 EDIT_REJECTION_REASON_GLOBAL: EditRejectionReason.ValueType  # 8
-"""whole set dropped (>50% invalid,"""
+"""a whole-result rule failed: the"""
+EDIT_REJECTION_REASON_DEPENDENT: EditRejectionReason.ValueType  # 9
+"""edits it is pinned on (negation,
+digit, '!' change) and their group,
+else the whole set (>50% invalid,
+too many changed bytes or words)
+valid, but in a group with a
+"""
 Global___EditRejectionReason: _TypeAlias = EditRejectionReason  # noqa: Y015
 
 class _ProtectedSpanKind:
