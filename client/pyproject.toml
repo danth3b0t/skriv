@@ -6,8 +6,20 @@ requires-python = ">=3.12,<3.13"
 dependencies = [
     "hark-proto",
     "grpcio>=1.85",
+    "grpcio-health-checking>=1.85",
     "protobuf>=6.31",
+    "numpy>=2.0",
+    "soxr>=0.5",
+    "sounddevice>=0.5",
+    # macOS: push-to-talk hotkey, NSPasteboard, CGEvent paste
+    "pynput>=1.8 ; sys_platform == 'darwin'",
+    "pyobjc-framework-Cocoa>=11 ; sys_platform == 'darwin'",
+    "pyobjc-framework-Quartz>=11 ; sys_platform == 'darwin'",
 ]
+
+[project.optional-dependencies]
+# Linux X11 only: global push-to-talk via pynput (Wayland uses `hark ctl` from compositor binds).
+x11 = ["pynput>=1.8"]
 
 [project.scripts]
 hark = "hark_client.__main__:main"
