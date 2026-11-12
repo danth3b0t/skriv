@@ -21,7 +21,7 @@ The UI is for **state and recovery**. Anything changed less than about once a mo
    fill is the cursor row.
 4. **Quiet until needed.** Idle shows one monochrome glyph. A problem adds a dot to the glyph and one line to the
    panel. Silence is never an error: people pause to think.
-5. **Honest.** ✓ means *sent*, never *confirmed*. Confirmation exists only in History.
+5. **Honest.** ✓ means *sent*, never *confirmed*: hark does not read a paste back.
 6. **Native.** Every colour, size, radius and duration comes from the running Omarchy theme.
 
 Copy: sentence case, no full stops, no config keys, no mechanism. `·` separates a state from its reason. Keys are
@@ -97,32 +97,33 @@ interrupts any linger.
 |---|---|---|---|
 | recording | `phase: recording` | red dot · meter (8 × 2 px bars, max 12) | — |
 | long | elapsed > 60 s | + `1:12` | — |
-| near limit | elapsed ≥ `audio.max_ms` − 20 s | + countdown in `warn-ink` | — |
+| near limit | elapsed ≥ `audio.max_ms` − 30 s (in-process; `status` has no recording clock) | + countdown `0:25 left` in `warn-ink` | — |
 | hands-free | started by `toggle` | lock (`live-ink`) · meter | — |
-| pinned profile | `profile_override` set | + pin · `chat` | — |
+| pinned profile | `profile_override` set | + pin · `terminal` | — |
 | server down | `server.state: down` while recording | + ⚠ Server down · saved | while true |
 | working | `phase: finishing`, or `start` refused as busy | three breathing dots | — |
-| sent | `last.delivery: sent \| confirmed` | ✓ | 0.5 s |
+| sent | `last.delivery: sent` | ✓ | 0.5 s |
 | fallback | `last.fallback` | ✓ via *provider* | 0.8 s |
-| cleanup skipped | cleanup expected for the profile, `last.cleanup` ≠ `applied` | ✓ cleanup skipped | 0.8 s |
+| cleanup skipped | cleanup expected for the profile, `last.cleanup` not `applied` or `no_edits` | ✓ cleanup skipped | 0.8 s |
 | mic dropped out | `last.mic_interrupted` | ✓ mic dropped | 1.5 s |
 | length limit | `last.stop_reason: limit` | ✓ Stopped at 2:00 | 1.5 s |
 | cancelled | `cancelled`, `no_speech`, `too_short`, `empty` | × Cancelled / No speech / Too short | 0.6 s |
+| no speech | `no_speech` with `last.input_device` | × No speech · *device* · hark doctor | 1.5 s |
+| no audio from mic | `no_speech` with `last.flat_signal` | mic-off (`live`) · No audio from mic · *device* · hark doctor | 4 s |
 | copied | `status: copied` (clipboard mode) | copy glyph · Copied | 1 s |
 | focus moved | `status: focus_changed`, `delivery: copied` | copy glyph (`warn`) · Copied · focus moved | 2.5 s |
 | paste failed | `status: paste_failed` | copy glyph · Paste failed · copied · `Super Alt D` (no "copied" if `delivery: failed`) | 4 s |
-| failed | `status: error` | ⓘ (`live`) · Failed · `Super Alt D` | 4 s |
+| failed | `status: error`; `last.failure` gives the reason (server timeout, server down, garbled transcript) | ⓘ (`live`) · Failed · *reason* · `Super Alt D` | 4 s |
 | mic lost | `mic.status: lost` | mic-off (`live`) · Mic lost · `Super Alt D` | 4 s, again on each key press while lost |
 | paused | `start` refused while `paused` | pause · Paused | 1 s |
 
 ✓ tags are exclusive. If several apply, show the first of: mic dropped, cleanup skipped, via *provider*.
 
 **Delivery.** ✓ means the text was sent. hark never claims confirmation in the pill, because terminals and many
-fields cannot be read back, and it never warns after an ordinary terminal paste. `paste_verdict: missing` shows
-nothing for now.
+fields cannot be read back, and it never warns after an ordinary terminal paste.
 
-**Mic.** Only `mic.status: lost` (the stream stopped delivering audio) is shown, in red. Quiet input is never
-shown: there is no "No input" state.
+**Mic.** `mic.status: lost` (the stream stopped delivering audio) and `last.flat_signal` (the input sent no signal
+at all) are shown, in red. Quiet input is never an error: there is no "No input" state.
 
 **Deferred: target marker.** No window outline or glow ships. Trial a target marker only if target confusion
 proves common. It must not look like Hyprland's active border: use corner marks or a short target label, never an
@@ -136,7 +137,7 @@ accent outline.
 | paused | `paused` | mic-off, `text-2` |
 | recording | `phase: recording` | mark, `live-ink` (`[bar] active`) |
 | working | `phase: finishing` | mark, `accent-ink` |
-| attention | `server.state: down`, `mic.status: lost`, `config.changed` or `config.restart_needed`, or an unseen `last.status: error \| paste_failed` | mark + 4 px `live-ink` dot, cleared when the panel opens |
+| attention | `server.state: down`, `mic.status: lost`, `config.changed` or `config.restart_needed`, or an unseen `last.status: error \| paste_failed` or `last.flat_signal` | mark + 4 px `live-ink` dot, cleared when the panel opens |
 | idle | otherwise | mark, `fg` |
 
 Tooltip: one line, `hark · ready · desktop 38 ms`, or the problem. Left click opens the panel; middle click runs
@@ -162,8 +163,9 @@ there is one, otherwise on the last dictation.
    | `config.changed` | Config changed | `↵ Reload` (`reload`) |
 
 3. **Last dictation:** a 2-line preview and `app · age`, plus a tag when it applies: `· cleanup skipped`, `· mic
-   dropped`, `· stopped at 2:00`. Failed shows `Failed · reason`; paste failed shows `Paste failed · in clipboard`.
-4. **Profile** `auto ›`: a choice page (auto showing the resolved profile, terminal, chat, prose), via `profile`.
+   dropped`, `· stopped at 2:00`. Failed shows `Failed · reason`; paste failed shows `Paste failed · in clipboard`;
+   no speech shows `No speech · device`, or `No audio from mic · device` (red) on a flat signal, with no `↵`.
+4. **Profile** `auto ›`: a choice page (auto showing the resolved profile, terminal, prose), via `profile`.
 5. **History · Config · Doctor** (History only once it exists).
 
 **Keys on the last dictation.** `↵` = **Copy** (the default, `hark last --copy`). `P` = **Paste**: the panel closes
@@ -182,8 +184,9 @@ A 900 × 480 card with search (`/`; matches both texts and the app; `failed` wor
 - **Detail:** two full texts. **Final** (`C copy`) is what was delivered. **Recognized** (`⇧C copy`) is the
   recognizer output, already biased by context. `D` switches both to one inline diff (removed words struck through
   in `text-2`, added in `accent-text`) and back. The diff shows what changed; it does not prove cleanup kept the
-  meaning. The meta line reads `time · app · profile · delivery · ms`, where delivery is **Confirmed / Sent /
-  Copied / Failed** from the record. Then `P paste  R retry  Del delete`; Retry appears only while audio is kept.
+  meaning. The meta line reads `time · app · profile · delivery · ms`, where delivery is **Sent / Copied /
+  Failed** from the record and ms is its `release_to_paste_ms`. Then `P paste  R retry  Del delete`; Retry appears
+  only while audio is kept.
   A cleanup outcome line appears only when cleanup did not apply.
 
 Pipeline internals stay in `hark history show`. There is no words UI; spellings live in `[[words]]` in the config.
@@ -203,10 +206,8 @@ Pipeline internals stay in `hark history show`. There is no words UI; spellings 
 ## 9. Contract gaps
 
 The design uses only ctl v1 facts and existing commands (`paste-last`, `profile`, `reload`, `subscribe`) plus the
-local CLI (`hark last --copy`, `hark retry`, `hark history --json`, `hark service restart`). One gap remains:
-
-- **Pause / Resume** needs a ctl command. `status.paused` exists, and the daemon's `set_paused` is used only by the
-  macOS menu bar.
+local CLI (`hark last --copy`, `hark retry`, `hark history --json`, `hark service restart`), and `pause` /
+`resume`. No gap remains.
 
 Cleanup and Sounds toggles are not in the panel: they are config keys (edit, then `↵ Reload`).
 
