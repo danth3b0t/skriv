@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 from typing import cast
 
-from hark_client import evalset, fidelity
+from skriv_client import evalset, fidelity
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -35,6 +35,7 @@ def load(set_dir: Path, reports: Path, condition: str) -> list[tuple[Rec, evalse
     recs = cast("list[Rec]", json.loads((reports / f"{condition}.json").read_text()))
     out: list[tuple[Rec, evalset.Label]] = []
     for r in recs:  # scored again: reviews made after the run count
+        r.setdefault("gated", r["raw"])  # reports since w4-rules have no separate gated stage
         lab = evalset.load_label(set_dir / str(r["clip"]))
         s = evalset.score(str(r["clip"]), lab, str(r["raw"]), str(r["canonical"]), str(r["final"]))
         r["accepted"], r["failed"] = s.accepted, s.failed

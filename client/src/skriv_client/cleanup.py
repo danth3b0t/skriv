@@ -27,12 +27,6 @@ if TYPE_CHECKING:
 
     from skriv_client.context import Term
 
-# Used by corrections.py, which resolves restarts before cleanup.
-FILLERS = fidelity.FILLERS
-CORRECTION_CUES = fidelity.CORRECTION_CUES
-BARE_CUES = fidelity.BARE_CUES
-MAX_RETRACTED_WORDS = fidelity.MAX_RETRACTED_WORDS
-
 # A cold prompt (the first dictation after the model loaded) takes ~1.5 s on a 4B model; giving
 # up early would waste the work, and nobody waits for it.
 PRIME_BUDGET_MS = 5000
