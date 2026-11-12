@@ -46,6 +46,7 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
     from pathlib import Path
 
+    from hark_client.config import WordConfig
     from hark_client.context import FocusInfo
     from hark_client.continuation import KeyPress
     from hark_client.fields import FieldReader
@@ -318,10 +319,24 @@ class LearnedStore:
         return tuple(out)
 
 
+def dictionary_terms(words: Sequence[WordConfig]) -> tuple[Term, ...]:
+    """`[[words]]` as shortlist terms: the given spoken forms first, then the derived ones."""
+    out: list[Term] = []
+    for w in words:
+        kind = _kind(w.word)
+        spoken = [" ".join(_TOKEN_RE.findall(s.lower())) for s in w.spoken]
+        out.append(
+            Term(w.word, tuple(dict.fromkeys([*spoken, *spoken_forms(w.word, kind)])), 1.0, kind,
+                 TermSource.DICTIONARY)
+        )  # fmt: skip
+    return tuple(out)
+
+
 def merge_terms(
     context_terms: Sequence[Term], learned: Sequence[Term], max_terms: int
 ) -> tuple[Term, ...]:
-    """Learned terms first (their aliases joined with a context term of the same spelling)."""
+    """`learned` (or dictionary) terms first, their aliases joined with a context term of the
+    same spelling."""
     if not learned:
         return tuple(context_terms)
     by_canonical = {t.canonical: t for t in context_terms}

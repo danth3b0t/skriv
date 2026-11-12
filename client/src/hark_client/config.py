@@ -77,6 +77,17 @@ class ProviderConfig:
 
 
 @dataclass
+class WordConfig:
+    """One `[[words]]` entry: a spelling the recognizer gets wrong without help (`Hyprland`),
+    with how it is said (`hyper land`). Every entry joins every dictation's shortlist, ahead of
+    the context terms, so keep the list short."""
+
+    word: str = ""
+    # extra spoken forms, besides the derived ones
+    spoken: list[str] = field(default_factory=list[str])
+
+
+@dataclass
 class ContextConfig:
     deadline_ms: int = 150  # SessionStart waits at most this long for context
     max_terms: int = 30  # research: short lists; the acoustic gate guards the rest
@@ -253,6 +264,7 @@ class Config:
     profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     providers: list[ProviderConfig] = field(default_factory=list[ProviderConfig])
+    words: list[WordConfig] = field(default_factory=list[WordConfig])
     log_level: str = "INFO"
 
     def provider_configs(self) -> list[ProviderConfig]:
@@ -321,7 +333,9 @@ def _apply(obj: DataclassInstance, data: Mapping[str, object], where: str) -> No
         if key == "profiles" and not where:
             _apply_profiles(cast("Config", obj), value)
         elif key == "providers" and not where:
-            _apply_providers(cast("Config", obj), value)
+            cast("Config", obj).providers.extend(_tables(value, "providers", ProviderConfig))
+        elif key == "words" and not where:
+            cast("Config", obj).words.extend(_tables(value, "words", WordConfig))
         elif dataclasses.is_dataclass(current):
             if not isinstance(value, dict):
                 raise ConfigError(f"{path}: expected a table")
@@ -349,15 +363,18 @@ def _apply_profiles(cfg: Config, value: object) -> None:
         _apply(prof, cast("dict[str, object]", table), f"profiles.{name}")
 
 
-def _apply_providers(cfg: Config, value: object) -> None:
+def _tables[T: DataclassInstance](value: object, name: str, cls: type[T]) -> list[T]:
+    """An array of tables (`[[name]]`), each applied over a fresh `cls()`."""
     if not isinstance(value, list):
-        raise ConfigError("providers: expected an array of tables ([[providers]])")
+        raise ConfigError(f"{name}: expected an array of tables ([[{name}]])")
+    out: list[T] = []
     for i, table in enumerate(cast("list[object]", value)):
         if not isinstance(table, dict):
-            raise ConfigError(f"providers[{i}]: expected a table")
-        prov = ProviderConfig()
-        _apply(prov, cast("dict[str, object]", table), f"providers[{i}]")
-        cfg.providers.append(prov)
+            raise ConfigError(f"{name}[{i}]: expected a table")
+        item = cls()
+        _apply(item, cast("dict[str, object]", table), f"{name}[{i}]")
+        out.append(item)
+    return out
 
 
 def _validate_tls(where: str, ca: str, cert: str, key: str) -> None:
@@ -378,6 +395,18 @@ def _validate_providers(providers: list[ProviderConfig]) -> None:
         if p.label in labels:
             raise ConfigError(f"providers[{i}]: two providers named {p.label!r}")
         labels.add(p.label)
+
+
+def _validate_words(words: list[WordConfig]) -> None:
+    seen: set[str] = set()
+    for i, w in enumerate(words):
+        if not w.word.strip():
+            raise ConfigError(f"words[{i}].word is required")
+        if any(not s.strip() for s in w.spoken):
+            raise ConfigError(f"words[{i}].spoken: empty spoken form")
+        if w.word in seen:
+            raise ConfigError(f"words[{i}]: {w.word!r} is listed twice")
+        seen.add(w.word)
 
 
 def validate(cfg: Config) -> None:
@@ -408,6 +437,7 @@ def validate(cfg: Config) -> None:
             raise ConfigError(f"{key} must be >= 0")
     _validate_tls("server.", cfg.server.tls_ca, cfg.server.tls_cert, cfg.server.tls_key)
     _validate_providers(cfg.providers)
+    _validate_words(cfg.words)
     if not 0 <= cfg.gate.max_distance <= 1:
         raise ConfigError("gate.max_distance must be in [0, 1]")
     if cfg.gate.confident_anchor < 0:

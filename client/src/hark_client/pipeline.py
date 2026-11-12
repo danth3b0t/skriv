@@ -170,6 +170,9 @@ class Utterance:
                 learned = ()
                 log.warning("learned vocabulary unreadable: %s", e)
             snap = replace(snap, terms=learn.merge_terms(snap.terms, learned, cfg.max_terms))
+        if self.svc.cfg.words:  # hand-written spellings go first
+            words = learn.dictionary_terms(self.svc.cfg.words)
+            snap = replace(snap, terms=learn.merge_terms(snap.terms, words, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)
 

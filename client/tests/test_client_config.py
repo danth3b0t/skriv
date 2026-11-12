@@ -85,6 +85,11 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[gate]\nmax_distance = 1.5\n", "gate.max_distance must be in"),
         ("[server]\ntls_cert = 'a'\n", "tls_cert and server.tls_key"),
         ("server = 1\n", "server: expected a table"),
+        ("words = 'Hyprland'\n", "words: expected an array of tables"),
+        ("[[words]]\nspoken = ['hyper land']\n", "word is required"),
+        ("[[words]]\nword = 'Hyprland'\nspoken = [' ']\n", "empty spoken form"),
+        ("[[words]]\nword = 'kubectl'\n[[words]]\nword = 'kubectl'\n", "'kubectl' is listed twice"),
+        ("[[words]]\nword = 'Hyprland'\nsaid = ['x']\n", "0].said'"),
         ("[server\n", "c.toml"),
     ],
 )

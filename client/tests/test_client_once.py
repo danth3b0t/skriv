@@ -209,6 +209,16 @@ def test_promoted_corrections_bias_the_recognizer(
     assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
 
 
+def test_dictionary_words_bias_the_recognizer_without_any_context(
+    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+):
+    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]
+    words = '[[words]]\nword = "kubectl"\nspoken = ["Cube Control!"]\n'
+    _, rec = run_once(tmp_path, hark_server.target, config=words)
+    # The mock server only rewrites "cube control" when the bias term reached it.
+    assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
+
+
 # The mock server writes a term's canonical wherever one of its aliases was "heard", so
 # with "get" as an alias of "Hark" the biased result says "Hark" where the anchor says "get".
 HARK = Term("Hark", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
