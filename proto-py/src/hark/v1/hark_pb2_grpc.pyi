@@ -159,7 +159,7 @@ class AsrServicer(metaclass=_abc_1.ABCMeta):
 def add_AsrServicer_to_server(servicer: AsrServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...
 
 class TextCleanupStub:
-    """Optional post-ASR cleanup producing a validated edit list."""
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client."""
 
     @_typing.overload
     def __new__(cls, channel: _grpc.Channel) -> _Self: ...
@@ -169,13 +169,13 @@ class TextCleanupStub:
 
 @_typing.type_check_only
 class TextCleanupAsyncStub(TextCleanupStub):
-    """Optional post-ASR cleanup producing a validated edit list."""
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client."""
 
     def __init__(self, channel: _aio.Channel) -> None: ...
     Cleanup: _aio.UnaryUnaryMultiCallable[_hark_pb2.CleanupRequest, _hark_pb2.CleanupResponse]  # type: ignore[assignment]
 
 class TextCleanupServicer(metaclass=_abc_1.ABCMeta):
-    """Optional post-ASR cleanup producing a validated edit list."""
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client."""
 
     @_abc_1.abstractmethod
     def Cleanup(

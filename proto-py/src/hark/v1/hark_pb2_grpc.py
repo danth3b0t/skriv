@@ -177,7 +177,7 @@ class Asr:
 
 
 class TextCleanupStub:
-    """Optional post-ASR cleanup producing a validated edit list.
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client.
     """
 
     def __init__(self, channel):
@@ -194,7 +194,7 @@ class TextCleanupStub:
 
 
 class TextCleanupServicer:
-    """Optional post-ASR cleanup producing a validated edit list.
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client.
     """
 
     def Cleanup(self, request, context):
@@ -220,7 +220,7 @@ def add_TextCleanupServicer_to_server(servicer, server):
 
  # This class is part of an EXPERIMENTAL API.
 class TextCleanup:
-    """Optional post-ASR cleanup producing a validated edit list.
+    """Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client.
     """
 
     @staticmethod

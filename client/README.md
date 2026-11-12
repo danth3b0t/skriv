@@ -305,7 +305,7 @@ It is a new history entry; the kept audio stays.
 ```sh
 hark history                  # last 20: time, id, app, status, key-up->paste latency, text preview
 hark history -n 100 --json    # the full records
-hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup edits/dropped,
+hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup status/reason,
                               # gate decisions (if recorded), final, spacing decision, paste, timings
 hark last                     # print the last dictated text; --copy puts it on the clipboard
 hark ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
@@ -327,15 +327,16 @@ re-runs them all and fails on a lost identifier, a false substitution or a lost 
   "canon dot py" → `canon.py`, "commit dash m fix colon" → `commit -m fix:`, "dash dash verbose" → `--verbose`,
   "src slash main dot rs" → `src/main.rs`, "cd slash tmp" → `cd /tmp`. A single "slash" between ordinary words
   ("the slash command") and "dash" after a non-command stay words.
-- Cleanup: protected spans (shortlist identifiers, code-like tokens, numbers, negations) are sent with the request.
-  The client re-validates every returned edit (unique quote, byte range, protected spans, per-kind invariant incl.
-  self-corrections and spoken numbers, negation and digit preservation, at most half the words removed, no lost `!`).
-  A bad edit is dropped with its group (edits at most one word apart), and a negation, digit or `!` change only
-  with the edits that make it; any other failed whole-text rule keeps the text. Status `applied` (every edit),
-  `partial` (some dropped; the reason gives the counts) or `rejected` (none); the history's `cleanup.dropped` lists
-  each dropped edit with its reason and who dropped it (`server` or `client`). Timeouts and RPC errors fall back
-  to the uncleaned text. Text that looks
-  non-English (or `server.language` other than `en*`) is not sent: status `skipped`, reason `non_english`.
+- Cleanup: the server returns a rewrite of the whole text (S1-mini: fillers out, casing, punctuation, light
+  rewording, spoken numbers as digits). Only the text is sent; the shortlist stays here. The rewrite replaces the text
+  only if it passes one fidelity check (`hark_client/fidelity.py`, also used by `hark eval`): shortlist identifiers and
+  code-like tokens keep their spelling and count (a re-cased one is put back first), the same number of negations and
+  numbers (`seven` = `7`), no content words added or dropped beyond about one in eight, no new line break in the
+  terminal and chat profiles. A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds") is checked
+  against the corrected text. Status `applied`, `no_edits` (the rewrite equals the text) or `rejected` (the text
+  stays; `reason` names the failed rule, `rewrite` keeps the rejected text in the history). Timeouts and RPC errors
+  fall back to the uncleaned text. `server.language` other than `en*`, or text the server finds non-English, is not
+  cleaned: status `skipped`.
 - Focus: if the focused window changed between key-down and paste, the text goes to the clipboard and a notification
   says so.
 

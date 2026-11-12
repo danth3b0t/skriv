@@ -22,7 +22,7 @@ from collections import Counter
 from pathlib import Path
 from typing import cast
 
-from hark_client import evalset
+from hark_client import evalset, fidelity
 
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parents[2]
@@ -107,19 +107,19 @@ def false_subs(rows: list[tuple[Rec, evalset.Label]]) -> tuple[Counter[str], int
 
 
 def negation_losses(rows: list[tuple[Rec, evalset.Label]]) -> tuple[int, int, Counter[str]]:
-    """Clips with fewer negations in the final text than said, the accepted ones (a retracted
-    "no" of a self-correction), and the stage where the others lost it."""
+    """Clips with fewer negations in the final text than said, the accepted ones and those
+    with a resolved self-correction (a retracted "no"), and the stage where the others lost it."""
     lost = ok = 0
     stage: Counter[str] = Counter()
     for r, lab in rows:
-        want = evalset.negations(lab.said)
-        if evalset.negations(str(r["final"])) >= want:
+        want = fidelity.negations(lab.said)
+        if fidelity.negations(str(r["final"])) >= want:
             continue
-        if r["accepted"]:
+        if r["accepted"] or fidelity.negations_kept(lab.said, str(r["final"])):
             ok += 1
             continue
         lost += 1
-        stage[next(s for s in STAGES if evalset.negations(str(r[s])) < want)] += 1
+        stage[next(s for s in STAGES if fidelity.negations(str(r[s])) < want)] += 1
     return lost, ok, stage
 
 
@@ -201,11 +201,13 @@ def cleanup_stats(rows: list[tuple[Rec, evalset.Label]]) -> list[str]:
             continue
         status[str(c["status"])] += 1
         reason = str(c.get("reason") or "")
-        if m := re.search(r"dropped: (.*)", reason):
+        if m := re.search(r"dropped: (.*)", reason):  # edit-list reports (before 2026-11-13)
             dropped.update(x.strip() for x in m.group(1).split(","))
+        elif c["status"] == "rejected" and reason:  # the fidelity check's first failed rule
+            dropped[reason.split(maxsplit=1)[0]] += 1
     return [
         f"status: {dict(status.most_common())}",
-        f"dropped edits by reason: {dict(dropped.most_common())}",
+        f"dropped edits / rejected rewrites by reason: {dict(dropped.most_common())}",
     ]
 
 

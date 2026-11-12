@@ -54,7 +54,7 @@ service Asr {
   rpc Transcribe(stream TranscribeRequest) returns (stream TranscribeResponse);
 }
 
-// Optional post-ASR cleanup producing a validated edit list.
+// Optional post-ASR cleanup: an LLM rewrite of the text, checked by the client.
 service TextCleanup {
   rpc Cleanup(CleanupRequest) returns (CleanupResponse);
 }
@@ -571,36 +571,26 @@ message ErrorDetail {
 // =============================================================================
 
 message CleanupProfile {
-  string id = 1;                       // e.g. "prose", "chat", "commit_message"
+  reserved 3;
+  reserved "allowed_kinds";
+  string id = 1;                       // "terminal", "chat", "prose"
   string description = 2;
-  repeated EditKind allowed_kinds = 3;
   uint32 max_input_bytes = 4;
   uint32 typical_ms = 5;
   string model = 6;
 }
 
 message CleanupRequest {
+  reserved 4, 8, 11;
+  reserved "protected_spans", "max_edits", "known_terms";
   string request_id = 1;
   string utterance_id = 2;
   string text = 3;                     // client text after fusion/canonicalization
-  repeated ProtectedSpan protected_spans = 4; // byte spans into `text`
   string profile_id = 5;
   string language = 6;
   CleanupContext context = 7;
-  uint32 max_edits = 8;                // 0 => profile default
   uint32 budget_ms = 9;                // generation budget, < gRPC deadline
   PrivacyFlags privacy = 10;
-  // Exact written forms of the client's vocabulary/bias terms. An edit may
-  // merge or split words, changing only spacing and case, into one of these
-  // (or into the text of a non-number, non-negation protected span):
-  // "Super Whisper" -> "Superwhisper". Other merges stay rejected.
-  repeated string known_terms = 11;
-}
-
-message ProtectedSpan {
-  uint32 byte_start = 1;
-  uint32 byte_end = 2;
-  ProtectedSpanKind kind = 3;
 }
 
 message CleanupContext {
@@ -608,41 +598,20 @@ message CleanupContext {
   string preceding_text = 2; // only if the provider's privacy policy allows
 }
 
-// Edits are quoted-text anchored (ADR-001 #6). The LLM (here or in the
-// client's direct OpenAI-compatible adapter) returns, via
-// /v1/chat/completions with response_format json_schema "hark_edits_v1":
-//   {"edits": [{"find": str (minLength 1), "replace": str,
-//               "kind": "punctuation"|"capitalization"|"spacing"|
-//                       "filler_removal"|"number_format"|
-//                       "self_correction"|"grammar",
-//               "reason": str}]}
-// `find` MUST occur exactly once in the text (overlapping occurrences
-// count); there is no occurrence index. The server resolves each `find` to a
-// byte range, runs the same validator as the client and returns only the
-// edits that pass. The client validator is authoritative.
+// The server returns the model's rewrite of the whole text (fillers removed,
+// casing, punctuation and wording cleaned). It does not judge fidelity: the
+// client checks the rewrite against its input (hark_client.fidelity) and keeps
+// the input when the rewrite adds, drops or reverses anything.
 message CleanupResponse {
-  repeated Edit edits = 1;   // sorted by byte_start, non-overlapping
+  reserved 1, 6, 7;
+  reserved "edits", "rejected_by_server", "rejections";
   string model = 2;
   uint32 generation_ms = 3;
   uint32 total_ms = 4;
-  bool truncated = 5;        // budget hit; only complete edits returned
-  uint32 rejected_by_server = 6; // == len(rejections)
-  repeated EditRejection rejections = 7;
-}
-
-message Edit {
-  uint32 byte_start = 1;     // into CleanupRequest.text; end > start
-  uint32 byte_end = 2;
-  string find = 3;           // MUST equal text[byte_start:byte_end]; unique
-  string replace = 4;
-  EditKind kind = 5;
-  string reason = 6;         // short; for history/debug UI only
-}
-
-message EditRejection {
-  string find = 1;           // as proposed by the model
-  string replace = 2;
-  EditRejectionReason reason = 3;
+  bool truncated = 5;        // budget hit: no rewrite
+  optional string text = 8;  // the rewrite ("" is valid: the input was only fillers)
+  string skipped = 9;        // why `text` is unset when not truncated: "empty",
+                             // "not_english", "max_tokens"
 }
 
 // =============================================================================
@@ -825,47 +794,4 @@ enum ErrorCode {
   ERROR_CODE_BACKEND_FAILURE = 9;         // INTERNAL, retryable
   ERROR_CODE_PRIVACY_UNSATISFIABLE = 12;  // FAILED_PRECONDITION
   ERROR_CODE_CANCELLED = 13;              // CANCELLED (client Cancel)
-}
-
-enum EditRejectionReason {
-  EDIT_REJECTION_REASON_UNSPECIFIED = 0;
-  EDIT_REJECTION_REASON_NOT_FOUND = 1;        // `find` not in text
-  EDIT_REJECTION_REASON_NOT_UNIQUE = 2;       // `find` occurs more than once
-  EDIT_REJECTION_REASON_OVERLAP = 3;          // overlaps an earlier edit
-  EDIT_REJECTION_REASON_PROTECTED_SPAN = 4;   // touches a ProtectedSpan
-  EDIT_REJECTION_REASON_KIND_NOT_ALLOWED = 5; // not in profile allowed_kinds
-  EDIT_REJECTION_REASON_INVARIANT = 6;        // kind's mechanical check failed
-  EDIT_REJECTION_REASON_NO_OP = 7;            // replace == find
-  EDIT_REJECTION_REASON_GLOBAL = 8;           // a whole-result rule failed: the
-                                              // edits it is pinned on (negation,
-                                              // digit, '!' change) and their group,
-                                              // else the whole set (>50% invalid,
-                                              // too many changed bytes or words)
-  EDIT_REJECTION_REASON_DEPENDENT = 9;        // valid, but in a group with a
-                                              // rejected edit (at most one word
-                                              // apart); dropped with it
-}
-
-enum ProtectedSpanKind {
-  PROTECTED_SPAN_KIND_UNSPECIFIED = 0;
-  PROTECTED_SPAN_KIND_IDENTIFIER = 1;
-  PROTECTED_SPAN_KIND_NUMBER = 2;
-  PROTECTED_SPAN_KIND_NEGATION = 3;
-  PROTECTED_SPAN_KIND_BIAS_TERM = 4;
-  PROTECTED_SPAN_KIND_URL = 5;
-  PROTECTED_SPAN_KIND_PATH = 6;
-  PROTECTED_SPAN_KIND_CODE = 7;
-  PROTECTED_SPAN_KIND_QUOTED = 8;
-  PROTECTED_SPAN_KIND_USER_LOCKED = 9;
-}
-
-enum EditKind {
-  EDIT_KIND_UNSPECIFIED = 0;
-  EDIT_KIND_PUNCTUATION = 1;     // alphanumerics unchanged
-  EDIT_KIND_CAPITALIZATION = 2;  // case-folded text unchanged
-  EDIT_KIND_SPACING = 3;         // non-whitespace unchanged
-  EDIT_KIND_FILLER_REMOVAL = 4;  // only listed fillers removed
-  EDIT_KIND_NUMBER_FORMAT = 5;   // numeric value unchanged
-  EDIT_KIND_SELF_CORRECTION = 6; // "no wait, I mean ..." (not mechanically checkable)
-  EDIT_KIND_GRAMMAR = 7;         // not mechanically checkable
 }

@@ -40,6 +40,11 @@ NO_STR: list[str] = []
             "don't push it", "Push it.",
             (0.0, NONE, NO_STR, True, True, False),
         ),
+        (  # the "no" of a resolved self-correction is no lost negation
+            evalset.Label("make it ten megabytes, no, twenty megabytes"),
+            "make it 10 megabytes, no, 20 megabytes", "Make it 20 megabytes.",
+            (0.0, NONE, NO_STR, False, False, False),
+        ),
         (
             evalset.Label("don't push it", critical=["--force"]),
             "don't push it", "Don't push it.",

@@ -528,137 +528,6 @@ ERROR_CODE_CANCELLED: ErrorCode.ValueType  # 13
 """CANCELLED (client Cancel)"""
 Global___ErrorCode: _TypeAlias = ErrorCode  # noqa: Y015
 
-class _EditRejectionReason:
-    ValueType = _typing.NewType("ValueType", _builtins.int)
-    V: _TypeAlias = ValueType  # noqa: Y015
-
-class _EditRejectionReasonEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_EditRejectionReason.ValueType], _builtins.type):
-    DESCRIPTOR: _descriptor.EnumDescriptor
-    EDIT_REJECTION_REASON_UNSPECIFIED: _EditRejectionReason.ValueType  # 0
-    EDIT_REJECTION_REASON_NOT_FOUND: _EditRejectionReason.ValueType  # 1
-    """`find` not in text"""
-    EDIT_REJECTION_REASON_NOT_UNIQUE: _EditRejectionReason.ValueType  # 2
-    """`find` occurs more than once"""
-    EDIT_REJECTION_REASON_OVERLAP: _EditRejectionReason.ValueType  # 3
-    """overlaps an earlier edit"""
-    EDIT_REJECTION_REASON_PROTECTED_SPAN: _EditRejectionReason.ValueType  # 4
-    """touches a ProtectedSpan"""
-    EDIT_REJECTION_REASON_KIND_NOT_ALLOWED: _EditRejectionReason.ValueType  # 5
-    """not in profile allowed_kinds"""
-    EDIT_REJECTION_REASON_INVARIANT: _EditRejectionReason.ValueType  # 6
-    """kind's mechanical check failed"""
-    EDIT_REJECTION_REASON_NO_OP: _EditRejectionReason.ValueType  # 7
-    """replace == find"""
-    EDIT_REJECTION_REASON_GLOBAL: _EditRejectionReason.ValueType  # 8
-    """a whole-result rule failed: the"""
-    EDIT_REJECTION_REASON_DEPENDENT: _EditRejectionReason.ValueType  # 9
-    """edits it is pinned on (negation,
-    digit, '!' change) and their group,
-    else the whole set (>50% invalid,
-    too many changed bytes or words)
-    valid, but in a group with a
-    """
-
-class EditRejectionReason(_EditRejectionReason, metaclass=_EditRejectionReasonEnumTypeWrapper): ...
-
-EDIT_REJECTION_REASON_UNSPECIFIED: EditRejectionReason.ValueType  # 0
-EDIT_REJECTION_REASON_NOT_FOUND: EditRejectionReason.ValueType  # 1
-"""`find` not in text"""
-EDIT_REJECTION_REASON_NOT_UNIQUE: EditRejectionReason.ValueType  # 2
-"""`find` occurs more than once"""
-EDIT_REJECTION_REASON_OVERLAP: EditRejectionReason.ValueType  # 3
-"""overlaps an earlier edit"""
-EDIT_REJECTION_REASON_PROTECTED_SPAN: EditRejectionReason.ValueType  # 4
-"""touches a ProtectedSpan"""
-EDIT_REJECTION_REASON_KIND_NOT_ALLOWED: EditRejectionReason.ValueType  # 5
-"""not in profile allowed_kinds"""
-EDIT_REJECTION_REASON_INVARIANT: EditRejectionReason.ValueType  # 6
-"""kind's mechanical check failed"""
-EDIT_REJECTION_REASON_NO_OP: EditRejectionReason.ValueType  # 7
-"""replace == find"""
-EDIT_REJECTION_REASON_GLOBAL: EditRejectionReason.ValueType  # 8
-"""a whole-result rule failed: the"""
-EDIT_REJECTION_REASON_DEPENDENT: EditRejectionReason.ValueType  # 9
-"""edits it is pinned on (negation,
-digit, '!' change) and their group,
-else the whole set (>50% invalid,
-too many changed bytes or words)
-valid, but in a group with a
-"""
-Global___EditRejectionReason: _TypeAlias = EditRejectionReason  # noqa: Y015
-
-class _ProtectedSpanKind:
-    ValueType = _typing.NewType("ValueType", _builtins.int)
-    V: _TypeAlias = ValueType  # noqa: Y015
-
-class _ProtectedSpanKindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_ProtectedSpanKind.ValueType], _builtins.type):
-    DESCRIPTOR: _descriptor.EnumDescriptor
-    PROTECTED_SPAN_KIND_UNSPECIFIED: _ProtectedSpanKind.ValueType  # 0
-    PROTECTED_SPAN_KIND_IDENTIFIER: _ProtectedSpanKind.ValueType  # 1
-    PROTECTED_SPAN_KIND_NUMBER: _ProtectedSpanKind.ValueType  # 2
-    PROTECTED_SPAN_KIND_NEGATION: _ProtectedSpanKind.ValueType  # 3
-    PROTECTED_SPAN_KIND_BIAS_TERM: _ProtectedSpanKind.ValueType  # 4
-    PROTECTED_SPAN_KIND_URL: _ProtectedSpanKind.ValueType  # 5
-    PROTECTED_SPAN_KIND_PATH: _ProtectedSpanKind.ValueType  # 6
-    PROTECTED_SPAN_KIND_CODE: _ProtectedSpanKind.ValueType  # 7
-    PROTECTED_SPAN_KIND_QUOTED: _ProtectedSpanKind.ValueType  # 8
-    PROTECTED_SPAN_KIND_USER_LOCKED: _ProtectedSpanKind.ValueType  # 9
-
-class ProtectedSpanKind(_ProtectedSpanKind, metaclass=_ProtectedSpanKindEnumTypeWrapper): ...
-
-PROTECTED_SPAN_KIND_UNSPECIFIED: ProtectedSpanKind.ValueType  # 0
-PROTECTED_SPAN_KIND_IDENTIFIER: ProtectedSpanKind.ValueType  # 1
-PROTECTED_SPAN_KIND_NUMBER: ProtectedSpanKind.ValueType  # 2
-PROTECTED_SPAN_KIND_NEGATION: ProtectedSpanKind.ValueType  # 3
-PROTECTED_SPAN_KIND_BIAS_TERM: ProtectedSpanKind.ValueType  # 4
-PROTECTED_SPAN_KIND_URL: ProtectedSpanKind.ValueType  # 5
-PROTECTED_SPAN_KIND_PATH: ProtectedSpanKind.ValueType  # 6
-PROTECTED_SPAN_KIND_CODE: ProtectedSpanKind.ValueType  # 7
-PROTECTED_SPAN_KIND_QUOTED: ProtectedSpanKind.ValueType  # 8
-PROTECTED_SPAN_KIND_USER_LOCKED: ProtectedSpanKind.ValueType  # 9
-Global___ProtectedSpanKind: _TypeAlias = ProtectedSpanKind  # noqa: Y015
-
-class _EditKind:
-    ValueType = _typing.NewType("ValueType", _builtins.int)
-    V: _TypeAlias = ValueType  # noqa: Y015
-
-class _EditKindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_EditKind.ValueType], _builtins.type):
-    DESCRIPTOR: _descriptor.EnumDescriptor
-    EDIT_KIND_UNSPECIFIED: _EditKind.ValueType  # 0
-    EDIT_KIND_PUNCTUATION: _EditKind.ValueType  # 1
-    """alphanumerics unchanged"""
-    EDIT_KIND_CAPITALIZATION: _EditKind.ValueType  # 2
-    """case-folded text unchanged"""
-    EDIT_KIND_SPACING: _EditKind.ValueType  # 3
-    """non-whitespace unchanged"""
-    EDIT_KIND_FILLER_REMOVAL: _EditKind.ValueType  # 4
-    """only listed fillers removed"""
-    EDIT_KIND_NUMBER_FORMAT: _EditKind.ValueType  # 5
-    """numeric value unchanged"""
-    EDIT_KIND_SELF_CORRECTION: _EditKind.ValueType  # 6
-    """"no wait, I mean ..." (not mechanically checkable)"""
-    EDIT_KIND_GRAMMAR: _EditKind.ValueType  # 7
-    """not mechanically checkable"""
-
-class EditKind(_EditKind, metaclass=_EditKindEnumTypeWrapper): ...
-
-EDIT_KIND_UNSPECIFIED: EditKind.ValueType  # 0
-EDIT_KIND_PUNCTUATION: EditKind.ValueType  # 1
-"""alphanumerics unchanged"""
-EDIT_KIND_CAPITALIZATION: EditKind.ValueType  # 2
-"""case-folded text unchanged"""
-EDIT_KIND_SPACING: EditKind.ValueType  # 3
-"""non-whitespace unchanged"""
-EDIT_KIND_FILLER_REMOVAL: EditKind.ValueType  # 4
-"""only listed fillers removed"""
-EDIT_KIND_NUMBER_FORMAT: EditKind.ValueType  # 5
-"""numeric value unchanged"""
-EDIT_KIND_SELF_CORRECTION: EditKind.ValueType  # 6
-""""no wait, I mean ..." (not mechanically checkable)"""
-EDIT_KIND_GRAMMAR: EditKind.ValueType  # 7
-"""not mechanically checkable"""
-Global___EditKind: _TypeAlias = EditKind  # noqa: Y015
-
 @_typing.final
 class GetCapabilitiesRequest(_message.Message):
     """=============================================================================
@@ -2426,31 +2295,27 @@ class CleanupProfile(_message.Message):
 
     ID_FIELD_NUMBER: _builtins.int
     DESCRIPTION_FIELD_NUMBER: _builtins.int
-    ALLOWED_KINDS_FIELD_NUMBER: _builtins.int
     MAX_INPUT_BYTES_FIELD_NUMBER: _builtins.int
     TYPICAL_MS_FIELD_NUMBER: _builtins.int
     MODEL_FIELD_NUMBER: _builtins.int
     id: _builtins.str
-    """e.g. "prose", "chat", "commit_message" """
+    """"terminal", "chat", "prose" """
     description: _builtins.str
     max_input_bytes: _builtins.int
     typical_ms: _builtins.int
     model: _builtins.str
-    @_builtins.property
-    def allowed_kinds(self) -> _containers.RepeatedScalarFieldContainer[Global___EditKind.ValueType]: ...
     def __init__(
         self,
         *,
         id: _builtins.str = ...,
         description: _builtins.str = ...,
-        allowed_kinds: _abc.Iterable[Global___EditKind.ValueType] | None = ...,
         max_input_bytes: _builtins.int = ...,
         typical_ms: _builtins.int = ...,
         model: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["allowed_kinds", b"allowed_kinds", "description", b"description", "id", b"id", "max_input_bytes", b"max_input_bytes", "model", b"model", "typical_ms", b"typical_ms"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["description", b"description", "id", b"id", "max_input_bytes", b"max_input_bytes", "model", b"model", "typical_ms", b"typical_ms"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -2463,87 +2328,42 @@ class CleanupRequest(_message.Message):
     REQUEST_ID_FIELD_NUMBER: _builtins.int
     UTTERANCE_ID_FIELD_NUMBER: _builtins.int
     TEXT_FIELD_NUMBER: _builtins.int
-    PROTECTED_SPANS_FIELD_NUMBER: _builtins.int
     PROFILE_ID_FIELD_NUMBER: _builtins.int
     LANGUAGE_FIELD_NUMBER: _builtins.int
     CONTEXT_FIELD_NUMBER: _builtins.int
-    MAX_EDITS_FIELD_NUMBER: _builtins.int
     BUDGET_MS_FIELD_NUMBER: _builtins.int
     PRIVACY_FIELD_NUMBER: _builtins.int
-    KNOWN_TERMS_FIELD_NUMBER: _builtins.int
     request_id: _builtins.str
     utterance_id: _builtins.str
     text: _builtins.str
     """client text after fusion/canonicalization"""
     profile_id: _builtins.str
     language: _builtins.str
-    max_edits: _builtins.int
-    """0 => profile default"""
     budget_ms: _builtins.int
     """generation budget, < gRPC deadline"""
-    @_builtins.property
-    def protected_spans(self) -> _containers.RepeatedCompositeFieldContainer[Global___ProtectedSpan]:
-        """byte spans into `text`"""
-
     @_builtins.property
     def context(self) -> Global___CleanupContext: ...
     @_builtins.property
     def privacy(self) -> Global___PrivacyFlags: ...
-    @_builtins.property
-    def known_terms(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
-        """Exact written forms of the client's vocabulary/bias terms. An edit may
-        merge or split words, changing only spacing and case, into one of these
-        (or into the text of a non-number, non-negation protected span):
-        "Super Whisper" -> "Superwhisper". Other merges stay rejected.
-        """
-
     def __init__(
         self,
         *,
         request_id: _builtins.str = ...,
         utterance_id: _builtins.str = ...,
         text: _builtins.str = ...,
-        protected_spans: _abc.Iterable[Global___ProtectedSpan] | None = ...,
         profile_id: _builtins.str = ...,
         language: _builtins.str = ...,
         context: Global___CleanupContext | None = ...,
-        max_edits: _builtins.int = ...,
         budget_ms: _builtins.int = ...,
         privacy: Global___PrivacyFlags | None = ...,
-        known_terms: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["context", b"context", "privacy", b"privacy"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "known_terms", b"known_terms", "language", b"language", "max_edits", b"max_edits", "privacy", b"privacy", "profile_id", b"profile_id", "protected_spans", b"protected_spans", "request_id", b"request_id", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "language", b"language", "privacy", b"privacy", "profile_id", b"profile_id", "request_id", b"request_id", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___CleanupRequest: _TypeAlias = CleanupRequest  # noqa: Y015
-
-@_typing.final
-class ProtectedSpan(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    BYTE_START_FIELD_NUMBER: _builtins.int
-    BYTE_END_FIELD_NUMBER: _builtins.int
-    KIND_FIELD_NUMBER: _builtins.int
-    byte_start: _builtins.int
-    byte_end: _builtins.int
-    kind: Global___ProtectedSpanKind.ValueType
-    def __init__(
-        self,
-        *,
-        byte_start: _builtins.int = ...,
-        byte_end: _builtins.int = ...,
-        kind: Global___ProtectedSpanKind.ValueType = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["byte_end", b"byte_end", "byte_start", b"byte_start", "kind", b"kind"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___ProtectedSpan: _TypeAlias = ProtectedSpan  # noqa: Y015
 
 @_typing.final
 class CleanupContext(_message.Message):
@@ -2571,120 +2391,45 @@ Global___CleanupContext: _TypeAlias = CleanupContext  # noqa: Y015
 
 @_typing.final
 class CleanupResponse(_message.Message):
-    """Edits are quoted-text anchored (ADR-001 #6). The LLM (here or in the
-    client's direct OpenAI-compatible adapter) returns, via
-    /v1/chat/completions with response_format json_schema "hark_edits_v1":
-      {"edits": [{"find": str (minLength 1), "replace": str,
-                  "kind": "punctuation"|"capitalization"|"spacing"|
-                          "filler_removal"|"number_format"|
-                          "self_correction"|"grammar",
-                  "reason": str}]}
-    `find` MUST occur exactly once in the text (overlapping occurrences
-    count); there is no occurrence index. The server resolves each `find` to a
-    byte range, runs the same validator as the client and returns only the
-    edits that pass. The client validator is authoritative.
+    """The server returns the model's rewrite of the whole text (fillers removed,
+    casing, punctuation and wording cleaned). It does not judge fidelity: the
+    client checks the rewrite against its input (hark_client.fidelity) and keeps
+    the input when the rewrite adds, drops or reverses anything.
     """
 
     DESCRIPTOR: _descriptor.Descriptor
 
-    EDITS_FIELD_NUMBER: _builtins.int
     MODEL_FIELD_NUMBER: _builtins.int
     GENERATION_MS_FIELD_NUMBER: _builtins.int
     TOTAL_MS_FIELD_NUMBER: _builtins.int
     TRUNCATED_FIELD_NUMBER: _builtins.int
-    REJECTED_BY_SERVER_FIELD_NUMBER: _builtins.int
-    REJECTIONS_FIELD_NUMBER: _builtins.int
+    TEXT_FIELD_NUMBER: _builtins.int
+    SKIPPED_FIELD_NUMBER: _builtins.int
     model: _builtins.str
     generation_ms: _builtins.int
     total_ms: _builtins.int
     truncated: _builtins.bool
-    """budget hit; only complete edits returned"""
-    rejected_by_server: _builtins.int
-    """== len(rejections)"""
-    @_builtins.property
-    def edits(self) -> _containers.RepeatedCompositeFieldContainer[Global___Edit]:
-        """sorted by byte_start, non-overlapping"""
-
-    @_builtins.property
-    def rejections(self) -> _containers.RepeatedCompositeFieldContainer[Global___EditRejection]: ...
+    """budget hit: no rewrite"""
+    text: _builtins.str
+    """the rewrite ("" is valid: the input was only fillers)"""
+    skipped: _builtins.str
+    """why `text` is unset when not truncated: "empty","""
     def __init__(
         self,
         *,
-        edits: _abc.Iterable[Global___Edit] | None = ...,
         model: _builtins.str = ...,
         generation_ms: _builtins.int = ...,
         total_ms: _builtins.int = ...,
         truncated: _builtins.bool = ...,
-        rejected_by_server: _builtins.int = ...,
-        rejections: _abc.Iterable[Global___EditRejection] | None = ...,
+        text: _builtins.str | None = ...,
+        skipped: _builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_text", b"_text", "text", b"text"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["edits", b"edits", "generation_ms", b"generation_ms", "model", b"model", "rejected_by_server", b"rejected_by_server", "rejections", b"rejections", "total_ms", b"total_ms", "truncated", b"truncated"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_text", b"_text", "generation_ms", b"generation_ms", "model", b"model", "skipped", b"skipped", "text", b"text", "total_ms", b"total_ms", "truncated", b"truncated"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
+    _WhichOneofReturnType__text: _TypeAlias = _typing.Literal["text"]  # noqa: Y015
+    _WhichOneofArgType__text: _TypeAlias = _typing.Literal["_text", b"_text"]  # noqa: Y015
+    def WhichOneof(self, oneof_group: _WhichOneofArgType__text) -> _WhichOneofReturnType__text | None: ...
 
 Global___CleanupResponse: _TypeAlias = CleanupResponse  # noqa: Y015
-
-@_typing.final
-class Edit(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    BYTE_START_FIELD_NUMBER: _builtins.int
-    BYTE_END_FIELD_NUMBER: _builtins.int
-    FIND_FIELD_NUMBER: _builtins.int
-    REPLACE_FIELD_NUMBER: _builtins.int
-    KIND_FIELD_NUMBER: _builtins.int
-    REASON_FIELD_NUMBER: _builtins.int
-    byte_start: _builtins.int
-    """into CleanupRequest.text; end > start"""
-    byte_end: _builtins.int
-    find: _builtins.str
-    """MUST equal text[byte_start:byte_end]; unique"""
-    replace: _builtins.str
-    kind: Global___EditKind.ValueType
-    reason: _builtins.str
-    """short; for history/debug UI only"""
-    def __init__(
-        self,
-        *,
-        byte_start: _builtins.int = ...,
-        byte_end: _builtins.int = ...,
-        find: _builtins.str = ...,
-        replace: _builtins.str = ...,
-        kind: Global___EditKind.ValueType = ...,
-        reason: _builtins.str = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["byte_end", b"byte_end", "byte_start", b"byte_start", "find", b"find", "kind", b"kind", "reason", b"reason", "replace", b"replace"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___Edit: _TypeAlias = Edit  # noqa: Y015
-
-@_typing.final
-class EditRejection(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    FIND_FIELD_NUMBER: _builtins.int
-    REPLACE_FIELD_NUMBER: _builtins.int
-    REASON_FIELD_NUMBER: _builtins.int
-    find: _builtins.str
-    """as proposed by the model"""
-    replace: _builtins.str
-    reason: Global___EditRejectionReason.ValueType
-    def __init__(
-        self,
-        *,
-        find: _builtins.str = ...,
-        replace: _builtins.str = ...,
-        reason: Global___EditRejectionReason.ValueType = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["find", b"find", "reason", b"reason", "replace", b"replace"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___EditRejection: _TypeAlias = EditRejection  # noqa: Y015

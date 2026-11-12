@@ -14,7 +14,7 @@ reword. So a run checks mechanically only what can be checked mechanically, and 
 |---|---|
 | every `critical` string (identifier, path, flag, number) is in the final text, exactly | yes; reports whether recognition or a later stage lost it |
 | no `forbidden` string is in it (a dictionary word where the ordinary word was meant) | yes |
-| it has at least as many negations (`not`, `no`, `never`, `n't`, ...) as `said` | yes, unless a human accepted that exact text |
+| it has at least as many negations (`not`, `no`, `never`, `n't`, ...) as `said`, or as `said` with a spoken self-correction resolved (`hark_client/fidelity.py`) | yes, unless a human accepted that exact text |
 | it is one of the `accepted` texts | no: a new wording is **unreviewed**; read it, then `hark eval accept ID` |
 | recognition word error rate of the raw text against `said` | no, reported |
 

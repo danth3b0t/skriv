@@ -647,14 +647,12 @@ class Utterance:
         return cleanup.run(
             provider.channel,
             text=text,
-            # protected spans are offsets into `text`: no shortlist leaves with send_context = false
-            terms=snap.terms,
+            terms=snap.terms,  # never sent: only decides what the rewrite must keep
             utterance_id=self.id,
             profile_id=prof.cleanup_profile,
             app_category=profile_name,
             language=cfg.server.language,
             deadline_ms=cfg.cleanup.deadline_ms,
-            send_terms=provider.cfg.send_context,
         )
 
     def _focus_changed(self, before: FocusInfo) -> str | None:
