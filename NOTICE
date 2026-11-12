@@ -1,0 +1,24 @@
+skriv
+Copyright 2026 Daniel Kamenov
+
+Licensed under the Apache License, Version 2.0 (LICENSE). The following parts of this repository come from third
+parties and keep their own licences.
+
+Data
+- client/src/skriv_client/context/common_words.txt: derived from wordfreq 3.1.1 (https://github.com/rspeer/wordfreq),
+  data by Robyn Speer, CC-BY-SA 4.0. Changes are described at the top of the file. This file is shared under
+  CC-BY-SA 4.0.
+- eval/dev-v1 (evaluation clips; each clip's label.json `note` names its source):
+  - real-NNN from EdACC, the Edinburgh International Accents of English Corpus (https://groups.inf.ed.ac.uk/edacc/),
+    CC-BY-SA 4.0. These clips are shared under CC-BY-SA 4.0.
+  - real-NNN from LibriSpeech (https://www.openslr.org/12), by Vassil Panayotov, Guoguo Chen, Daniel Povey and Sanjeev
+    Khudanpur, from LibriVox recordings, CC-BY 4.0.
+  - syn-NNN: speech synthesized with Kokoro-82M (https://huggingface.co/hexgrad/Kokoro-82M, Apache-2.0); background
+    noise from the DEMAND corpus (https://zenodo.org/records/1227121), CC-BY 4.0, by Joachim Thiemann, Nobutaka Ito
+    and Emmanuel Vincent; synthesized fan, typing and room tone.
+  - Clips synthesized with the macOS `say` voices are not distributed (eval/dev-v1/.gitignore): Apple's licence
+    limits that output to personal, non-commercial use. scripts/make-eval-set rebuilds them on a Mac.
+
+Models (not included; fetched by scripts/fetch-models, scripts/fetch-transcribe and at first use)
+- NVIDIA Parakeet TDT 0.6B v2/v3 (CC-BY 4.0), via parakeet-mlx and transcribe.cpp.
+- S1-mini by Superwhisper (Apache-2.0, with the model card's naming terms), served by llama.cpp (MIT).

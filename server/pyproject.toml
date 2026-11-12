@@ -3,6 +3,7 @@ name = "skriv-server"
 version = "0.1.0"
 description = "skriv.v1 inference server (gRPC): Asr + TextCleanup, pluggable ASR backends"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = [
     "skriv-proto",

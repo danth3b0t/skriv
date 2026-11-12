@@ -2,6 +2,7 @@
 name = "skriv-proto"
 version = "0.1.0"
 description = "Generated Python stubs for the skriv.v1 protocol (proto/skriv/v1/skriv.proto)"
+license = "Apache-2.0"
 requires-python = ">=3.12,<3.13"
 dependencies = ["grpcio>=1.85", "protobuf>=6.31"]
 

@@ -1,0 +1,34 @@
+# Clips synthesized with macOS `say`: Apple's licence limits system-voice output to personal,
+# non-commercial use, so their audio is not distributed. scripts/make-eval-set rebuilds it on a Mac;
+# `skriv eval run` skips a clip without audio.
+/syn-002/audio.wav
+/syn-007/audio.wav
+/syn-008/audio.wav
+/syn-013/audio.wav
+/syn-025/audio.wav
+/syn-027/audio.wav
+/syn-029/audio.wav
+/syn-032/audio.wav
+/syn-033/audio.wav
+/syn-038/audio.wav
+/syn-039/audio.wav
+/syn-042/audio.wav
+/syn-046/audio.wav
+/syn-052/audio.wav
+/syn-053/audio.wav
+/syn-056/audio.wav
+/syn-061/audio.wav
+/syn-062/audio.wav
+/syn-063/audio.wav
+/syn-067/audio.wav
+/syn-068/audio.wav
+/syn-069/audio.wav
+/syn-070/audio.wav
+/syn-072/audio.wav
+/syn-073/audio.wav
+/syn-076/audio.wav
+/syn-081/audio.wav
+/syn-083/audio.wav
+/syn-088/audio.wav
+/syn-090/audio.wav
+/syn-092/audio.wav

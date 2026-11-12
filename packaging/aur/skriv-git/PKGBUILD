@@ -18,7 +18,7 @@ pkgrel=1
 pkgdesc='Context-aware, local-first push-to-talk dictation (daemon, inference server, systemd user units)'
 arch=('x86_64' 'aarch64')
 url='https://github.com/danth3b0t/skriv'
-license=('LicenseRef-TODO') # TODO: the repository has no LICENSE yet
+license=('Apache-2.0')
 depends=(
   'bash'         # scripts, Omarchy adapter
   'cairo'        # pycairo
@@ -125,6 +125,7 @@ package() {
   local lib="$pkgdir$_prefix"
   install -d "$pkgdir/usr/lib" "$pkgdir/usr/bin"
   cp -a "$srcdir/stage$_prefix" "$lib"
+  install -Dm644 NOTICE "$pkgdir/usr/share/licenses/$pkgname/NOTICE"  # Apache-2.0 is a common licence
 
   # Built in $srcdir: point the venv (pyvenv.cfg, script shebangs, activate scripts) and the
   # interpreter's sysconfig data at the installed locations.

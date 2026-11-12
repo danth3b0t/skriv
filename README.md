@@ -109,3 +109,8 @@ gRPC protocol and its generated stubs), `scripts/`, `packaging/`, `eval/`. Hooks
 uv sync
 uv run pytest -q
 ```
+
+## License
+
+Apache-2.0 ([LICENSE](LICENSE)). Third-party data in the repository (the word list, the eval clips) keeps its own
+licence; see [NOTICE](NOTICE).
