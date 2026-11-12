@@ -54,7 +54,7 @@ class _ModelStateEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_ModelState
     MODEL_STATE_LOADING: _ModelState.ValueType  # 1
     MODEL_STATE_READY: _ModelState.ValueType  # 2
     MODEL_STATE_COLD: _ModelState.ValueType  # 3
-    """unloaded; Warmup needed (seconds)"""
+    """not loaded yet"""
     MODEL_STATE_FAILED: _ModelState.ValueType  # 4
 
 class ModelState(_ModelState, metaclass=_ModelStateEnumTypeWrapper):
@@ -67,7 +67,7 @@ MODEL_STATE_UNSPECIFIED: ModelState.ValueType  # 0
 MODEL_STATE_LOADING: ModelState.ValueType  # 1
 MODEL_STATE_READY: ModelState.ValueType  # 2
 MODEL_STATE_COLD: ModelState.ValueType  # 3
-"""unloaded; Warmup needed (seconds)"""
+"""not loaded yet"""
 MODEL_STATE_FAILED: ModelState.ValueType  # 4
 Global___ModelState: _TypeAlias = ModelState  # noqa: Y015
 
@@ -826,7 +826,7 @@ class Capabilities(_message.Message):
     def features(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """Small namespaced boolean features. Unknown strings MUST be ignored.
         Defined in v1.0: "hark.opus", "hark.partials", "hark.replay_cache",
-        "hark.midstream_context", "hark.recognize", "hark.cleanup",
+        "hark.midstream_context", "hark.cleanup",
         "hark.eager_end".
         """
 
@@ -2666,114 +2666,6 @@ class ErrorDetail(_message.Message):
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___ErrorDetail: _TypeAlias = ErrorDetail  # noqa: Y015
-
-@_typing.final
-class RecognizeRequest(_message.Message):
-    """=============================================================================
-    Recognize / Warmup
-    =============================================================================
-    """
-
-    DESCRIPTOR: _descriptor.Descriptor
-
-    CONFIG_FIELD_NUMBER: _builtins.int
-    AUDIO_FIELD_NUMBER: _builtins.int
-    @_builtins.property
-    def config(self) -> Global___SessionStart: ...
-    @_builtins.property
-    def audio(self) -> _containers.RepeatedCompositeFieldContainer[Global___AudioChunk]:
-        """complete utterance, contiguous seq"""
-
-    def __init__(
-        self,
-        *,
-        config: Global___SessionStart | None = ...,
-        audio: _abc.Iterable[Global___AudioChunk] | None = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["config", b"config"]  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["audio", b"audio", "config", b"config"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___RecognizeRequest: _TypeAlias = RecognizeRequest  # noqa: Y015
-
-@_typing.final
-class RecognizeResponse(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    ACCEPTED_FIELD_NUMBER: _builtins.int
-    FINAL_RESULT_FIELD_NUMBER: _builtins.int
-    WARNINGS_FIELD_NUMBER: _builtins.int
-    @_builtins.property
-    def accepted(self) -> Global___SessionAccepted: ...
-    @_builtins.property
-    def final_result(self) -> Global___FinalResult: ...
-    @_builtins.property
-    def warnings(self) -> _containers.RepeatedCompositeFieldContainer[Global___ServerWarning]: ...
-    def __init__(
-        self,
-        *,
-        accepted: Global___SessionAccepted | None = ...,
-        final_result: Global___FinalResult | None = ...,
-        warnings: _abc.Iterable[Global___ServerWarning] | None = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result"]  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result", "warnings", b"warnings"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___RecognizeResponse: _TypeAlias = RecognizeResponse  # noqa: Y015
-
-@_typing.final
-class WarmupRequest(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    MODEL_ID_FIELD_NUMBER: _builtins.int
-    INCLUDE_BIAS_FIELD_NUMBER: _builtins.int
-    model_id: _builtins.str
-    """empty => default model"""
-    include_bias: _builtins.bool
-    """also exercise the bias path (graph capture etc.)"""
-    def __init__(
-        self,
-        *,
-        model_id: _builtins.str = ...,
-        include_bias: _builtins.bool = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["include_bias", b"include_bias", "model_id", b"model_id"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___WarmupRequest: _TypeAlias = WarmupRequest  # noqa: Y015
-
-@_typing.final
-class WarmupResponse(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    STATE_FIELD_NUMBER: _builtins.int
-    WARM_MS_FIELD_NUMBER: _builtins.int
-    SERVER_TIME_UNIX_MS_FIELD_NUMBER: _builtins.int
-    state: Global___ModelState.ValueType
-    warm_ms: _builtins.int
-    server_time_unix_ms: _builtins.int
-    def __init__(
-        self,
-        *,
-        state: Global___ModelState.ValueType = ...,
-        warm_ms: _builtins.int = ...,
-        server_time_unix_ms: _builtins.int = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["server_time_unix_ms", b"server_time_unix_ms", "state", b"state", "warm_ms", b"warm_ms"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___WarmupResponse: _TypeAlias = WarmupResponse  # noqa: Y015
 
 @_typing.final
 class CleanupProfile(_message.Message):

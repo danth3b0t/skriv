@@ -1,4 +1,4 @@
-"""Transcribe/Recognize behaviour against the in-process server (mock backend).
+"""Transcribe behaviour against the in-process server (mock backend).
 
 Mock recognition (see backends/mock.py): every 200 ms window of non-silent audio
 emits the next word of "please run cube control get pods in the default ...";
@@ -210,34 +210,6 @@ async def test_finalize_budget_sheds_optional_work(
     assert final.flags.n_best == n_best
     assert len(final.n_best) == (3 if n_best == FS.FIELD_STATUS_PRESENT else 1)
     assert final.flags.finalize_budget_exceeded == exceeded
-
-
-async def test_recognize_unary_matches_streaming_semantics(serve: Serve):
-    client = await serve()
-    first = audio_reqs(speech(400))
-    second = audio_reqs(speech(400, seed=1), seq=len(first), start_sample=12800)
-    resp, code, _ = await client.unary(
-        client.asr.Recognize,
-        pb.RecognizeRequest(
-            config=pb.SessionStart(utterance_id="u-r"),
-            audio=[r.audio for r in first + second],
-        ),
-    )
-    assert code == grpc.StatusCode.OK
-    assert resp is not None
-    assert resp.final_result.n_best[0].text == "please run get pods"
-    assert resp.final_result.flags.audio_gap
-    assert [w.code for w in resp.warnings] == [pb.WARNING_CODE_AUDIO_GAP]
-    assert resp.accepted.model_id == "mock"
-
-    _, code, err = await client.unary(
-        client.asr.Recognize,
-        pb.RecognizeRequest(config=pb.SessionStart(utterance_id="u-r", model_id="nope")),
-    )
-    assert code == grpc.StatusCode.NOT_FOUND
-    assert err is not None
-    assert err.code == pb.ERROR_CODE_MODEL_NOT_FOUND
-    assert err.utterance_id == "u-r"
 
 
 async def test_silence_yields_empty_final_with_no_speech(serve: Serve):

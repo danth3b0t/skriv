@@ -1,4 +1,4 @@
-"""Capability negotiation, health and warmup."""
+"""Capability negotiation and health."""
 
 from __future__ import annotations
 
@@ -9,14 +9,12 @@ from conftest import kubectl_term, speech, utterance
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
 from hark.v1 import hark_pb2 as pb
-from hark_server.backends.mock import MockBackend
 
 if TYPE_CHECKING:
     from conftest import Serve
 
-# typeshed's grpcio-health-checking stubs type these as Incomplete and give HealthStub
-# no members; the values are ints.
-SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)
+# typeshed's grpcio-health-checking stubs type this as Incomplete and give HealthStub
+# no members; the value is an int.
 NOT_SERVING = cast("int", health_pb2.HealthCheckResponse.NOT_SERVING)
 
 
@@ -38,7 +36,7 @@ async def test_capabilities_describe_model_limits_and_privacy(serve: Serve):
     assert model.state == pb.MODEL_STATE_READY
     assert model.bias.mechanism == pb.BIAS_MECHANISM_DECODE_TIME_BOOST
     assert (model.bias.boost_min, model.bias.boost_max) == (1.0, 5.0)
-    assert {"hark.recognize", "hark.eager_end"} <= set(caps.features)
+    assert "hark.eager_end" in caps.features
     assert "hark.cleanup" not in caps.features  # no cleanup backend configured
     assert caps.limits.max_concurrent_sessions == 3
     assert caps.privacy == pb.PrivacyCapabilities()  # retains nothing => supports no allow_* flag
@@ -65,8 +63,8 @@ async def test_required_features_that_exist_are_accepted(serve: Serve):
     assert len(out.final.n_best[0].words) == 3
 
 
-async def test_cold_model_rejects_until_warmup_then_serves(serve: Serve):
-    client = await serve(backend=MockBackend(load_ms=50), warmup_on_start=False)
+async def test_cold_model_is_not_serving_and_rejects_sessions(serve: Serve):
+    client = await serve(warmup_on_start=False)
     health = cast("_HealthStub", health_pb2_grpc.HealthStub(client.channel))
     check = await health.Check(health_pb2.HealthCheckRequest(service="hark.v1.Asr"))
     assert check.status == NOT_SERVING
@@ -78,12 +76,3 @@ async def test_cold_model_rejects_until_warmup_then_serves(serve: Serve):
     assert out.error is not None
     assert out.error.code == pb.ERROR_CODE_MODEL_NOT_READY
     assert out.error.retryable
-
-    warm = await client.asr.Warmup(pb.WarmupRequest())
-    assert warm.state == pb.MODEL_STATE_READY
-    assert warm.warm_ms >= 50
-    check = await health.Check(health_pb2.HealthCheckRequest(service=""))
-    assert check.status == SERVING
-    ready = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
-    assert ready.etag != cold.etag  # model state changed
-    assert (await client.transcribe(utterance(speech(200)))).code == grpc.StatusCode.OK

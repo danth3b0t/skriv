@@ -5,7 +5,7 @@ The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a
 differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.md).
 
 Services:
-- `hark.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance), `Recognize` (unary), `Warmup`.
+- `hark.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance).
 - `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` that returns validated edits. Only registered when `[cleanup] base_url` is set. Two engines: `s1` (default; "S1-mini" by "Superwhisper" rewrites the text, the rewrite is aligned into edits) and `edits` (a Qwen3 instruction model returns a JSON edit list).
 - `grpc.health.v1.Health`: services `""` and `hark.v1.Asr` are SERVING once the model is READY; `hark.v1.TextCleanup` is SERVING when cleanup is configured.
 
@@ -44,7 +44,7 @@ The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://h
 Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/bench/2026-11-11-cleanup-s1.md)
 and [the Qwen3 bench](../docs/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
 
-`hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`, `--warmup`,
+`hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
 
 ## Configuration
@@ -57,7 +57,7 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 | `server.tls.cert/key` | `--tls-cert/--tls-key` | — | enable TLS |
 | `server.tls.client_ca` | `--tls-client-ca` | — | require client certs from this CA (mTLS) |
 | `server.allow_insecure_non_local` | `--allow-insecure-non-local` | `false` | allow plaintext on non-loopback addresses |
-| `server.warmup_on_start` | `--no-warmup` | `true` | load and warm the model before SERVING; otherwise the model stays COLD until a `Warmup` RPC |
+| `server.warmup_on_start` | `--no-warmup` | `true` | load and warm the model before SERVING; otherwise the model stays COLD and every session is rejected with `MODEL_NOT_READY` (only useful in tests) |
 | `server.max_concurrent_sessions` | | 4 | admission limit (`RESOURCE_EXHAUSTED`/`OVERLOADED`) |
 | `server.max_audio_ms` | | 300000 | per-utterance cap (`AUDIO_TOO_LONG`) |
 | `server.default_finalize_budget_ms` | | 1000 | used when a client sends 0 |

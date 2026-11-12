@@ -26,8 +26,6 @@ from .session import AsrCore, CoreSettings
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
-    from hark.v1 import hark_pb2 as pb
-
     from .config import Config
 
 log = logging.getLogger("hark_server")
@@ -56,23 +54,6 @@ class Running:
             await self.cleanup.close()
         for backend in self.core.backends:
             backend.close()
-
-
-class _Asr(AsrServicer):
-    """AsrServicer that flips health to SERVING once Warmup made the model ready."""
-
-    def __init__(self, core: AsrCore, health_servicer: HealthServicer) -> None:
-        super().__init__(core)
-        self._health = health_servicer
-
-    async def Warmup(
-        self,
-        request: pb.WarmupRequest,
-        context: grpc.aio.ServicerContext[pb.WarmupRequest, pb.WarmupResponse],
-    ) -> pb.WarmupResponse:
-        response = await super().Warmup(request, context)
-        await set_asr_health(self._health, ready=True)
-        return response
 
 
 async def set_asr_health(h: HealthServicer, *, ready: bool) -> None:
@@ -128,7 +109,7 @@ async def start(cfg: Config, backend: Backend | Sequence[Backend] | None = None)
     )
     health_servicer = HealthServicer()
     health_pb2_grpc.add_HealthServicer_to_server(health_servicer, server)  # pyright: ignore[reportUnknownMemberType] - untyped stub
-    pb_grpc.add_AsrServicer_to_server(_Asr(core, health_servicer), server)
+    pb_grpc.add_AsrServicer_to_server(AsrServicer(core), server)
     cleanup = None
     if cfg.cleanup.base_url:
         cleanup = CleanupServicer(cfg.cleanup, core.privacy)

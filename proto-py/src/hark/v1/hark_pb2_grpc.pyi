@@ -84,15 +84,6 @@ class AsrStub:
       failures (RST_STREAM, connection loss, deadline) end a call without a
       terminal message; the client treats those as SessionEnded{FAILED}.
     """
-    Recognize: _grpc.UnaryUnaryMultiCallable[_hark_pb2.RecognizeRequest, _hark_pb2.RecognizeResponse]
-    """Whole-utterance unary variant. Used for replay to a fallback provider,
-    hedged requests, the evaluation harness and batch-only backends.
-    Same semantics as Transcribe with all audio delivered at once.
-    """
-    Warmup: _grpc.UnaryUnaryMultiCallable[_hark_pb2.WarmupRequest, _hark_pb2.WarmupResponse]
-    """Make a model resident and warm (it may have been unloaded to free VRAM).
-    Idempotent. Returns when warm or when the call deadline expires.
-    """
 
 @_typing.type_check_only
 class AsrAsyncStub(AsrStub):
@@ -124,15 +115,6 @@ class AsrAsyncStub(AsrStub):
       rejection before `accepted` and explicit Cancel. Only transport
       failures (RST_STREAM, connection loss, deadline) end a call without a
       terminal message; the client treats those as SessionEnded{FAILED}.
-    """
-    Recognize: _aio.UnaryUnaryMultiCallable[_hark_pb2.RecognizeRequest, _hark_pb2.RecognizeResponse]  # type: ignore[assignment]
-    """Whole-utterance unary variant. Used for replay to a fallback provider,
-    hedged requests, the evaluation harness and batch-only backends.
-    Same semantics as Transcribe with all audio delivered at once.
-    """
-    Warmup: _aio.UnaryUnaryMultiCallable[_hark_pb2.WarmupRequest, _hark_pb2.WarmupResponse]  # type: ignore[assignment]
-    """Make a model resident and warm (it may have been unloaded to free VRAM).
-    Idempotent. Returns when warm or when the call deadline expires.
     """
 
 class AsrServicer(metaclass=_abc_1.ABCMeta):
@@ -174,27 +156,6 @@ class AsrServicer(metaclass=_abc_1.ABCMeta):
           rejection before `accepted` and explicit Cancel. Only transport
           failures (RST_STREAM, connection loss, deadline) end a call without a
           terminal message; the client treats those as SessionEnded{FAILED}.
-        """
-
-    @_abc_1.abstractmethod
-    def Recognize(
-        self,
-        request: _hark_pb2.RecognizeRequest,
-        context: _ServicerContext,
-    ) -> _typing.Union[_hark_pb2.RecognizeResponse, _abc.Awaitable[_hark_pb2.RecognizeResponse]]:
-        """Whole-utterance unary variant. Used for replay to a fallback provider,
-        hedged requests, the evaluation harness and batch-only backends.
-        Same semantics as Transcribe with all audio delivered at once.
-        """
-
-    @_abc_1.abstractmethod
-    def Warmup(
-        self,
-        request: _hark_pb2.WarmupRequest,
-        context: _ServicerContext,
-    ) -> _typing.Union[_hark_pb2.WarmupResponse, _abc.Awaitable[_hark_pb2.WarmupResponse]]:
-        """Make a model resident and warm (it may have been unloaded to free VRAM).
-        Idempotent. Returns when warm or when the call deadline expires.
         """
 
 def add_AsrServicer_to_server(servicer: AsrServicer, server: _typing.Union[_grpc.Server, _aio.Server]) -> None: ...

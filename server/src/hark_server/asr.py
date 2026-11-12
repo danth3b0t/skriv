@@ -4,7 +4,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING
 
 import grpc
@@ -50,56 +49,6 @@ class AsrServicer(pb_grpc.AsrServicer):
         context: _Context[pb.GetCapabilitiesRequest, pb.Capabilities],
     ) -> pb.Capabilities:
         return self.core.capabilities()
-
-    async def Warmup(
-        self,
-        request: pb.WarmupRequest,
-        context: _Context[pb.WarmupRequest, pb.WarmupResponse],
-    ) -> pb.WarmupResponse:
-        backend = self.core.find(request.model_id)
-        if backend is None:
-            await HarkError(E.ERROR_CODE_MODEL_NOT_FOUND, "unknown model_id").abort(context)
-        try:
-            ms = await backend.warmup()
-        except Exception:
-            log.exception("warmup failed")
-            await HarkError(E.ERROR_CODE_BACKEND_FAILURE, "warmup failed", retryable=True).abort(
-                context
-            )
-        return pb.WarmupResponse(
-            state=backend.state, warm_ms=ms, server_time_unix_ms=int(time.time() * 1000)
-        )
-
-    async def Recognize(
-        self,
-        request: pb.RecognizeRequest,
-        context: _Context[pb.RecognizeRequest, pb.RecognizeResponse],
-    ) -> pb.RecognizeResponse:
-        utterance_id = request.config.utterance_id
-        session: Session | None = None
-        try:
-            session = await self.core.open(request.config)
-            warnings = list(session.start_warnings)
-            for chunk in request.audio:
-                warnings += session.add_audio(chunk)
-            session.end_of_audio(None)
-            final = await session.finalize()
-            return pb.RecognizeResponse(
-                accepted=session.accepted(),
-                final_result=final,
-                warnings=warnings + session.final_warnings,
-            )
-        except HarkError as e:
-            log.info("recognize %s: %s", pb.ErrorCode.Name(e.code), e.message)
-            await e.abort(context, utterance_id)
-        except Exception:
-            log.exception("recognize failed")
-            await HarkError(E.ERROR_CODE_BACKEND_FAILURE, "internal error", retryable=True).abort(
-                context, utterance_id
-            )
-        finally:
-            if session is not None:
-                session.close()
 
     async def Transcribe(  # noqa: PLR0912, PLR0915 - one streaming state machine over shared locals
         self,

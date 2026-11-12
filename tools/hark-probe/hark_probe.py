@@ -48,7 +48,6 @@ class Args(argparse.Namespace):
     n_best: int
     words: bool
     repeat: int
-    warmup: bool
     caps: bool
     json_summary: str | None
     quiet: bool
@@ -220,12 +219,6 @@ async def main_async(args: Args) -> int:
             print(json_format.MessageToJson(caps, preserving_proto_field_name=True))
             return 0
         summary: dict[str, object] = {"wav": args.wav, "fast": args.fast, "runs": []}
-        if args.warmup:
-            t0 = time.perf_counter()
-            w = await stub.Warmup(pb.WarmupRequest(model_id=args.model))
-            rpc_ms = (time.perf_counter() - t0) * 1000
-            summary["warmup"] = {"server_warm_ms": w.warm_ms, "rpc_ms": rpc_ms}
-            print(f"warmup: server {w.warm_ms} ms, rpc {rpc_ms:.0f} ms", file=sys.stderr)
         results: list[RunResult] = []
         for i in range(args.repeat):
             try:
@@ -288,7 +281,6 @@ def parse_args(argv: list[str] | None = None) -> Args:
     p.add_argument("--n-best", type=int, default=0)
     p.add_argument("--words", action="store_true", help="request word timestamps + confidence")
     p.add_argument("--repeat", type=int, default=1)
-    p.add_argument("--warmup", action="store_true", help="call Warmup first and report its time")
     p.add_argument("--caps", action="store_true", help="print GetCapabilities and exit")
     p.add_argument("--json-summary", help="write per-run latencies + p50/p95 here")
     p.add_argument("--quiet", action="store_true")

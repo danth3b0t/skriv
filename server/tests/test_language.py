@@ -118,19 +118,6 @@ async def test_implausible_output_is_decoded_again_by_the_english_model(
         assert "language_fallback" not in final.timings.backend_ms
 
 
-async def test_recognize_reports_the_fallback_too(serve: Serve):
-    client = await serve(backend=models(["Гри"]))
-    reqs = utterance(speech(400), languages=["en", "cs"])
-    resp, code, _ = await client.unary(
-        client.asr.Recognize,
-        pb.RecognizeRequest(config=reqs[0].start, audio=[r.audio for r in reqs[1:-1]]),
-    )
-    assert code == grpc.StatusCode.OK
-    assert resp is not None
-    assert resp.final_result.model_id == "english"
-    assert [w.code for w in resp.warnings] == [pb.WARNING_CODE_LANGUAGE_FALLBACK]
-
-
 @pytest.mark.parametrize(
     ("text", "allowed", "reason"),
     [

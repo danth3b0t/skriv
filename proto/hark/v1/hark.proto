@@ -54,15 +54,6 @@ service Asr {
   //   failures (RST_STREAM, connection loss, deadline) end a call without a
   //   terminal message; the client treats those as SessionEnded{FAILED}.
   rpc Transcribe(stream TranscribeRequest) returns (stream TranscribeResponse);
-
-  // Whole-utterance unary variant. Used for replay to a fallback provider,
-  // hedged requests, the evaluation harness and batch-only backends.
-  // Same semantics as Transcribe with all audio delivered at once.
-  rpc Recognize(RecognizeRequest) returns (RecognizeResponse);
-
-  // Make a model resident and warm (it may have been unloaded to free VRAM).
-  // Idempotent. Returns when warm or when the call deadline expires.
-  rpc Warmup(WarmupRequest) returns (WarmupResponse);
 }
 
 // Optional post-ASR cleanup producing a validated edit list.
@@ -95,7 +86,7 @@ message Capabilities {
   string etag = 6;
   // Small namespaced boolean features. Unknown strings MUST be ignored.
   // Defined in v1.0: "hark.opus", "hark.partials", "hark.replay_cache",
-  // "hark.midstream_context", "hark.recognize", "hark.cleanup",
+  // "hark.midstream_context", "hark.cleanup",
   // "hark.eager_end".
   repeated string features = 7;
   // Which PrivacyFlags permissions this server can act on. Sessions that set
@@ -593,32 +584,6 @@ message ErrorDetail {
 }
 
 // =============================================================================
-// Recognize / Warmup
-// =============================================================================
-
-message RecognizeRequest {
-  SessionStart config = 1;
-  repeated AudioChunk audio = 2; // complete utterance, contiguous seq
-}
-
-message RecognizeResponse {
-  SessionAccepted accepted = 1;
-  FinalResult final_result = 2;
-  repeated ServerWarning warnings = 3;
-}
-
-message WarmupRequest {
-  string model_id = 1;   // empty => default model
-  bool include_bias = 2; // also exercise the bias path (graph capture etc.)
-}
-
-message WarmupResponse {
-  ModelState state = 1;
-  uint32 warm_ms = 2;
-  uint64 server_time_unix_ms = 3;
-}
-
-// =============================================================================
 // TextCleanup
 // =============================================================================
 
@@ -705,7 +670,7 @@ enum ModelState {
   MODEL_STATE_UNSPECIFIED = 0;
   MODEL_STATE_LOADING = 1;
   MODEL_STATE_READY = 2;
-  MODEL_STATE_COLD = 3;      // unloaded; Warmup needed (seconds)
+  MODEL_STATE_COLD = 3;      // not loaded yet
   MODEL_STATE_FAILED = 4;
 }
 

@@ -40,4 +40,4 @@ docstring-code-format = true
 
 [lint.pep8-naming]
 # gRPC servicer methods must match the proto RPC names.
-extend-ignore-names = ["GetCapabilities", "Transcribe", "Recognize", "Warmup", "Cleanup", "Check", "Watch"]
+extend-ignore-names = ["GetCapabilities", "Transcribe", "Cleanup", "Check", "Watch"]

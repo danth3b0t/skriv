@@ -9,8 +9,7 @@ SessionStart.languages (none: the default). If a model that detects the language
 text implausible for the requested languages (hark_server.language) and English is one
 of them, the audio is decoded again with an English-only model (language fallback).
 
-Shared by Transcribe (streaming) and Recognize (unary). Logs never contain
-audio, transcripts or context; only ids, sizes and timings.
+Logs never contain audio, transcripts or context; only ids, sizes and timings.
 """
 
 from __future__ import annotations
@@ -92,7 +91,7 @@ class AsrCore:
 
     def features(self) -> list[str]:
         caps = self.backend.capabilities()
-        out = ["hark.recognize"]
+        out: list[str] = []
         if self.settings.eager_end:
             out.append("hark.eager_end")
         if caps.bias.midstream_update not in (
@@ -512,7 +511,7 @@ class Session:
         self.eager = _Eager(task, received, self.ctx.revision)
 
     def end_of_audio(self, eoa: pb.EndOfAudio | None) -> None:
-        """eoa=None: half-close without EndOfAudio, or Recognize."""
+        """eoa=None: half-close without EndOfAudio."""
         if self.ended:
             raise protocol_violation("duplicate end_of_audio")
         self.ended = True

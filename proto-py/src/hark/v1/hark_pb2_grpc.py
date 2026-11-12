@@ -51,16 +51,6 @@ class AsrStub:
                 request_serializer=hark_dot_v1_dot_hark__pb2.TranscribeRequest.SerializeToString,
                 response_deserializer=hark_dot_v1_dot_hark__pb2.TranscribeResponse.FromString,
                 _registered_method=True)
-        self.Recognize = channel.unary_unary(
-                '/hark.v1.Asr/Recognize',
-                request_serializer=hark_dot_v1_dot_hark__pb2.RecognizeRequest.SerializeToString,
-                response_deserializer=hark_dot_v1_dot_hark__pb2.RecognizeResponse.FromString,
-                _registered_method=True)
-        self.Warmup = channel.unary_unary(
-                '/hark.v1.Asr/Warmup',
-                request_serializer=hark_dot_v1_dot_hark__pb2.WarmupRequest.SerializeToString,
-                response_deserializer=hark_dot_v1_dot_hark__pb2.WarmupResponse.FromString,
-                _registered_method=True)
 
 
 class AsrServicer:
@@ -100,23 +90,6 @@ class AsrServicer:
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
-    def Recognize(self, request, context):
-        """Whole-utterance unary variant. Used for replay to a fallback provider,
-        hedged requests, the evaluation harness and batch-only backends.
-        Same semantics as Transcribe with all audio delivered at once.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
-    def Warmup(self, request, context):
-        """Make a model resident and warm (it may have been unloaded to free VRAM).
-        Idempotent. Returns when warm or when the call deadline expires.
-        """
-        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
-        context.set_details('Method not implemented!')
-        raise NotImplementedError('Method not implemented!')
-
 
 def add_AsrServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -129,16 +102,6 @@ def add_AsrServicer_to_server(servicer, server):
                     servicer.Transcribe,
                     request_deserializer=hark_dot_v1_dot_hark__pb2.TranscribeRequest.FromString,
                     response_serializer=hark_dot_v1_dot_hark__pb2.TranscribeResponse.SerializeToString,
-            ),
-            'Recognize': grpc.unary_unary_rpc_method_handler(
-                    servicer.Recognize,
-                    request_deserializer=hark_dot_v1_dot_hark__pb2.RecognizeRequest.FromString,
-                    response_serializer=hark_dot_v1_dot_hark__pb2.RecognizeResponse.SerializeToString,
-            ),
-            'Warmup': grpc.unary_unary_rpc_method_handler(
-                    servicer.Warmup,
-                    request_deserializer=hark_dot_v1_dot_hark__pb2.WarmupRequest.FromString,
-                    response_serializer=hark_dot_v1_dot_hark__pb2.WarmupResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -202,60 +165,6 @@ class Asr:
             '/hark.v1.Asr/Transcribe',
             hark_dot_v1_dot_hark__pb2.TranscribeRequest.SerializeToString,
             hark_dot_v1_dot_hark__pb2.TranscribeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def Recognize(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/hark.v1.Asr/Recognize',
-            hark_dot_v1_dot_hark__pb2.RecognizeRequest.SerializeToString,
-            hark_dot_v1_dot_hark__pb2.RecognizeResponse.FromString,
-            options,
-            channel_credentials,
-            insecure,
-            call_credentials,
-            compression,
-            wait_for_ready,
-            timeout,
-            metadata,
-            _registered_method=True)
-
-    @staticmethod
-    def Warmup(request,
-            target,
-            options=(),
-            channel_credentials=None,
-            call_credentials=None,
-            insecure=False,
-            compression=None,
-            wait_for_ready=None,
-            timeout=None,
-            metadata=None):
-        return grpc.experimental.unary_unary(
-            request,
-            target,
-            '/hark.v1.Asr/Warmup',
-            hark_dot_v1_dot_hark__pb2.WarmupRequest.SerializeToString,
-            hark_dot_v1_dot_hark__pb2.WarmupResponse.FromString,
             options,
             channel_credentials,
             insecure,
