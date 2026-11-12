@@ -106,9 +106,7 @@ def stack_plists(
     server = [str(lay.venv / "bin" / "hark-server"), "--backend", backend]
     plists: dict[str, dict[str, object]] = {}
     if cleanup_model is not None:
-        engine = "s1" if cleanup_model.startswith("s1-mini") else "edits"
         server += ["--cleanup-url", LLAMA_URL, "--cleanup-model", cleanup_model]
-        server += ["--cleanup-engine", engine]
         llama = [str(lay.root / "scripts" / "llama-up"), cleanup_model]
         plists[LLAMA] = agent_plist(LLAMA, llama, lay, "llama.log")
     plists[SERVER] = agent_plist(SERVER, server, lay, "server.log")

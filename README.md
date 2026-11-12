@@ -44,10 +44,8 @@ start and stop.
 
 ```sh
 uv sync
-scripts/fetch-llama && scripts/fetch-models   # llama.cpp and S1-mini into models/
-scripts/llama-up &                             # cleanup model on 127.0.0.1:8080
-uv run hark-server --backend parakeet_mlx --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model s1-mini-q4_k_m &
-uv run hark doctor
+scripts/poc-up                                 # fetches llama.cpp + S1-mini once; starts both servers
+uv run hark doctor                             # (in another terminal)
 uv run hark run                                # hold Right Option to talk; tap it for hands-free; Esc cancels
 ```
 
@@ -55,8 +53,7 @@ The terminal running `hark run` needs Microphone, Accessibility and Input Monito
 (`scripts/build-macos-app`): a menu-bar app that holds those permissions itself
 ([packaging/macos](packaging/macos/README.md)).
 
-> Known issue: `scripts/poc-up` and `hark service install` on macOS still pass the removed `--cleanup-engine` flag,
-> so hark-server refuses to start with cleanup. Start it by hand as above until they are fixed.
+`uv run hark service install` keeps both servers running as launchd agents instead.
 
 ## The daily loop
 

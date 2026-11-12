@@ -104,8 +104,6 @@ logs in `~/Library/Logs/hark/{llama,server}.log`. Options: `--backend`, `--clean
 Components as on Linux (`hark service install server` = `--no-cleanup`; status/restart default to the installed
 agents; `status` exits 3 unless all run), except `client`: on macOS that is Hark.app and its Launch at Login.
 Stop `scripts/poc-up` first: the agents need ports 8080 and 50051 (install warns if they are taken).
-Known issue: with cleanup the server agent still passes the removed `--cleanup-engine` flag and exits at once;
-until that is fixed, use `--no-cleanup` or run hark-server by hand ([server/README.md](../../server/README.md#run)).
 
 ## Running a second instance for testing
 

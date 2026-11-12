@@ -15,6 +15,7 @@ import pytest
 from hark_client.__main__ import main
 from hark_client.service import EXIT_NOT_RUNNING
 from hark_client.service import macos as service
+from hark_server import config as server_config
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
 
@@ -87,8 +88,10 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert server["ProgramArguments"] == [
         str(lay.venv / "bin/hark-server"), "--backend", "mock",
         "--cleanup-url", "http://127.0.0.1:8080/v1", "--cleanup-model", "s1-mini-q4_k_m",
-        "--cleanup-engine", "s1",
     ]  # fmt: skip
+    # the server accepts exactly these arguments
+    cfg = server_config.parse_args(cast("list[str]", server["ProgramArguments"])[1:])
+    assert (cfg.backend.kind, cfg.cleanup.model) == ("mock", "s1-mini-q4_k_m")
     for plist, log in ((llama, "llama.log"), (server, "server.log")):
         assert plist["KeepAlive"] is True
         assert plist["RunAtLoad"] is True
@@ -126,13 +129,6 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert main(["service", "status"]) == EXIT_NOT_RUNNING
     assert "no hark services installed" in capsys.readouterr().out
     assert main(["service", "restart"]) == 1
-
-
-def test_a_qwen_model_uses_the_edit_list_engine(stack: tuple[service.Layout, FakeLaunchctl]):
-    lay, _ = stack
-    plists = service.stack_plists(lay, backend="mock", cleanup_model="qwen3-1.7b-q4_k_m")
-    program = cast("list[str]", plists[service.SERVER]["ProgramArguments"])
-    assert program[-2:] == ["--cleanup-engine", "edits"]
 
 
 def test_install_refuses_missing_models_and_warns_about_busy_ports(

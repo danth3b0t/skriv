@@ -6,8 +6,8 @@
 #   HARK_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
 #
 # Env: HARK_BACKEND (default parakeet_mlx on macOS arm64, else mock), HARK_CLEANUP_MODEL
-#      (default from scripts/fetch-models: S1-mini by Superwhisper; a qwen3-* key switches
-#      to the JSON edit-list engine), HARK_NO_CLEANUP=1 to skip llama-server.
+#      (default from scripts/fetch-models: S1-mini by Superwhisper, the one cleanup model),
+#      HARK_NO_CLEANUP=1 to skip llama-server.
 # Logs: ${XDG_STATE_HOME:-~/.local/state}/hark/*.log
 set -euo pipefail
 
@@ -46,9 +46,7 @@ if [[ "${HARK_NO_CLEANUP:-0}" != 1 ]]; then
   scripts/llama-up "$cleanup_model" >"$logs/llama.log" 2>&1 &
   pids+=($!)
   wait_http http://127.0.0.1:8080/health 120 || { echo "poc-up: llama-server did not start (see $logs/llama.log)" >&2; exit 1; }
-  engine=edits
-  [[ $cleanup_model == s1-mini* ]] && engine=s1
-  server_args+=(--cleanup-url http://127.0.0.1:8080/v1 --cleanup-model "$cleanup_model" --cleanup-engine "$engine")
+  server_args+=(--cleanup-url http://127.0.0.1:8080/v1 --cleanup-model "$cleanup_model")
 fi
 
 echo "poc-up: hark-server ($backend) -> $logs/server.log"
