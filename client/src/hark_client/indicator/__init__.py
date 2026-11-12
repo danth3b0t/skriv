@@ -151,8 +151,17 @@ class Indicator:
             if self._hide_at is not None and self.clock() >= self._hide_at:
                 self._show(self._owner, None)
 
-    def run(self, stop: threading.Event) -> None:
-        self.backend.run(stop, self.tick)
+    def run(self, stop: threading.Event, also: Callable[[], None] | None = None) -> None:
+        """The UI loop on this (main) thread until ``stop``; ``also`` runs on every tick."""
+        if also is None:
+            self.backend.run(stop, self.tick)
+            return
+
+        def tick() -> None:
+            self.tick()
+            also()
+
+        self.backend.run(stop, tick)
 
 
 def make(cfg: IndicatorConfig, *, retry_hint: bool = False) -> Indicator | None:

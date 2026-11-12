@@ -13,7 +13,7 @@ import signal
 import sys
 import threading
 import time
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from hark.v1 import hark_pb2 as pb
 from hark_client import context, guardrails, history, indicator, retry
@@ -277,6 +277,18 @@ class StartupError(RuntimeError):
     pass
 
 
+class AppUi(Protocol):
+    """Main-thread UI beside the indicator (Hark.app's menu-bar item)."""
+
+    def tick(self) -> None:
+        """Called from the UI loop at least every 0.5 s."""
+        ...
+
+    def run(self, stop: threading.Event) -> None:
+        """Run the UI loop itself until ``stop`` (when there is no indicator to run it)."""
+        ...
+
+
 def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
     cfg = svc.cfg.hotkey
     listener = cfg.listener
@@ -314,7 +326,9 @@ def _make_mic(svc: Services, controller: Controller) -> Mic:
     return mic
 
 
-def run(svc: Services) -> int:
+def run(svc: Services, app_ui: Callable[[Controller, threading.Event], AppUi] | None = None) -> int:
+    """``app_ui(controller, stop)`` builds a main-thread UI (``hark app``); setting ``stop``
+    quits."""
     from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
 
     caps = svc.caps.refresh()
@@ -354,8 +368,12 @@ def run(svc: Services) -> int:
     signal.signal(signal.SIGTERM, on_signal)
     log.info("hark ready (paste: %s)", svc.injector.name)
     try:
+        extra = app_ui(controller, stop) if app_ui is not None else None
         if ui is not None:
-            ui.run(stop)  # the toolkit's loop on this (main) thread until a signal
+            # the toolkit's loop on this (main) thread until a signal (or Quit)
+            ui.run(stop, extra.tick if extra is not None else None)
+        elif extra is not None:
+            extra.run(stop)
         else:
             while not stop.wait(0.5):
                 pass

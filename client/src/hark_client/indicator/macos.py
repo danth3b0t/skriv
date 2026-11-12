@@ -5,9 +5,10 @@ Focus safety: the process is an accessory app (no Dock icon, never activated), t
 is shown with ``orderFrontRegardless`` (never ``makeKeyAndOrderFront``). :func:`is_passive`
 checks this and the backend refuses to show a panel that fails it.
 
-AppKit is main-thread only: :meth:`PanelBackend.run` pumps the AppKit event loop on the main
-thread; :meth:`PanelBackend.render` (any thread) stores the latest view and wakes the loop with
-an application-defined event (``postEvent:atStart:`` is safe from other threads).
+AppKit is main-thread only: :func:`pump` runs the AppKit event loop on the main thread (also
+for Hark.app's menu-bar item, ``hark_client.menubar``); :meth:`PanelBackend.render` (any thread)
+stores the latest view and wakes the loop with an application-defined event
+(``postEvent:atStart:`` is safe from other threads).
 
 pyobjc ships no type information, so its objects are ``Any`` here (as in ``hark_client.macos``).
 """
@@ -16,6 +17,7 @@ pyobjc ships no type information, so its objects are ``Any`` here (as in ``hark_
 
 from __future__ import annotations
 
+import functools
 import importlib
 import sys
 import threading
@@ -48,6 +50,33 @@ _DOT_RGB: dict[State, tuple[float, float, float]] = {
     "error": (1.0, 0.27, 0.23),
     "cancelled": (0.6, 0.6, 0.6),
 }
+
+
+@functools.cache
+def shared_app() -> Any:
+    """NSApplication as an accessory app (no Dock icon), launched once. Main thread only."""
+    app = AppKit.NSApplication.sharedApplication()
+    app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
+    app.finishLaunching()
+    return app
+
+
+def pump(stop: threading.Event, tick: Callable[[], None], wait_s: Callable[[], float]) -> None:
+    """The AppKit event loop on the main thread until ``stop``: waits up to ``wait_s()`` for an
+    event, dispatches it, then calls ``tick``. Application-defined events only wake the loop."""
+    app = shared_app()
+    mode = Foundation.NSDefaultRunLoopMode
+    while not stop.is_set():
+        with objc.autorelease_pool():
+            event = app.nextEventMatchingMask_untilDate_inMode_dequeue_(
+                AppKit.NSEventMaskAny,
+                Foundation.NSDate.dateWithTimeIntervalSinceNow_(wait_s()),
+                mode,
+                True,
+            )
+            if event is not None and event.type() != AppKit.NSEventTypeApplicationDefined:
+                app.sendEvent_(event)
+            tick()
 
 
 def make_panel() -> Any:
@@ -94,9 +123,7 @@ class PanelBackend:
         if not Foundation.NSThread.isMainThread():
             raise RuntimeError("the macOS indicator must be created on the main thread")
         self.position = position
-        self.app = AppKit.NSApplication.sharedApplication()
-        self.app.setActivationPolicy_(AppKit.NSApplicationActivationPolicyAccessory)
-        self.app.finishLaunching()
+        self.app = shared_app()
         self.panel = make_panel()
         if not is_passive(self.panel):
             raise RuntimeError("indicator panel could take focus; not using it")
@@ -150,20 +177,11 @@ class PanelBackend:
             self.app.postEvent_atStart_(event, False)
 
     def run(self, stop: threading.Event, tick: Callable[[], None]) -> None:
-        mode = Foundation.NSDefaultRunLoopMode
-        while not stop.is_set():
-            with objc.autorelease_pool():
-                wait = VISIBLE_POLL_S if self._shown is not None else IDLE_POLL_S
-                event = self.app.nextEventMatchingMask_untilDate_inMode_dequeue_(
-                    AppKit.NSEventMaskAny,
-                    Foundation.NSDate.dateWithTimeIntervalSinceNow_(wait),
-                    mode,
-                    True,
-                )
-                if event is not None and event.type() != AppKit.NSEventTypeApplicationDefined:
-                    self.app.sendEvent_(event)
-                tick()
-                self._apply()
+        def step() -> None:
+            tick()
+            self._apply()
+
+        pump(stop, step, lambda: VISIBLE_POLL_S if self._shown is not None else IDLE_POLL_S)
         self.panel.orderOut_(None)
 
     def _apply(self) -> None:
