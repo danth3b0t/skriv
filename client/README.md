@@ -1,4 +1,4 @@
-# hark-client (POC)
+# hark-client
 
 Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) server
 ([ADR-001](../docs/protocol/ADR-001-protocol.md)). Hold a key, speak, release: the text is pasted into the focused app.
@@ -7,9 +7,12 @@ Tap the key instead to dictate hands-free until the next tap.
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list, if the provider may see it)
           └─ provider router picks a server (cached health) ──► Transcribe stream; 40 ms PCM16 chunks (+ pre-roll)
-key up ───► EndOfAudio ► FinalResult ► anchor gate ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
-          ► focus re-check ► paste (or clipboard + notification) ► history.jsonl (+ audio kept for `hark retry`)
+key up ───► EndOfAudio ► FinalResult ► degenerate-output check ► anchor gate ► canonicalize ► spoken symbols (terminal)
+          ► self-corrections ► cleanup (deadline) + fidelity check ► guardrails
+          ► focus re-check ► smart spacing ► paste (or clipboard + notification) ► history.jsonl (+ audio kept for `hark retry`)
 ```
+
+Module by module: [docs/architecture.md](../docs/architecture.md).
 
 ## Quickstart
 
@@ -111,7 +114,15 @@ Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = 
 (`start|stop|toggle|cancel|status|ping|paste-last|pause|resume|profile …|reload`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
-the last dictation's status/delivery/latency (never its text) and the profile override.
+the provider in use, config changes, the last dictation's status/delivery/latency (never its text) and the profile
+override; a JSON `subscribe` keeps the connection open and sends a status line on every change.
+
+- `pause` refuses dictations and releases the mic until `resume` (both idempotent).
+- `reload` re-reads the config file for the next dictation: `[[words]]`, `[context]`, `[gate]`, `[cleanup]`,
+  `[feedback]`, `[profiles]`, `[retry]` and the paste keys except `method`, `restore_clipboard`,
+  `restore_delay_ms` and `join_window_ms`. Everything else (`[[providers]]`, `[server]`, `[audio]`, `[hotkey]`, …)
+  is named in the reply and in status as needing a restart; a config that does not load is refused and the old one
+  stays.
 
 ## Configuration
 
@@ -120,6 +131,8 @@ the last dictation's status/delivery/latency (never its text) and the profile ov
 unknown keys and wrong types are errors.
 
 ```toml
+log_level = "INFO"            # -v / --verbose: DEBUG
+
 [server]                      # per dictation, whichever provider serves it; servers: [[providers]] (below)
 language = ""                 # BCP-47; "" => detect
 finalize_budget_ms = 0        # 0 => server default
@@ -137,6 +150,7 @@ confident_anchor = 0.97       # ...and been less sure than this of its own word 
 [cleanup]
 enabled = true                # profiles opt in individually
 deadline_ms = 1000            # timeout/failure => uncleaned text
+resolve_corrections = true    # apply spoken self-corrections ("in C, no, in Rust") before the model, every profile
 
 [audio]
 device = ""                   # PortAudio name or index
@@ -172,7 +186,8 @@ notify = true
 start_cue = "never"           # start sound: never | auto (only without the indicator) | always (see below)
 
 [history]
-dir = "~/.local/share/hark"
+dir = "~/.local/share/hark"  # $XDG_DATA_HOME/hark
+enabled = true                # false: no history.jsonl
 
 [retry]
 keep = 10                     # audio of the last N dictations for `hark retry` (0 = off), see below
@@ -190,6 +205,25 @@ cleanup_profile = "terminal"  # server CleanupProfile.id
 
 A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`,
 unless one was picked by hand (below).
+
+### Migrating an older config
+
+These keys were removed; a config that still has them fails to load (`hark: config error: unknown config key …`,
+exit 2). Delete them:
+
+| Key | Now |
+|---|---|
+| `[server]` `address`, `tls_ca`, `tls_cert`, `tls_key`, `tls_server_name`, `model_id` | the same keys in a `[[providers]]` entry; `[server]` keeps `language`, `finalize_budget_ms`, `final_timeout_ms` |
+| `[learn]` (correction learning) | gone; add a spelling with `hark words add` |
+| `[profile_switch]` (`sticky`) | gone; `hark ctl profile set NAME` is for the next dictation only |
+| `hotkey.undo_key`, `hotkey.swap_key`, `hotkey.profile_key` | gone, with `hark ctl undo`, `swap-raw` and `profile next`; `hark last --raw --copy` gives the uncleaned text |
+| `paste.verify` | gone (no read-back after the paste) |
+| `history.save_recordings` | gone; the retry ring (`retry.keep`) is the only audio kept, `hark eval add` copies a dictation into an eval set |
+| `feedback.cue_mask_ms` | gone; the start sound plays on the first recorded audio and masks nothing |
+
+The built-in `chat` profile is gone too. A `[profiles.chat]` table still loads, but as a new profile with every
+field at its default (no cleanup): give it `apps`, `cleanup = true` and `cleanup_profile = "chat"` (the server still
+has that cleanup profile) or delete it.
 
 ## Hands-free, cancel and profiles
 
@@ -338,8 +372,8 @@ clip's `timings_ms`.
   rewording, spoken numbers as digits). Only the text is sent; the shortlist stays here. The rewrite replaces the text
   only if it passes one fidelity check (`hark_client/fidelity.py`, also used by `hark eval`): shortlist identifiers and
   code-like tokens keep their spelling and count (a re-cased one is put back first), the same number of negations and
-  numbers (`seven` = `7`), no content words added or dropped beyond about one in eight, no new line break in the
-  terminal and chat profiles. A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds") is checked
+  numbers (`seven` = `7`), no content words added or dropped beyond about one in eight, no new line break in a
+  terminal profile. A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds") is checked
   against the corrected text. Status `applied`, `no_edits` (the rewrite equals the text) or `rejected` (the text
   stays; `reason` names the failed rule, `rewrite` keeps the rejected text in the history). Timeouts and RPC errors
   fall back to the uncleaned text. `server.language` other than `en*`, or text the server finds non-English, is not
@@ -405,17 +439,19 @@ capped at a third of `context.max_terms` (10); `hark words add` refuses past it 
 ## Anchor gate
 
 With bias terms the server returns the biased decode and an unbiased anchor of the same audio
-(`hark_client/gate.py`). Where they differ, the biased words survive only if they are a bias hit, the anchor heard
+(`hark_client/gate.py`). Where they differ around a bias hit, the biased words survive only if the anchor heard
 something close to the term (`max_distance`) without being sure of its own word (`confident_anchor`), and the
-change adds/removes no negation or number, is not just an inflection and drops no function word. Everything else,
-including any change outside a hit, goes back to the anchor's words. `history.jsonl` records each region as
-`gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`. Measurements:
-[docs/bench/2026-11-12-acoustic-gate.md](../docs/bench/2026-11-12-acoustic-gate.md).
+change adds/removes no negation or number, is not just an inflection and drops no function word; otherwise that
+region goes back to the anchor's words. A difference outside every hit keeps the biased words (the bias did not
+act there). Every biased word also gets the anchor's confidence, which canonicalization reads. `history.jsonl`
+records each region as `gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`.
+Measurements: [acoustic gate](../docs/bench/2026-11-12-acoustic-gate.md) (thresholds) and
+[gate and self-corrections](../docs/bench/2026-11-13-acc-gate-corrections.md) (current behaviour).
 
 ## History
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+outcome (with a rejected `rewrite`), `uncleaned_text`, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
 `keyup_to_paste_ms`, and `release_to_paste_ms`: from the key release, monotonic clock, to the text sent; this is
 what you wait, including the recovery copy and the wait for the key-down context that the other stage timings
@@ -428,19 +464,20 @@ the server's `Timings`, and which provider served it (`provider`: name, address,
 ## Tests
 
 ```sh
-uv run pytest client/tests -q     # ~60 tests, ~2 s
+uv run pytest client/tests -q     # ~650 tests
 ```
 
 `hark once` runs end to end against an in-process hark server (mock backend, on its own event-loop thread) with a
 fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine: biasing, cleanup, terminal profile,
-cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the protected-span
-fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocols (text + JSON v1
+cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the fidelity check
+against unfaithful rewrites, self-corrections, spoken symbols, canonicalization traps, config parsing and
+`hark words`, `hark eval`, the ctl socket protocols (text + JSON v1
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
 `hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), dictionary terms reaching the server, the
 AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
-`paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
-events, the start cue on live audio, release->paste latency, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
+`paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter) with fake key
+events, the Omarchy bar plugin's rules (`Model.js` under Node, skipped without `node`), the start cue on live audio, release->paste latency, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
 (launchd plists, install/status/restart/uninstall against a fake launchctl, the login-item LaunchAgent fallback).
 
 ## Limitations
