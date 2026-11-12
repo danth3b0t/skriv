@@ -1,7 +1,7 @@
 # hark-server
 
 Python (`grpc.aio`) server for the **hark.v1** protocol: [`proto/hark/v1/hark.proto`](../proto/hark/v1/hark.proto).
-The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a](../docs/protocol/proposal-a.md);
+The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a](../docs/archive/protocol/proposal-a.md);
 differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.md).
 
 Services:
@@ -40,8 +40,8 @@ same flags as `scripts/poc-up`) as launchd user agents that start at login and r
 `~/Library/Logs/hark/`. `hark service status|restart|uninstall`; see [packaging/macos](../packaging/macos/README.md).
 
 The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://huggingface.co/superwhisper/s1-mini),
-Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/bench/2026-11-11-cleanup-s1.md)
-and [the Qwen3 bench](../docs/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
+Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/archive/bench/2026-11-11-cleanup-s1.md)
+and [the Qwen3 bench](../docs/archive/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
 
 `hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.

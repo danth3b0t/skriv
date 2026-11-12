@@ -1,8 +1,8 @@
 # Context engine: sources, ranking, learned vocabulary, prefetch
 
 Status: implemented on `feat/ctx-rank` (2026-11-12), `client/src/hark_client/context/`. Applies
-[research/context-ranking/REPORT.md](research/context-ranking/REPORT.md) and the context-package parts of
-[research/context-architecture.md](research/context-architecture.md). No protocol change.
+[archive/research/context-ranking/REPORT.md](archive/research/context-ranking/REPORT.md) and the context-package parts of
+[archive/research/context-architecture.md](archive/research/context-architecture.md). No protocol change.
 
 ## What `collect()` gathers
 
