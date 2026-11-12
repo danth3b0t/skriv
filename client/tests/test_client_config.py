@@ -5,10 +5,10 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client import ctl
-from hark_client.__main__ import main
-from hark_client.config import Config, ConfigError, load
-from hark_client.context import FocusInfo
+from skriv_client import ctl
+from skriv_client.__main__ import main
+from skriv_client.config import Config, ConfigError, load
+from skriv_client.context import FocusInfo
 
 if TYPE_CHECKING:
     from pathlib import Path

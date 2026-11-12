@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import pytest
 
-from hark_client.context import focus, focus_token
+from skriv_client.context import focus, focus_token
 
 
 @dataclass(frozen=True)

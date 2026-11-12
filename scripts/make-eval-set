@@ -2,7 +2,7 @@
 # /// script
 # requires-python = ">=3.12,<3.13"
 # dependencies = [
-#     "hark-client",
+#     "skriv-client",
 #     "kokoro-onnx==0.6.1",
 #     "phonemizer==3.6.0",
 #     "espeakng-loader==0.2.4",
@@ -12,8 +12,8 @@
 #     "huggingface-hub==2.4.0",
 # ]
 # [tool.uv.sources]
-# hark-client = { path = "../client", editable = true }
-# hark-proto = { path = "../proto-py", editable = true }
+# skriv-client = { path = "../client", editable = true }
+# skriv-proto = { path = "../proto-py", editable = true }
 # ///
 """make-eval-set: build the accuracy eval set eval/dev-v1 for `hark eval run --set` (docs/eval.md).
 
@@ -60,11 +60,11 @@ from typing import Any
 import numpy as np
 import soxr
 
-from hark_client.audio import read_wav, to_pcm16, write_wav
-from hark_client.context.aliases import spoken_forms
-from hark_client.context.rank import Candidate, Origin, rank
-from hark_client.context.types import ContextSnapshot, FocusInfo, TermKind
-from hark_client.history import snapshot_json
+from skriv_client.audio import read_wav, to_pcm16, write_wav
+from skriv_client.context.aliases import spoken_forms
+from skriv_client.context.rank import Candidate, Origin, rank
+from skriv_client.context.types import ContextSnapshot, FocusInfo, TermKind
+from skriv_client.history import snapshot_json
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from eval_prompts import PROMPTS, Prompt

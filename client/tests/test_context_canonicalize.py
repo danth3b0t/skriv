@@ -1,8 +1,8 @@
 import pytest
 
-from hark_client.context import Term, TermKind, TermSource, WordInfo, canonicalize
-from hark_client.context.aliases import extract_terms
-from hark_client.context.rank import Candidate, Origin, rank
+from skriv_client.context import Term, TermKind, TermSource, WordInfo, canonicalize
+from skriv_client.context.aliases import extract_terms
+from skriv_client.context.rank import Candidate, Origin, rank
 
 
 def term(

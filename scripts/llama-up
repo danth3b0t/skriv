@@ -5,7 +5,7 @@
 #   scripts/llama-up qwen3-1.7b-q4_k_m       # a key from scripts/fetch-models, or a .gguf path
 #   scripts/llama-up qwen3-0.6b-q8_0 --port 8081 -v   # extra args go to llama-server
 #
-# Then: hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model <key>
+# Then: skriv-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model <key>
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"

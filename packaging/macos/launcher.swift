@@ -1,7 +1,7 @@
 // Hark.app's main executable (Contents/MacOS/Hark).
 //
 // It runs the hark client *in this process* by loading the uv-managed CPython (libpython) and
-// calling Py_BytesMain with the venv's interpreter path as argv[0], so `python -m hark_client
+// calling Py_BytesMain with the venv's interpreter path as argv[0], so `python -m skriv_client
 // app` runs inside the bundle's own executable:
 //
 // - TCC (Microphone, Accessibility, Input Monitoring) attributes access to the *responsible*
@@ -123,6 +123,6 @@ typealias PyBytesMain = @convention(c) (Int32, UnsafeMutablePointer<UnsafeMutabl
 // and sys.executable is a real interpreter (for `hark retry` and other children).
 // Launch Services may add -psn_* arguments; drop them.
 let extra = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }
-let args = [python, "-m", "hark_client", "app"] + extra
+let args = [python, "-m", "skriv_client", "app"] + extra
 var cargs: [UnsafeMutablePointer<CChar>?] = args.map { strdup($0) } + [nil]
 exit(unsafeBitCast(main, to: PyBytesMain.self)(Int32(args.count), &cargs))

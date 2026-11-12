@@ -10,8 +10,8 @@ import pytest
 
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
-from hark_client import cleanup, fidelity
-from hark_client.context import Term, TermKind, TermSource
+from skriv_client import cleanup, fidelity
+from skriv_client.context import Term, TermKind, TermSource
 
 from .conftest import KUBECTL
 
@@ -139,8 +139,8 @@ def server() -> Iterator[tuple[FixedRewrite, grpc.Channel]]:
         ("please run kubectl get", "please run kubectl get", [KUBECTL],
          "please run kubectl get", "no_edits", ""),
         # a re-cased identifier is put back; a sentence-start capital is no reason to reject
-        ("hark-server should log it", "Hark-server should log it.", [term("hark-server")],
-         "hark-server should log it.", "applied", ""),
+        ("skriv-server should log it", "Skriv-server should log it.", [term("skriv-server")],
+         "skriv-server should log it.", "applied", ""),
         ("please run kubectl get", "Please don't run kubectl get.", [KUBECTL],
          "please run kubectl get", "rejected", "negations 0 -> 1"),
         ("please run kubectl get", "Please run the cube control get.", [KUBECTL],

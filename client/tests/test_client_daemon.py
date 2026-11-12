@@ -15,17 +15,17 @@ from typing import TYPE_CHECKING, cast
 import numpy as np
 import pytest
 
-from hark_client import history, retry
-from hark_client.audio import speech_ms
-from hark_client.config import ProviderConfig
-from hark_client.context import CaretContext
-from hark_client.continuation import PASTE_ECHO_S, KeyPress
-from hark_client.indicator import Indicator
-from hark_client.inject import DryRunInjector, PasteResult
-from hark_client.providers import Router
-from hark_server.backends.mock import MockBackend
+from skriv_client import history, retry
+from skriv_client.audio import speech_ms
+from skriv_client.config import ProviderConfig
+from skriv_client.context import CaretContext
+from skriv_client.continuation import PASTE_ECHO_S, KeyPress
+from skriv_client.indicator import Indicator
+from skriv_client.inject import DryRunInjector, PasteResult
+from skriv_client.providers import Router
+from skriv_server.backends.mock import MockBackend
 
-from .conftest import HarkServer, RecordingFeedback, make_controller, pcm, snapshot, wait_idle
+from .conftest import RecordingFeedback, SkrivServer, make_controller, pcm, snapshot, wait_idle
 from .test_client_indicator import FakeBackend
 
 if TYPE_CHECKING:
@@ -33,9 +33,9 @@ if TYPE_CHECKING:
 
     import numpy.typing as npt
 
-    from hark_client.daemon import Controller
-    from hark_client.mic import Mic
-    from hark_client.pipeline import Result
+    from skriv_client.daemon import Controller
+    from skriv_client.mic import Mic
+    from skriv_client.pipeline import Result
 
     from .conftest import FakeContext
 
@@ -340,7 +340,7 @@ def test_forks_do_not_run_grpc_fork_handlers():
     # active handlers log "Other threads are currently calling into gRPC, skipping
     # fork() handlers"; disabled ones are never registered.
     script = (
-        "import subprocess, time, hark_client, grpc\n"
+        "import subprocess, time, skriv_client, grpc\n"
         "ch = grpc.insecure_channel('127.0.0.1:9')\n"
         "call = ch.unary_unary('/x.Y/Z').future(b'', wait_for_ready=True, timeout=5)\n"
         "time.sleep(0.05)\n"
@@ -407,7 +407,7 @@ class GatedInjector(DryRunInjector):
 def slow(tmp_path: Path, fake_context: FakeContext) -> Iterator[tuple[Controller, GatedInjector]]:
     """A controller whose server takes 300 ms per decode and whose pastes wait for release."""
     fake_context.snapshots = [snapshot("kitty")]
-    server = HarkServer(backend=MockBackend(decode_ms=300))
+    server = SkrivServer(backend=MockBackend(decode_ms=300))
     router = Router([ProviderConfig(address=server.target)])
     yield make_controller(tmp_path, router, GatedInjector())
     router.close()

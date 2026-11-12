@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from hark_client import evalset, history, retry
-from hark_client.__main__ import main
+from skriv_client import evalset, history, retry
+from skriv_client.__main__ import main
 
 from .conftest import pcm, snapshot
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .conftest import FakeContext, HarkServer
+    from .conftest import FakeContext, SkrivServer
 
 
 NONE: list[tuple[str, str]] = []
@@ -70,7 +70,7 @@ def test_wer_counts_substitutions_insertions_and_deletions():
 
 def test_add_run_accept(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
 ):
@@ -84,7 +84,7 @@ def test_add_run_accept(
     )
     history.append(data, {"utterance_id": uid, "raw_text": "please run kubectl get",
                           "replacements": [{"term": "kubectl"}]})  # fmt: skip
-    argv = ["--config", str(cfg), "--server", hark_server.target, "eval"]
+    argv = ["--config", str(cfg), "--server", skriv_server.target, "eval"]
 
     assert main([*argv, "add"]) == 0
     label_path = data / "eval" / uid / evalset.LABEL

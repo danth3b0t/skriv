@@ -9,9 +9,9 @@ from pathlib import Path
 
 import pytest
 
-from hark_client.context import agents, vocab
-from hark_client.context.rank import Origin
-from hark_client.context.vocab import VocabStore
+from skriv_client.context import agents, vocab
+from skriv_client.context.rank import Origin
+from skriv_client.context.vocab import VocabStore
 
 NOW = time.time()
 ENDED = NOW - 2 * 86400  # two days ago

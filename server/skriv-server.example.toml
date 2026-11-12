@@ -1,0 +1,46 @@
+# skriv-server configuration. CLI flags override these values.
+# uv run skriv-server --config skriv-server.example.toml
+
+log_level = "INFO"
+
+[server]
+# host:port or unix:/path. Plaintext is refused on non-loopback addresses
+# unless [server.tls] is set or allow_insecure_non_local = true.
+listen = "127.0.0.1:50051"
+name = "mac-dev"                  # shown to clients in Capabilities.server.name
+accelerator = "Apple M5 Pro"      # informational
+max_concurrent_sessions = 4
+max_audio_ms = 300000
+default_finalize_budget_ms = 1000 # used when the client sends finalize_budget_ms = 0
+eager_end = true                  # advertise + honour EagerEnd
+warmup_on_start = true            # load + warm before health says SERVING
+allow_insecure_non_local = false
+
+[server.tls]
+# cert/key enable TLS; client_ca additionally requires client certificates (mTLS).
+cert = ""
+key = ""
+client_ca = ""
+
+[backend]
+kind = "parakeet_mlx"             # mock | parakeet_mlx | transcribe_cpp
+model = "mlx-community/parakeet-tdt-0.6b-v3"
+model_id = ""                     # "" => last path component of `model`
+
+[backend.options]                 # passed to the backend constructor
+dtype = "bfloat16"
+# parakeet_mlx: incremental_min_ms = 30000 (decode while streaming from this length; -1: never),
+# incremental_stride_ms = 6000, beam_size, patience, boost_min, boost_max,
+# english_model = "mlx-community/parakeet-tdt-0.6b-v2" (English-only model served beside a multilingual
+# `model` for sessions with languages ["en"] and the language fallback; loaded on first use; "" = none)
+# transcribe_cpp (model = path to a GGUF, scripts/fetch-transcribe): device = "cpu" (| metal | vulkan |
+# cuda | auto), threads = 0 (library default), library = "" ($TRANSCRIBE_LIBRARY), binding = ""
+# ($HARK_TRANSCRIBE_BINDING), load_timeout_s = 120, decode_timeout_s = 60. scripts/cpu-server-up runs it.
+# mock backend options: word_ms, decode_ms, decode_ms_per_s, load_ms, max_n_best, script
+
+[cleanup]
+base_url = ""                     # e.g. "http://127.0.0.1:8080/v1" (llama-server); "" disables TextCleanup
+model = ""
+api_key_env = ""                  # name of an env var holding the LLM server's bearer token
+default_budget_ms = 400
+max_input_bytes = 4000

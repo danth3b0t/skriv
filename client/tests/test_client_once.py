@@ -10,16 +10,16 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from hark_client import context
-from hark_client.__main__ import main
-from hark_client.context import ContextSnapshot, Term, TermKind, TermSource
+from skriv_client import context
+from skriv_client.__main__ import main
+from skriv_client.context import ContextSnapshot, Term, TermKind, TermSource
 
 from .conftest import KUBECTL, snapshot, write_wav
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .conftest import FakeContext, FakeLLM, HarkServer
+    from .conftest import FakeContext, FakeLLM, SkrivServer
 
 
 def run_once(
@@ -48,7 +48,7 @@ def run_once(
 
 def test_prose_dictation_is_biased_cleaned_and_pasted(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_llm: FakeLLM,
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
@@ -57,7 +57,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
     fake_llm.respond("Please run kubectl get")
 
     # 48 kHz stereo input exercises the resampler; 1 s = 5 mock words.
-    code, rec = run_once(tmp_path, hark_server.target, wav_rate=48000, channels=2)
+    code, rec = run_once(tmp_path, skriv_server.target, wav_rate=48000, channels=2)
 
     assert code == 0
     out = capsys.readouterr().out
@@ -82,7 +82,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
 
 def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_llm: FakeLLM,
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
@@ -91,7 +91,7 @@ def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     # The re-cased shortlist identifier is put back; the terminal profile adds no final period.
     fake_llm.respond("Please run Kubectl get.")
 
-    code, rec = run_once(tmp_path, hark_server.target)
+    code, rec = run_once(tmp_path, skriv_server.target)
 
     assert code == 0
     assert "[dry-run] would terminal paste: 'Please run kubectl get'" in capsys.readouterr().out
@@ -106,7 +106,7 @@ def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
 )
 def test_spoken_symbols_are_written_in_the_terminal_profile_only(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_llm: FakeLLM,
     fake_context: FakeContext,
     monkeypatch: pytest.MonkeyPatch,
@@ -120,18 +120,18 @@ def test_spoken_symbols_are_written_in_the_terminal_profile_only(
 
     monkeypatch.setattr(context, "canonicalize", canonicalize)
     fake_context.snapshots = [snapshot("com.mitchellh.ghostty")]
-    code, rec = run_once(tmp_path, hark_server.target, "--profile", profile)
+    code, rec = run_once(tmp_path, skriv_server.target, "--profile", profile)
     assert (code, rec["final_text"]) == (0, pasted)
 
 
 def test_cleanup_timeout_falls_back_to_canonical_text(
-    tmp_path: Path, hark_server: HarkServer, fake_llm: FakeLLM, fake_context: FakeContext
+    tmp_path: Path, skriv_server: SkrivServer, fake_llm: FakeLLM, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot()]
     fake_llm.respond("Please run kubectl get", delay=1.0)
 
     t0 = time.perf_counter()
-    code, rec = run_once(tmp_path, hark_server.target, cleanup_deadline_ms=200)
+    code, rec = run_once(tmp_path, skriv_server.target, cleanup_deadline_ms=200)
 
     assert code == 0
     assert rec["final_text"] == "please run kubectl get"
@@ -140,12 +140,12 @@ def test_cleanup_timeout_falls_back_to_canonical_text(
 
 
 def test_slow_context_does_not_hold_back_the_session(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+    tmp_path: Path, skriv_server: SkrivServer, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot()]
     fake_context.delay_s = 0.6  # default deadline is 150 ms
 
-    code, rec = run_once(tmp_path, hark_server.target, "--profile", "terminal")
+    code, rec = run_once(tmp_path, skriv_server.target, "--profile", "terminal")
 
     assert code == 0
     timings = cast("dict[str, float]", rec["timings_ms"])
@@ -156,7 +156,7 @@ def test_slow_context_does_not_hold_back_the_session(
 
 def test_focus_change_copies_instead_of_pasting(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
 ):
@@ -165,7 +165,7 @@ def test_focus_change_copies_instead_of_pasting(
         snapshot("com.tinyspeck.slackmacgap", window_id="w2"),
     ]
 
-    code, rec = run_once(tmp_path, hark_server.target, "--profile", "terminal")
+    code, rec = run_once(tmp_path, skriv_server.target, "--profile", "terminal")
 
     assert code == 0
     out = capsys.readouterr().out
@@ -192,7 +192,7 @@ def test_unreachable_server_fails_without_pasting(
 
 @pytest.mark.parametrize("where", ["config", "repo"])
 def test_dictionary_words_bias_the_recognizer_without_any_context(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext, where: str
+    tmp_path: Path, skriv_server: SkrivServer, fake_context: FakeContext, where: str
 ):
     words = '[[words]]\nword = "kubectl"\nspoken = ["Cube Control!"]\n'
     repo = tmp_path / "repo"
@@ -201,7 +201,7 @@ def test_dictionary_words_bias_the_recognizer_without_any_context(
         (repo / ".hark" / "words.toml").write_text(words)
     snap = replace(snapshot("com.apple.Notes", terms=()), repo_root=str(repo))
     fake_context.snapshots = [snap]
-    _, rec = run_once(tmp_path, hark_server.target, config=words if where == "config" else "")
+    _, rec = run_once(tmp_path, skriv_server.target, config=words if where == "config" else "")
     # The mock server only rewrites "cube control" when the bias term reached it.
     assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
 
@@ -225,7 +225,7 @@ HARK = Term("Hark", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
 )
 def test_anchor_gate_restores_the_anchor_words_and_records_why(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_context: FakeContext,
     enabled: bool,
     canonical: str,
@@ -233,7 +233,7 @@ def test_anchor_gate_restores_the_anchor_words_and_records_why(
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes", terms=(KUBECTL, HARK))]
     _, rec = run_once(
-        tmp_path, hark_server.target, config=f"[gate]\nenabled = {str(enabled).lower()}\n"
+        tmp_path, skriv_server.target, config=f"[gate]\nenabled = {str(enabled).lower()}\n"
     )
     assert rec["raw_text"] == "please run kubectl Hark"
     # gate on: both regions go back to the anchor's words; canonicalization then

@@ -1,7 +1,7 @@
 import math
 
-from hark_client.context.rank import MAX_TERMS, Candidate, Origin, rank
-from hark_client.context.types import TermKind
+from skriv_client.context.rank import MAX_TERMS, Candidate, Origin, rank
+from skriv_client.context.types import TermKind
 
 ID = TermKind.IDENTIFIER
 

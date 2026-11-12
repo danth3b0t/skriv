@@ -15,7 +15,7 @@ import pytest
 from conftest import audio_reqs, eoa_req, kubectl_term, silence, speech, start_req, utterance
 
 from hark.v1 import hark_pb2 as pb
-from hark_server.backends.mock import MockBackend
+from skriv_server.backends.mock import MockBackend
 
 if TYPE_CHECKING:
     from conftest import Serve

@@ -1,5 +1,5 @@
 """scripts/hark-certs: the certificates it makes give a working mTLS session between hark and
-hark-server, and the server turns away clients without one of them."""
+skriv-server, and the server turns away clients without one of them."""
 
 from __future__ import annotations
 
@@ -14,16 +14,16 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
-from hark_client import asr
-from hark_client.config import ProviderConfig
-from hark_server.backends.mock import MockBackend
-from hark_server.config import Config
-from hark_server.server import start
+from skriv_client import asr
+from skriv_client.config import ProviderConfig
+from skriv_server.backends.mock import MockBackend
+from skriv_server.config import Config
+from skriv_server.server import start
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from hark_server.server import Running
+    from skriv_server.server import Running
 
 CERTS = Path(__file__).parents[2] / "scripts" / "hark-certs"
 SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)

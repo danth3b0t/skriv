@@ -9,20 +9,20 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from hark_client import retry
-from hark_client.__main__ import main
-from hark_client.config import Config, ProviderConfig
-from hark_client.context import ContextSnapshot, FocusInfo
-from hark_client.daemon import Controller
-from hark_client.inject import DryRunInjector
-from hark_client.pipeline import Services
-from hark_client.providers import Router
-from hark_server.backends.mock import MockBackend
+from skriv_client import retry
+from skriv_client.__main__ import main
+from skriv_client.config import Config, ProviderConfig
+from skriv_client.context import ContextSnapshot, FocusInfo
+from skriv_client.daemon import Controller
+from skriv_client.inject import DryRunInjector
+from skriv_client.pipeline import Services
+from skriv_client.providers import Router
+from skriv_server.backends.mock import MockBackend
 
 from .conftest import (
     KUBECTL,
-    HarkServer,
     RecordingFeedback,
+    SkrivServer,
     make_controller,
     pcm,
     snapshot,
@@ -89,7 +89,7 @@ def test_ring_keeps_the_newest_n_privately_and_purges_the_rest(
 
 def test_failed_dictation_is_retried_with_its_original_context(
     tmp_path: Path,
-    hark_server: HarkServer,
+    skriv_server: SkrivServer,
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
 ):
@@ -118,7 +118,7 @@ def test_failed_dictation_is_retried_with_its_original_context(
     config = tmp_path / "config.toml"
     config.write_text(f'[history]\ndir = "{tmp_path}"\n')
     capsys.readouterr()
-    code = main(["--config", str(config), "--server", hark_server.target, "retry", "--dry-run"])
+    code = main(["--config", str(config), "--server", skriv_server.target, "retry", "--dry-run"])
 
     out = capsys.readouterr().out
     assert code == 0
@@ -136,7 +136,7 @@ def test_degenerate_recognizer_output_fails_and_is_kept_for_retry(
     """`<unk> <unk> ...` or one character over and over (baseline syn-005) is never pasted:
     the dictation fails like a transcription error and its audio stays in the ring."""
     fake_context.snapshots = [snapshot("kitty")]
-    server = HarkServer(backend=MockBackend(script=[word]))
+    server = SkrivServer(backend=MockBackend(script=[word]))
     router = Router([ProviderConfig(address=server.target)])
     try:
         c, injector = make_controller(tmp_path, router, DryRunInjector(out=lambda _: None))

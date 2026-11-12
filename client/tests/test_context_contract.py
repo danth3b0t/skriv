@@ -1,4 +1,4 @@
-from hark_client.context import ContextSnapshot, canonicalize, collect
+from skriv_client.context import ContextSnapshot, canonicalize, collect
 
 
 def test_collect_never_raises_and_returns_snapshot():

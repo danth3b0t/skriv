@@ -13,17 +13,17 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client.context import agents, engine, prefetch, vocab
-from hark_client.context.agents import AgentSession, Group
-from hark_client.context.focus import FocusResult
-from hark_client.context.repo import RepoInfo
-from hark_client.context.terminal import TerminalState
-from hark_client.context.types import FocusInfo
+from skriv_client.context import agents, engine, prefetch, vocab
+from skriv_client.context.agents import AgentSession, Group
+from skriv_client.context.focus import FocusResult
+from skriv_client.context.repo import RepoInfo
+from skriv_client.context.terminal import TerminalState
+from skriv_client.context.types import FocusInfo
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from hark_client.context.screen import ScreenText
+    from skriv_client.context.screen import ScreenText
 
 CWD = "/w"
 

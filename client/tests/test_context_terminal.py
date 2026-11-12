@@ -7,8 +7,8 @@ from pathlib import Path
 import psutil
 import pytest
 
-from hark_client.context.focus import parse_hyprctl
-from hark_client.context.terminal import TmuxPane, detect_agent, parse_tmux_clients, resolve
+from skriv_client.context.focus import parse_hyprctl
+from skriv_client.context.terminal import TmuxPane, detect_agent, parse_tmux_clients, resolve
 
 
 @pytest.mark.parametrize(

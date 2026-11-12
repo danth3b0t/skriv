@@ -1,5 +1,5 @@
 [project]
-name = "hark-proto"
+name = "skriv-proto"
 version = "0.1.0"
 description = "Generated Python stubs for the hark.v1 protocol (proto/hark/v1/hark.proto)"
 requires-python = ">=3.12,<3.13"

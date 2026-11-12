@@ -12,16 +12,16 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from hark_client import ctl
-from hark_client.__main__ import main
+from skriv_client import ctl
+from skriv_client.__main__ import main
 
 from .conftest import pcm, wait_idle
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from hark_client.daemon import Controller
-    from hark_client.inject import DryRunInjector
+    from skriv_client.daemon import Controller
+    from skriv_client.inject import DryRunInjector
 
 
 @pytest.fixture

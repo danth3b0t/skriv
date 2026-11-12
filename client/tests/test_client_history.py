@@ -6,15 +6,15 @@ import json
 from datetime import UTC, datetime
 from typing import TYPE_CHECKING, cast
 
-from hark_client import history, historyview
-from hark_client.__main__ import main
+from skriv_client import history, historyview
+from skriv_client.__main__ import main
 
 if TYPE_CHECKING:
     from pathlib import Path
 
     import pytest
 
-    from hark_client.history import Record
+    from skriv_client.history import Record
 
 ID_A = "0199aaaa-0000-7000-8000-0000000000a1"
 ID_B = "0199aaaa-0000-7000-8000-0000000000b2"

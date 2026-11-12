@@ -9,9 +9,9 @@ import pytest
 from conftest import kubectl_term, speech, utterance
 
 from hark.v1 import hark_pb2 as pb
-from hark_server import session
-from hark_server.backends.mock import MockBackend
-from hark_server.language import implausible
+from skriv_server import session
+from skriv_server.backends.mock import MockBackend
+from skriv_server.language import implausible
 
 if TYPE_CHECKING:
     from conftest import Serve

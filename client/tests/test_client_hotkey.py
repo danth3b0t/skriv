@@ -7,15 +7,15 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client.continuation import CLICK, KeyPress
+from skriv_client.continuation import CLICK, KeyPress
 
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from hark_client.hotkey import PushToTalk
+    from skriv_client.hotkey import PushToTalk
 
 keyboard = pytest.importorskip("pynput.keyboard")
-hotkey = pytest.importorskip("hark_client.hotkey")
+hotkey = pytest.importorskip("skriv_client.hotkey")
 K = keyboard.Key
 
 

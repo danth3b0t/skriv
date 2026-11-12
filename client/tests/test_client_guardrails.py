@@ -1,6 +1,6 @@
 import pytest
 
-from hark_client import guardrails
+from skriv_client import guardrails
 
 
 @pytest.mark.parametrize(

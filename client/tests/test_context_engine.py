@@ -6,15 +6,15 @@ from typing import cast
 
 import pytest
 
-from hark_client.context import TermSource, engine, screen, vocab
-from hark_client.context.__main__ import main
-from hark_client.context.agents import AgentSession, Group
-from hark_client.context.focus import FocusResult
-from hark_client.context.rank import Candidate, Origin
-from hark_client.context.repo import RepoInfo
-from hark_client.context.screen import ScreenText
-from hark_client.context.terminal import TerminalState
-from hark_client.context.types import Evidence, FocusInfo, TermKind
+from skriv_client.context import TermSource, engine, screen, vocab
+from skriv_client.context.__main__ import main
+from skriv_client.context.agents import AgentSession, Group
+from skriv_client.context.focus import FocusResult
+from skriv_client.context.rank import Candidate, Origin
+from skriv_client.context.repo import RepoInfo
+from skriv_client.context.screen import ScreenText
+from skriv_client.context.terminal import TerminalState
+from skriv_client.context.types import Evidence, FocusInfo, TermKind
 
 TERMINAL = FocusInfo(app="kitty", app_id="kitty", title="nvim", pid=4242, is_terminal=True)
 

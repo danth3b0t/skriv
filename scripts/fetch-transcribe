@@ -15,7 +15,7 @@
 #   build/transcribe/<variant>/lib                   -> the shared libtranscribe
 #   build/transcribe/python                          -> the matching Python binding (ctypes)
 #   models/parakeet-tdt-0.6b-v3-<QUANT>.gguf (+ .LICENSE, .NOTICE)
-# The hark-server backend `transcribe_cpp` and scripts/cpu-server-up use these paths.
+# The skriv-server backend `transcribe_cpp` and scripts/cpu-server-up use these paths.
 #
 # On Linux, libopenblas-dev (or another CBLAS) speeds up the host-side TDT decoder;
 # without one the build uses a scalar path.

@@ -13,7 +13,7 @@ import pytest
 from conftest import dig
 
 from hark.v1 import hark_pb2 as pb
-from hark_server.cleanup import S1_CONTROL, S1_SYSTEM
+from skriv_server.cleanup import S1_CONTROL, S1_SYSTEM
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

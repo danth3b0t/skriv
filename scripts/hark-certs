@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Private CA + certificates for hark's mTLS (hark-server on the GPU desktop, hark clients on other
+# Private CA + certificates for hark's mTLS (skriv-server on the GPU desktop, hark clients on other
 # machines, e.g. over Tailscale). EC P-256 keys, written 0600; nothing is overwritten.
 #
 #   scripts/hark-certs ca                                    # once, on the machine that keeps the CA key
@@ -9,7 +9,7 @@
 #
 # Options (before the command): --dir DIR (default ${XDG_CONFIG_HOME:-~/.config}/hark/pki),
 # --days N (leaf validity, default 825; the CA gets 3650).
-# Result in DIR: ca.crt + ca.key, NAME.crt + NAME.key. hark-server needs ca.crt (client_ca),
+# Result in DIR: ca.crt + ca.key, NAME.crt + NAME.key. skriv-server needs ca.crt (client_ca),
 # its .crt/.key; a client needs ca.crt (tls_ca) and its own .crt/.key. ca.key never leaves DIR.
 # There is no revocation: to shut a client out, make a new CA and re-issue the others.
 set -euo pipefail

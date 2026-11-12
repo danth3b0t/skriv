@@ -30,7 +30,7 @@ from parakeet_mlx import AlignedToken, Beam, DecodingConfig, boost  # pyright: i
 from parakeet_mlx import parakeet as pp  # pyright: ignore[reportMissingTypeStubs]
 from parakeet_mlx.audio import PreprocessArgs  # pyright: ignore[reportMissingTypeStubs]
 
-from hark_server.backends.parakeet_mlx import (
+from skriv_server.backends.parakeet_mlx import (
     DEFAULT_ENGLISH_MODEL,
     DEFAULT_INCREMENTAL_MIN_MS,
     ParakeetMlxBackend,
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
     from conftest import Serve
     from parakeet_mlx.boost import Machine  # pyright: ignore[reportMissingTypeStubs]
 
-    from hark_server.backends.parakeet_mlx import State
+    from skriv_server.backends.parakeet_mlx import State
 
 type Script = list[tuple[str, float]]  # (token text, start s); every token lasts 0.2 s
 

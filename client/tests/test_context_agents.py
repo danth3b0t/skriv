@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from hark_client.context import agents
-from hark_client.context.agents import Group
+from skriv_client.context import agents
+from skriv_client.context.agents import Group
 
 CWD = "/home/u/projects/app"
 

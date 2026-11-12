@@ -1,4 +1,4 @@
-"""tools/hark-probe end to end against the mock server."""
+"""tools/skriv-probe end to end against the mock server."""
 
 from __future__ import annotations
 
@@ -16,18 +16,18 @@ if TYPE_CHECKING:
     import pytest
     from conftest import Serve
 
-PROBE = Path(__file__).resolve().parents[2] / "tools" / "hark-probe" / "hark_probe.py"
+PROBE = Path(__file__).resolve().parents[2] / "tools" / "skriv-probe" / "skriv_probe.py"
 
 
 class Probe(Protocol):
-    """The part of tools/hark-probe/hark_probe.py used here."""
+    """The part of tools/skriv-probe/skriv_probe.py used here."""
 
     def parse_args(self, argv: list[str] | None = None) -> argparse.Namespace: ...
     async def main_async(self, args: argparse.Namespace) -> int: ...
 
 
 def load_probe() -> Probe:
-    spec = importlib.util.spec_from_file_location("hark_probe", PROBE)
+    spec = importlib.util.spec_from_file_location("skriv_probe", PROBE)
     assert spec is not None
     assert spec.loader is not None
     module = importlib.util.module_from_spec(spec)

@@ -1,7 +1,7 @@
 # Maintainer: TODO <todo@example.org>
 #
-# hark: context-aware, local-first push-to-talk dictation. One package for the client daemon, hark-server
-# and their systemd user units (both machines of a laptop + GPU-desktop setup run hark-server; see
+# hark: context-aware, local-first push-to-talk dictation. One package for the client daemon, skriv-server
+# and their systemd user units (both machines of a laptop + GPU-desktop setup run skriv-server; see
 # packaging/aur/README.md for why this is not split).
 #
 # Python dependencies do not come from the Arch repos: hark pins CPython 3.12 (requires-python <3.13)
@@ -51,11 +51,11 @@ optdepends=(
   'llama-cpp: llama-server for text cleanup (hark-llama.service)'
   'ggml-cuda: run llama-server on an NVIDIA GPU'
   'ggml-vulkan: run llama-server on other GPUs'
-  'openssl: hark-certs (mTLS certificates for a remote hark-server)'
-  'tailscale: reach a hark-server on another machine'
+  'openssl: hark-certs (mTLS certificates for a remote skriv-server)'
+  'tailscale: reach a skriv-server on another machine'
 )
-provides=('hark' 'hark-server')
-conflicts=('hark' 'hark-server')
+provides=('hark' 'skriv-server')
+conflicts=('hark' 'skriv-server')
 # Prebuilt manylinux wheels (auditwheel/patchelf-edited ELF files) and python-build-standalone: strip can
 # corrupt patchelf'd binaries, and there is nothing of ours to debug.
 options=('!strip' '!debug')
@@ -114,9 +114,9 @@ build() {
 check() {
   local venv="$srcdir/stage$_prefix/venv"
   export PYTHONDONTWRITEBYTECODE=1
-  "$venv/bin/hark" --help >/dev/null
-  "$venv/bin/hark-server" --help >/dev/null
-  "$venv/bin/python" -c 'import cairo, gi, grpc, numpy, sounddevice, soxr, hark_client.daemon, hark_server.server'
+  "$venv/bin/skriv" --help >/dev/null
+  "$venv/bin/skriv-server" --help >/dev/null
+  "$venv/bin/python" -c 'import cairo, gi, grpc, numpy, sounddevice, soxr, skriv_client.daemon, skriv_server.server'
 }
 
 package() {
@@ -144,12 +144,12 @@ package() {
     return 1
   fi
 
-  ln -s "$_prefix/venv/bin/hark" "$pkgdir/usr/bin/hark"
-  ln -s "$_prefix/venv/bin/hark-server" "$pkgdir/usr/bin/hark-server"
+  ln -s "$_prefix/venv/bin/skriv" "$pkgdir/usr/bin/skriv"
+  ln -s "$_prefix/venv/bin/skriv-server" "$pkgdir/usr/bin/skriv-server"
   install -Dm755 scripts/{llama-up,fetch-models,fetch-llama,hark-certs} -t "$lib/scripts"
   ln -s "$_prefix/scripts/hark-certs" "$pkgdir/usr/bin/hark-certs"
 
-  install -Dm644 packaging/systemd/{hark,hark-server,hark-llama}.service -t "$pkgdir/usr/lib/systemd/user"
+  install -Dm644 packaging/systemd/{hark,skriv-server,hark-llama}.service -t "$pkgdir/usr/lib/systemd/user"
   install -Dm755 packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-hark \
     packaging/omarchy/hark-panel -t "$pkgdir/usr/bin"
   # copied into ~/.config/omarchy/plugins by omarchy-install-dictation-hark
@@ -160,5 +160,5 @@ package() {
   install -Dm644 client/README.md "$pkgdir/usr/share/doc/hark/client.md"
   install -Dm644 server/README.md "$pkgdir/usr/share/doc/hark/server.md"
   install -Dm644 docs/linux.md "$pkgdir/usr/share/doc/hark/linux.md"
-  install -Dm644 server/hark-server.example.toml "$pkgdir/usr/share/doc/hark/hark-server.example.toml"
+  install -Dm644 server/skriv-server.example.toml "$pkgdir/usr/share/doc/hark/skriv-server.example.toml"
 }

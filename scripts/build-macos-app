@@ -32,7 +32,7 @@ contents="$stage/Hark.app/Contents"
 mkdir -p "$contents/MacOS"
 
 swiftc -O -o "$contents/MacOS/Hark" packaging/macos/launcher.swift 2> >(grep -v "Xcode platforms folder" >&2)
-uv run --frozen python -m hark_client.bundle "$contents/Info.plist" --venv "$venv"
+uv run --frozen python -m skriv_client.bundle "$contents/Info.plist" --venv "$venv"
 printf 'APPL????' > "$contents/PkgInfo"
 
 # No hardened runtime: the launcher loads the uv-managed libpython and extension modules from

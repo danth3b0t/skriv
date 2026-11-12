@@ -13,9 +13,9 @@ from grpc_status import _async as rpc_status_async
 
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
-from hark_server.backends.mock import MockBackend
-from hark_server.config import Config
-from hark_server.server import start
+from skriv_server.backends.mock import MockBackend
+from skriv_server.config import Config
+from skriv_server.server import start
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator, Awaitable, Sequence
@@ -24,8 +24,8 @@ if TYPE_CHECKING:
     from google.protobuf.message import Message
     from google.rpc.status_pb2 import Status
 
-    from hark_server.backends import Backend
-    from hark_server.server import Running
+    from skriv_server.backends import Backend
+    from skriv_server.server import Running
 
 SR = 16000
 CHUNK = 640  # 40 ms

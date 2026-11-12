@@ -16,15 +16,15 @@ from typing import TYPE_CHECKING, Any, cast
 
 import pytest
 
-from hark_client import ctl, history
+from skriv_client import ctl, history
 
 from .conftest import pcm, snapshot, wait_idle
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-    from hark_client.daemon import Controller
-    from hark_client.inject import DryRunInjector
+    from skriv_client.daemon import Controller
+    from skriv_client.inject import DryRunInjector
 
     from .conftest import FakeContext
 

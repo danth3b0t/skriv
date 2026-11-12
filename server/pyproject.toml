@@ -1,11 +1,11 @@
 [project]
-name = "hark-server"
+name = "skriv-server"
 version = "0.1.0"
 description = "hark.v1 inference server (gRPC): Asr + TextCleanup, pluggable ASR backends"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
-    "hark-proto",
+    "skriv-proto",
     "grpcio>=1.85",
     "grpcio-health-checking>=1.85",
     "grpcio-status>=1.85",
@@ -19,7 +19,7 @@ dependencies = [
 mlx = ["parakeet-mlx>=0.7,<0.8 ; sys_platform == 'darwin' and platform_machine == 'arm64'"]
 
 [project.scripts]
-hark-server = "hark_server.__main__:main"
+skriv-server = "skriv_server.__main__:main"
 
 
 [build-system]
@@ -28,7 +28,7 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 # `hark` holds the generated hark.v1 stubs (protobuf package == Python package).
-packages = ["src/hark_server"]
+packages = ["src/skriv_server"]
 
 [tool.uv.sources]
-hark-proto = { workspace = true }
+skriv-proto = { workspace = true }

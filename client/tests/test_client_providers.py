@@ -12,20 +12,20 @@ import grpc
 import pytest
 from grpc_health.v1 import health_pb2
 
-from hark_client.__main__ import main
-from hark_client.config import Config, ConfigError, ProviderConfig, load
-from hark_client.daemon import Controller
-from hark_client.inject import DryRunInjector
-from hark_client.pipeline import Services
-from hark_client.providers import Router
+from skriv_client.__main__ import main
+from skriv_client.config import Config, ConfigError, ProviderConfig, load
+from skriv_client.daemon import Controller
+from skriv_client.inject import DryRunInjector
+from skriv_client.pipeline import Services
+from skriv_client.providers import Router
 
-from .conftest import HarkServer, RecordingFeedback, pcm, snapshot, wait_idle, write_wav
+from .conftest import RecordingFeedback, SkrivServer, pcm, snapshot, wait_idle, write_wav
 
 if TYPE_CHECKING:
     from collections.abc import Iterator
     from pathlib import Path
 
-    from hark_client.history import Record
+    from skriv_client.history import Record
 
     from .conftest import FakeContext
 
@@ -72,14 +72,14 @@ def once(tmp_path: Path, providers: str) -> tuple[int, dict[str, object]]:
 
 
 def test_dictation_falls_back_past_unreachable_and_slow_providers_in_priority_order(
-    tmp_path: Path, hark_server: HarkServer, slow_server: str, fake_context: FakeContext
+    tmp_path: Path, skriv_server: SkrivServer, slow_server: str, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes")]
     t0 = time.perf_counter()
     code, rec = once(
         tmp_path,
         # file order differs from priority order on purpose
-        f'[[providers]]\nname = "local"\naddress = "{hark_server.target}"\npriority = 3\n'
+        f'[[providers]]\nname = "local"\naddress = "{skriv_server.target}"\npriority = 3\n'
         f'[[providers]]\nname = "desktop"\naddress = "{closed_port()}"\npriority = 1\n'
         f'[[providers]]\nname = "far"\naddress = "{slow_server}"\npriority = 2\n'
         "max_latency_ms = 100\n",
@@ -97,12 +97,12 @@ def test_dictation_falls_back_past_unreachable_and_slow_providers_in_priority_or
 
 
 def test_send_context_false_sends_audio_only_and_canonicalizes_locally(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+    tmp_path: Path, skriv_server: SkrivServer, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes")]  # shortlist: kubectl ("cube control")
     code, rec = once(
         tmp_path,
-        f'[[providers]]\naddress = "{hark_server.target}"\nsend_context = false\n'
+        f'[[providers]]\naddress = "{skriv_server.target}"\nsend_context = false\n'
         "[cleanup]\nenabled = false\n",
     )
     assert code == 0
@@ -116,7 +116,7 @@ def test_a_provider_that_stops_answering_fails_over_at_once_and_is_skipped_next_
     tmp_path: Path, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot("kitty")]
-    primary, fallback = HarkServer(), HarkServer()
+    primary, fallback = SkrivServer(), SkrivServer()
     cfg = Config()
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0

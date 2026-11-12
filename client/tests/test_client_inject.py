@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client.inject import TIMED_OUT, LinuxInjector, detect_method
+from skriv_client.inject import TIMED_OUT, LinuxInjector, detect_method
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

@@ -12,10 +12,10 @@ from typing import cast
 
 import pytest
 
-from hark_client.__main__ import main
-from hark_client.service import EXIT_NOT_RUNNING
-from hark_client.service import macos as service
-from hark_server import config as server_config
+from skriv_client.__main__ import main
+from skriv_client.service import EXIT_NOT_RUNNING
+from skriv_client.service import macos as service
+from skriv_server import config as server_config
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
 
@@ -63,7 +63,7 @@ def stack(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> tuple[service.Layo
     (root / "models" / "bin" / "llama-server").write_text("")
     (root / "models" / "s1-mini-q4_k_m.gguf").write_text("")
     (venv / "bin").mkdir(parents=True)
-    (venv / "bin" / "hark-server").write_text("")
+    (venv / "bin" / "skriv-server").write_text("")
     lay = service.Layout(root=root, venv=venv, home=home)
     fake = FakeLaunchctl()
     monkeypatch.setattr(service, "layout", lambda: lay)
@@ -86,7 +86,7 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     server = read(home / "Library/LaunchAgents/dev.hark.server.plist")
     assert llama["ProgramArguments"] == [str(lay.root / "scripts/llama-up"), "s1-mini-q4_k_m"]
     assert server["ProgramArguments"] == [
-        str(lay.venv / "bin/hark-server"), "--backend", "mock",
+        str(lay.venv / "bin/skriv-server"), "--backend", "mock",
         "--cleanup-url", "http://127.0.0.1:8080/v1", "--cleanup-model", "s1-mini-q4_k_m",
     ]  # fmt: skip
     # the server accepts exactly these arguments
@@ -119,7 +119,7 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert main(["service", "install", "--no-cleanup", "--backend", "mock"]) == 0
     assert not (home / "Library/LaunchAgents/dev.hark.llama.plist").exists()
     assert read(home / "Library/LaunchAgents/dev.hark.server.plist")["ProgramArguments"] == [
-        str(lay.venv / "bin/hark-server"), "--backend", "mock",
+        str(lay.venv / "bin/skriv-server"), "--backend", "mock",
     ]  # fmt: skip
     assert fake.loaded == {"dev.hark.server"}
 

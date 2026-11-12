@@ -4,10 +4,10 @@ requires-python = "==3.12.*"
 
 [manifest]
 members = [
-    "hark-client",
-    "hark-proto",
-    "hark-server",
-    "hark-workspace",
+    "skriv-client",
+    "skriv-proto",
+    "skriv-server",
+    "skriv-workspace",
 ]
 
 [[package]]
@@ -338,142 +338,6 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/01/ee/02a2c011bdab74c6fb3c75474d40b3052059d95df7e73351460c8588d963/h11-0.16.0.tar.gz", hash = "sha256:4e35b956cf45792e4caa5885e69fba00bdbc6ffafbfa020300e549b208ee5ff1", size = 101250, upload-time = "2025-04-24T03:35:25.427Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/04/4b/29cac41a4d98d144bf5f6d33995617b185d14b22401f75ca86f384e87ff1/h11-0.16.0-py3-none-any.whl", hash = "sha256:63cf8bbe7522de3bf65932fda1d9c2772064ffb3dae62d55932da54b31cb6c86", size = 37515, upload-time = "2025-04-24T03:35:24.344Z" },
-]
-
-[[package]]
-name = "hark-client"
-version = "0.1.0"
-source = { editable = "client" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "grpcio-health-checking" },
-    { name = "hark-proto" },
-    { name = "numpy" },
-    { name = "protobuf" },
-    { name = "psutil" },
-    { name = "pynput", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
-    { name = "sounddevice" },
-    { name = "soxr" },
-]
-
-[package.optional-dependencies]
-gi = [
-    { name = "pycairo", marker = "sys_platform == 'linux'" },
-    { name = "pygobject", marker = "sys_platform == 'linux'" },
-]
-x11 = [
-    { name = "pynput" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.85" },
-    { name = "grpcio-health-checking", specifier = ">=1.85" },
-    { name = "hark-proto", editable = "proto-py" },
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "protobuf", specifier = ">=6.31" },
-    { name = "psutil", specifier = ">=7" },
-    { name = "pycairo", marker = "sys_platform == 'linux' and extra == 'gi'", specifier = ">=1.27" },
-    { name = "pygobject", marker = "sys_platform == 'linux' and extra == 'gi'", specifier = ">=3.52" },
-    { name = "pynput", marker = "sys_platform == 'darwin'", specifier = ">=1.8" },
-    { name = "pynput", marker = "extra == 'x11'", specifier = ">=1.8" },
-    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=11" },
-    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=11" },
-    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11" },
-    { name = "sounddevice", specifier = ">=0.5" },
-    { name = "soxr", specifier = ">=0.5" },
-]
-provides-extras = ["x11", "gi"]
-
-[[package]]
-name = "hark-proto"
-version = "0.1.0"
-source = { editable = "proto-py" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "protobuf" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.85" },
-    { name = "protobuf", specifier = ">=6.31" },
-]
-
-[[package]]
-name = "hark-server"
-version = "0.1.0"
-source = { editable = "server" }
-dependencies = [
-    { name = "grpcio" },
-    { name = "grpcio-health-checking" },
-    { name = "grpcio-status" },
-    { name = "hark-proto" },
-    { name = "httpx" },
-    { name = "numpy" },
-    { name = "protobuf" },
-]
-
-[package.optional-dependencies]
-mlx = [
-    { name = "parakeet-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "grpcio", specifier = ">=1.85" },
-    { name = "grpcio-health-checking", specifier = ">=1.85" },
-    { name = "grpcio-status", specifier = ">=1.85" },
-    { name = "hark-proto", editable = "proto-py" },
-    { name = "httpx", specifier = ">=0.28" },
-    { name = "numpy", specifier = ">=2.0" },
-    { name = "parakeet-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.7,<0.8" },
-    { name = "protobuf", specifier = ">=6.31" },
-]
-provides-extras = ["mlx"]
-
-[[package]]
-name = "hark-workspace"
-version = "0.1.0"
-source = { virtual = "." }
-
-[package.dev-dependencies]
-dev = [
-    { name = "basedpyright" },
-    { name = "commitizen" },
-    { name = "grpcio-tools" },
-    { name = "hark-client" },
-    { name = "hark-server", extra = ["mlx"] },
-    { name = "lefthook" },
-    { name = "mypy-protobuf" },
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-    { name = "ruff" },
-    { name = "ty" },
-    { name = "types-grpcio" },
-    { name = "types-protobuf" },
-]
-
-[package.metadata]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "basedpyright", specifier = ">=1.40.2" },
-    { name = "commitizen", specifier = ">=4.19.3" },
-    { name = "grpcio-tools", specifier = ">=1.85.1" },
-    { name = "hark-client", editable = "client" },
-    { name = "hark-server", extras = ["mlx"], editable = "server" },
-    { name = "lefthook", specifier = ">=2.2.2" },
-    { name = "mypy-protobuf", specifier = ">=5.1.0" },
-    { name = "pytest", specifier = ">=9.2.0" },
-    { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
-    { name = "ruff", specifier = ">=0.17.4" },
-    { name = "ty", specifier = "==0.0.101" },
-    { name = "types-grpcio", specifier = ">=1.85.0.20261028" },
-    { name = "types-protobuf", specifier = ">=7.35.1.20260906" },
 ]
 
 [[package]]
@@ -1225,6 +1089,142 @@ source = { registry = "https://pypi.org/simple" }
 sdist = { url = "https://files.pythonhosted.org/packages/94/e7/b2c673351809dca68a0e064b6af791aa332cf192da575fd474ed7d6f16a2/six-1.17.0.tar.gz", hash = "sha256:ff70335d468e7eb6ec65b95b99d3a2836546063f63acc5171de367e834932a81", size = 34031, upload-time = "2024-12-04T17:35:28.174Z" }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/b7/ce/149a00dd41f10bc29e5921b496af8b574d8413afcd5e30dfa0ed46c2cc5e/six-1.17.0-py2.py3-none-any.whl", hash = "sha256:4721f391ed90541fddacab5acf947aa0d3dc7d27b2e1e8eda2be8970586c3274", size = 11050, upload-time = "2024-12-04T17:35:26.475Z" },
+]
+
+[[package]]
+name = "skriv-client"
+version = "0.1.0"
+source = { editable = "client" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "grpcio-health-checking" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "psutil" },
+    { name = "pynput", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'" },
+    { name = "skriv-proto" },
+    { name = "sounddevice" },
+    { name = "soxr" },
+]
+
+[package.optional-dependencies]
+gi = [
+    { name = "pycairo", marker = "sys_platform == 'linux'" },
+    { name = "pygobject", marker = "sys_platform == 'linux'" },
+]
+x11 = [
+    { name = "pynput" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.85" },
+    { name = "grpcio-health-checking", specifier = ">=1.85" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "protobuf", specifier = ">=6.31" },
+    { name = "psutil", specifier = ">=7" },
+    { name = "pycairo", marker = "sys_platform == 'linux' and extra == 'gi'", specifier = ">=1.27" },
+    { name = "pygobject", marker = "sys_platform == 'linux' and extra == 'gi'", specifier = ">=3.52" },
+    { name = "pynput", marker = "sys_platform == 'darwin'", specifier = ">=1.8" },
+    { name = "pynput", marker = "extra == 'x11'", specifier = ">=1.8" },
+    { name = "pyobjc-framework-applicationservices", marker = "sys_platform == 'darwin'", specifier = ">=11" },
+    { name = "pyobjc-framework-cocoa", marker = "sys_platform == 'darwin'", specifier = ">=11" },
+    { name = "pyobjc-framework-quartz", marker = "sys_platform == 'darwin'", specifier = ">=11" },
+    { name = "skriv-proto", editable = "proto-py" },
+    { name = "sounddevice", specifier = ">=0.5" },
+    { name = "soxr", specifier = ">=0.5" },
+]
+provides-extras = ["x11", "gi"]
+
+[[package]]
+name = "skriv-proto"
+version = "0.1.0"
+source = { editable = "proto-py" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "protobuf" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.85" },
+    { name = "protobuf", specifier = ">=6.31" },
+]
+
+[[package]]
+name = "skriv-server"
+version = "0.1.0"
+source = { editable = "server" }
+dependencies = [
+    { name = "grpcio" },
+    { name = "grpcio-health-checking" },
+    { name = "grpcio-status" },
+    { name = "httpx" },
+    { name = "numpy" },
+    { name = "protobuf" },
+    { name = "skriv-proto" },
+]
+
+[package.optional-dependencies]
+mlx = [
+    { name = "parakeet-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin'" },
+]
+
+[package.metadata]
+requires-dist = [
+    { name = "grpcio", specifier = ">=1.85" },
+    { name = "grpcio-health-checking", specifier = ">=1.85" },
+    { name = "grpcio-status", specifier = ">=1.85" },
+    { name = "httpx", specifier = ">=0.28" },
+    { name = "numpy", specifier = ">=2.0" },
+    { name = "parakeet-mlx", marker = "platform_machine == 'arm64' and sys_platform == 'darwin' and extra == 'mlx'", specifier = ">=0.7,<0.8" },
+    { name = "protobuf", specifier = ">=6.31" },
+    { name = "skriv-proto", editable = "proto-py" },
+]
+provides-extras = ["mlx"]
+
+[[package]]
+name = "skriv-workspace"
+version = "0.1.0"
+source = { virtual = "." }
+
+[package.dev-dependencies]
+dev = [
+    { name = "basedpyright" },
+    { name = "commitizen" },
+    { name = "grpcio-tools" },
+    { name = "lefthook" },
+    { name = "mypy-protobuf" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
+    { name = "ruff" },
+    { name = "skriv-client" },
+    { name = "skriv-server", extra = ["mlx"] },
+    { name = "ty" },
+    { name = "types-grpcio" },
+    { name = "types-protobuf" },
+]
+
+[package.metadata]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "basedpyright", specifier = ">=1.40.2" },
+    { name = "commitizen", specifier = ">=4.19.3" },
+    { name = "grpcio-tools", specifier = ">=1.85.1" },
+    { name = "lefthook", specifier = ">=2.2.2" },
+    { name = "mypy-protobuf", specifier = ">=5.1.0" },
+    { name = "pytest", specifier = ">=9.2.0" },
+    { name = "pytest-asyncio", specifier = ">=1.4.1.post1" },
+    { name = "ruff", specifier = ">=0.17.4" },
+    { name = "skriv-client", editable = "client" },
+    { name = "skriv-server", extras = ["mlx"], editable = "server" },
+    { name = "ty", specifier = "==0.0.101" },
+    { name = "types-grpcio", specifier = ">=1.85.0.20261028" },
+    { name = "types-protobuf", specifier = ">=7.35.1.20260906" },
 ]
 
 [[package]]

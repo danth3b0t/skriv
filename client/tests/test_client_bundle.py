@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING, cast
 
 import pytest
 
-from hark_client import bundle
+from skriv_client import bundle
 
 if TYPE_CHECKING:
     from pathlib import Path

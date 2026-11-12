@@ -11,12 +11,12 @@ import pytest
 from conftest import audio_reqs, eoa_req, speech, start_req, utterance
 
 from hark.v1 import hark_pb2 as pb
-from hark_server.backends.mock import MockBackend
+from skriv_server.backends.mock import MockBackend
 
 if TYPE_CHECKING:
     from conftest import Script, Serve
 
-    from hark_server.backends import Backend, BiasPlan, DecodeOut, Pcm
+    from skriv_server.backends import Backend, BiasPlan, DecodeOut, Pcm
 
 C = grpc.StatusCode
 E = pb.ErrorCode

@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# Run hark-server on the transcribe.cpp backend: the local, offline ASR fallback
+# Run skriv-server on the transcribe.cpp backend: the local, offline ASR fallback
 # (Parakeet TDT 0.6B v3 GGUF). Fails fast with a hint when something is missing, so it
 # can run as a service (packaging/systemd/hark-cpu-server.service).
 #
 #   scripts/cpu-server-up                          # CPU on 127.0.0.1:50052
 #   scripts/cpu-server-up --device metal           # Apple GPU (or vulkan / cuda, if built so)
 #   scripts/cpu-server-up --threads 4 --listen 127.0.0.1:50060
-#   scripts/cpu-server-up -- --log-level DEBUG     # args after -- go to hark-server
+#   scripts/cpu-server-up -- --log-level DEBUG     # args after -- go to skriv-server
 #
 # Env: HARK_CPU_MODEL (GGUF path; default models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf).
 # Setup once: uv sync && scripts/fetch-transcribe [vulkan|cuda]
@@ -49,7 +49,7 @@ if [[ ! -f $model ]]; then
   echo "cpu-server-up: $model missing; run scripts/fetch-transcribe" >&2
   exit 1
 fi
-server="$root/.venv/bin/hark-server"
+server="$root/.venv/bin/skriv-server"
 if [[ ! -x $server ]]; then
   echo "cpu-server-up: $server missing; run uv sync in $root" >&2
   exit 1

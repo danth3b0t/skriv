@@ -8,8 +8,8 @@ from dataclasses import dataclass, field
 
 import pytest
 
-from hark_client.context import FocusInfo, caret
-from hark_client.context.caret import CaretContext, ax_caret, split_at_column, text_field_caret
+from skriv_client.context import FocusInfo, caret
+from skriv_client.context.caret import CaretContext, ax_caret, split_at_column, text_field_caret
 
 OK, UNSUPPORTED, NO_VALUE, API_DISABLED = 0, -25205, -25212, -25211
 

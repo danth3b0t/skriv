@@ -5,9 +5,9 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from hark_client.context import FocusInfo, screen
-from hark_client.context.rank import Origin
-from hark_client.context.screen import ScreenText, ax_screen, field_screen, tmux_screen
+from skriv_client.context import FocusInfo, screen
+from skriv_client.context.rank import Origin
+from skriv_client.context.screen import ScreenText, ax_screen, field_screen, tmux_screen
 
 from .test_context_caret import OK, El, FakeAx, text_el
 

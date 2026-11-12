@@ -2,7 +2,7 @@
 
 Each case goes through the real hark.v1 TextCleanup path: an in-process hark server (mock ASR
 backend) asks the endpoint for a rewrite, and the client's `cleanup.run` checks it
-(`hark_client.fidelity`) with the case's protected strings and terms as its shortlist. The
+(`skriv_client.fidelity`) with the case's protected strings and terms as its shortlist. The
 output (the rewrite if it passed, else the input) is compared with the expected texts.
 
 Metrics:
@@ -29,11 +29,11 @@ from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import grpc
 
-from hark_client import cleanup
-from hark_client.context import Term, TermKind, TermSource
-from hark_server.backends.mock import MockBackend
-from hark_server.config import Config
-from hark_server.server import start
+from skriv_client import cleanup
+from skriv_client.context import Term, TermKind, TermSource
+from skriv_server.backends.mock import MockBackend
+from skriv_server.config import Config
+from skriv_server.server import start
 
 if TYPE_CHECKING:
     from collections.abc import Sequence

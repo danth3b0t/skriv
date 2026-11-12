@@ -2,10 +2,10 @@ import re
 
 import pytest
 
-from hark_client.context import aliases
-from hark_client.context.aliases import extract_terms, spoken_forms
-from hark_client.context.types import Term, TermKind, TermSource
-from hark_client.context.words import TERMINAL_COMMANDS, merge_terms, with_terminal_commands
+from skriv_client.context import aliases
+from skriv_client.context.aliases import extract_terms, spoken_forms
+from skriv_client.context.types import Term, TermKind, TermSource
+from skriv_client.context.words import TERMINAL_COMMANDS, merge_terms, with_terminal_commands
 
 
 @pytest.mark.parametrize(
@@ -165,7 +165,11 @@ def test_lower_camel_identifiers_get_no_glued_alias(canonical: str):
 
 @pytest.mark.parametrize(
     "path",
-    ["report_v256.json", "docs/research/2026-11-12/run_42.log", "src/v2/hark_client/a/b/ctx_10.py"],
+    [
+        "report_v256.json",
+        "docs/research/2026-11-12/run_42.log",
+        "src/v2/skriv_client/a/b/ctx_10.py",
+    ],
 )
 def test_long_and_numbered_paths_are_said_in_words_first(path: str):
     forms = spoken_forms(path, TermKind.PATH)
@@ -241,11 +245,11 @@ def test_word_list_keeps_inflections_tags_contractions_ids_and_fragments_out():
 
 def test_directory_paths_are_terms_but_slashed_prose_is_not():
     text = (
-        "Look in ~/projects/hark, ./build, /usr/share/dict and client/src/hark_client; "
+        "Look in ~/projects/hark, ./build, /usr/share/dict and client/src/skriv_client; "
         "and/or Hyprland/Omarchy at https://example.com/a/b/c on 2026/11/12."
     )
     paths = [t for t, k in extract_terms(text, prose=True) if k is TermKind.PATH]
-    assert paths == ["~/projects/hark", "/usr/share/dict", "client/src/hark_client"]
+    assert paths == ["~/projects/hark", "/usr/share/dict", "client/src/skriv_client"]
 
 
 def test_dictionary_terms_lead_the_shortlist_and_share_aliases():

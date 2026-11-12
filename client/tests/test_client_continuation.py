@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hark_client.continuation import CLICK, KeyPress, ShadowBuffer, decide
+from skriv_client.continuation import CLICK, KeyPress, ShadowBuffer, decide
 
 CMD = frozenset({"cmd"})
 CTRL = frozenset({"ctrl"})

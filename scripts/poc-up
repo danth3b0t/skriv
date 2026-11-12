@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
-# Start the whole local POC stack: llama-server (cleanup) + hark-server (ASR) [+ hark client].
+# Start the whole local POC stack: llama-server (cleanup) + skriv-server (ASR) [+ hark client].
 #
-#   scripts/poc-up              # servers only; then run `uv run hark run` in another terminal
+#   scripts/poc-up              # servers only; then run `uv run skriv run` in another terminal
 #   scripts/poc-up --client     # servers + `hark run` in the foreground (Ctrl+C stops everything)
 #   HARK_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
 #
@@ -49,8 +49,8 @@ if [[ "${HARK_NO_CLEANUP:-0}" != 1 ]]; then
   server_args+=(--cleanup-url http://127.0.0.1:8080/v1 --cleanup-model "$cleanup_model")
 fi
 
-echo "poc-up: hark-server ($backend) -> $logs/server.log"
-uv run hark-server "${server_args[@]}" >"$logs/server.log" 2>&1 &
+echo "poc-up: skriv-server ($backend) -> $logs/server.log"
+uv run skriv-server "${server_args[@]}" >"$logs/server.log" 2>&1 &
 pids+=($!)
 health_ok() {
   uv run python - <<'PY' >/dev/null 2>&1
@@ -65,11 +65,11 @@ for _ in $(seq 1 180); do
   health_ok && break
   sleep 1
 done
-uv run hark doctor || true
+uv run skriv doctor || true
 
 if [[ "${1:-}" == --client ]]; then
-  uv run hark run
+  uv run skriv run
 else
-  echo "poc-up: servers running. In another terminal: uv run hark run   (Ctrl+C here stops the servers)"
+  echo "poc-up: servers running. In another terminal: uv run skriv run   (Ctrl+C here stops the servers)"
   wait
 fi

@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from hark_server.config import ConfigError, parse_args
+from skriv_server.config import ConfigError, parse_args
 
 SERVER = Path(__file__).resolve().parents[1]
 

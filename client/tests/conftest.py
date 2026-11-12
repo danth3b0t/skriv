@@ -19,9 +19,9 @@ from typing import TYPE_CHECKING, cast, override
 import numpy as np
 import pytest
 
-from hark_client import context
-from hark_client.config import Config, FeedbackConfig, ProviderConfig
-from hark_client.context import (
+from skriv_client import context
+from skriv_client.config import Config, FeedbackConfig, ProviderConfig
+from skriv_client.context import (
     CaretContext,
     ContextSnapshot,
     FocusInfo,
@@ -29,21 +29,21 @@ from hark_client.context import (
     TermKind,
     TermSource,
 )
-from hark_client.context import aliases as context_aliases
-from hark_client.daemon import Controller
-from hark_client.feedback import Feedback, Sound
-from hark_client.inject import DryRunInjector
-from hark_client.pipeline import Services
-from hark_client.providers import Router
-from hark_server.backends.mock import MockBackend
-from hark_server.config import Config as ServerConfig
-from hark_server.server import start
+from skriv_client.context import aliases as context_aliases
+from skriv_client.daemon import Controller
+from skriv_client.feedback import Feedback, Sound
+from skriv_client.inject import DryRunInjector
+from skriv_client.pipeline import Services
+from skriv_client.providers import Router
+from skriv_server.backends.mock import MockBackend
+from skriv_server.config import Config as ServerConfig
+from skriv_server.server import start
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
     from pathlib import Path
 
-    from hark_server.server import Running
+    from skriv_server.server import Running
 
 KUBECTL = Term(
     canonical="kubectl",
@@ -73,7 +73,7 @@ def write_wav(path: Path, seconds: float, rate: int = 16000, channels: int = 1) 
     return path
 
 
-class HarkServer:
+class SkrivServer:
     def __init__(self, cleanup_url: str = "", backend: MockBackend | None = None) -> None:
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
@@ -148,15 +148,15 @@ def fake_llm() -> Iterator[FakeLLM]:
 
 
 @pytest.fixture
-def hark_server(fake_llm: FakeLLM) -> Iterator[HarkServer]:
-    server = HarkServer(cleanup_url=fake_llm.url)
+def skriv_server(fake_llm: FakeLLM) -> Iterator[SkrivServer]:
+    server = SkrivServer(cleanup_url=fake_llm.url)
     yield server
     server.close()
 
 
 @dataclass
 class FakeContext:
-    """Replaces hark_client.context.collect. `snapshots` are returned in order (the
+    """Replaces skriv_client.context.collect. `snapshots` are returned in order (the
     last one repeats); calls are recorded as (deadline_s, max_terms). `caret` is what
     caret_context() reports (default: nothing readable)."""
 
@@ -217,11 +217,11 @@ class RecordingFeedback(Feedback):
 
 @pytest.fixture
 def controller(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+    tmp_path: Path, skriv_server: SkrivServer, fake_context: FakeContext
 ) -> Iterator[tuple[Controller, DryRunInjector]]:
     """A daemon controller without a mic: drive it with on_pcm() and handle()."""
     fake_context.snapshots = [snapshot("kitty")]
-    router = Router([ProviderConfig(address=hark_server.target)])
+    router = Router([ProviderConfig(address=skriv_server.target)])
     yield make_controller(tmp_path, router, DryRunInjector(out=lambda _: None))
     router.close()
 

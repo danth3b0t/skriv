@@ -1,4 +1,4 @@
-"""hark-server under a Type=notify unit: READY only once SERVING, watchdog pings, STOPPING."""
+"""skriv-server under a Type=notify unit: READY only once SERVING, watchdog pings, STOPPING."""
 
 from __future__ import annotations
 
@@ -48,7 +48,7 @@ def test_ready_after_serving_then_watchdog_then_stopping():
             [
                 sys.executable,
                 "-m",
-                "hark_server",
+                "skriv_server",
                 "--backend",
                 "mock",
                 "--listen",
@@ -77,7 +77,7 @@ def test_ready_after_serving_then_watchdog_then_stopping():
 
 
 def test_no_notify_socket_is_a_no_op(monkeypatch: pytest.MonkeyPatch):
-    from hark_server import sdnotify  # noqa: PLC0415
+    from skriv_server import sdnotify  # noqa: PLC0415
 
     monkeypatch.delenv("NOTIFY_SOCKET", raising=False)
     monkeypatch.setenv("WATCHDOG_USEC", "0")

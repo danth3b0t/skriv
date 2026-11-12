@@ -13,16 +13,16 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client import service
-from hark_client.service import linux
+from skriv_client import service
+from skriv_client.service import linux
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
 
 PACKAGING = Path(__file__).parents[2] / "packaging" / "systemd"
 DEV = linux.Commands(
-    hark=("/home/u/my repo/.venv/bin/hark",),
-    server=("/home/u/my repo/.venv/bin/hark-server",),
+    skriv=("/home/u/my repo/.venv/bin/skriv",),
+    server=("/home/u/my repo/.venv/bin/skriv-server",),
     llama_up=("/home/u/100%/scripts/llama-up",),
 )
 SESSION = {
@@ -82,25 +82,25 @@ def exec_lines(text: str) -> list[str]:
 def test_packaged_units_are_the_rendered_ones():
     for component, unit in linux.UNITS.items():
         assert (PACKAGING / unit).read_text() == linux.render(component, linux.PACKAGED), (
-            f"stale {unit}: python -m hark_client.service.linux packaging/systemd"
+            f"stale {unit}: python -m skriv_client.service.linux packaging/systemd"
         )
 
 
 def test_unit_commands_are_quoted_for_systemd():
     assert exec_lines(linux.render("client", DEV)) == [
         """ExecCondition=/bin/sh -c 'test -n "$${WAYLAND_DISPLAY}$${DISPLAY}"'""",
-        'ExecStart="/home/u/my repo/.venv/bin/hark" run',
+        'ExecStart="/home/u/my repo/.venv/bin/skriv" run',
     ]
     assert exec_lines(linux.render("server", DEV)) == [
-        'ExecStart="/home/u/my repo/.venv/bin/hark-server" --config %E/hark/server.toml'
+        'ExecStart="/home/u/my repo/.venv/bin/skriv-server" --config %E/hark/server.toml'
     ]
     assert exec_lines(linux.render("llama", DEV))[0] == "ExecStart=/home/u/100%%/scripts/llama-up"
     assert linux.quote('a"b\\c $X') == '"a\\"b\\\\c $$X"'
 
 
 def test_server_and_llama_need_their_programs():
-    missing = linux.Commands(hark=DEV.hark, server=None, llama_up=None)
-    with pytest.raises(linux.ServiceError, match="hark-server"):
+    missing = linux.Commands(skriv=DEV.skriv, server=None, llama_up=None)
+    with pytest.raises(linux.ServiceError, match="skriv-server"):
         linux.render("server", missing)
     with pytest.raises(linux.ServiceError, match="llama-up"):
         linux.render("llama", missing)

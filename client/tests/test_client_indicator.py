@@ -12,9 +12,9 @@ from typing import TYPE_CHECKING, Any
 import numpy as np
 import pytest
 
-from hark_client.cleanup import CleanupOutcome
-from hark_client.indicator import WORKING, Indicator, View, outcome_view, theme
-from hark_client.pipeline import Result
+from skriv_client.cleanup import CleanupOutcome
+from skriv_client.indicator import WORKING, Indicator, View, outcome_view, theme
+from skriv_client.pipeline import Result
 
 from .conftest import pcm, snapshot, wait_idle
 
@@ -22,8 +22,8 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable
 
-    from hark_client.daemon import Controller
-    from hark_client.inject import DryRunInjector
+    from skriv_client.daemon import Controller
+    from skriv_client.inject import DryRunInjector
 
     from .conftest import FakeContext
 
@@ -385,7 +385,7 @@ def test_the_theme_loads_with_the_users_text_size_and_survives_a_broken_file(tmp
 def test_macos_panel_cannot_take_focus():
     import importlib  # noqa: PLC0415
 
-    from hark_client.indicator import macos  # noqa: PLC0415
+    from skriv_client.indicator import macos  # noqa: PLC0415
 
     appkit: Any = importlib.import_module("AppKit")
     appkit.NSApplication.sharedApplication().setActivationPolicy_(

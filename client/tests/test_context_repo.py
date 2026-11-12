@@ -4,9 +4,9 @@ from pathlib import Path
 
 import pytest
 
-from hark_client.context import repo
-from hark_client.context.rank import Candidate, Origin
-from hark_client.context.types import TermKind
+from skriv_client.context import repo
+from skriv_client.context.rank import Candidate, Origin
+from skriv_client.context.types import TermKind
 
 
 def git(root: Path, *args: str) -> None:

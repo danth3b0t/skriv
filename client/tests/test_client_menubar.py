@@ -8,13 +8,13 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client.pipeline import Result
+from skriv_client.pipeline import Result
 
 from .conftest import pcm
 
 if TYPE_CHECKING:
-    from hark_client.daemon import Controller
-    from hark_client.inject import DryRunInjector
+    from skriv_client.daemon import Controller
+    from skriv_client.inject import DryRunInjector
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="AppKit")
 
@@ -22,7 +22,7 @@ pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="AppKit")
 def test_state_icon_follows_pause_recording_and_a_recent_failure(
     controller: tuple[Controller, DryRunInjector],
 ):
-    from hark_client.menubar import menu_state, preview  # noqa: PLC0415 - AppKit
+    from skriv_client.menubar import menu_state, preview  # noqa: PLC0415 - AppKit
 
     c, _ = controller
     now = time.time()

@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import gate
-from hark_client.config import GateConfig
+from skriv_client import gate
+from skriv_client.config import GateConfig
 
 TERMS = [
     pb.BiasTerm(id=i, canonical=c, aliases=[pb.SpokenAlias(text=a) for a in aliases], kind=kind)

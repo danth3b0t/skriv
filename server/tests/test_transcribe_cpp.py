@@ -15,8 +15,8 @@ import pytest
 from conftest import utterance
 
 from hark.v1 import hark_pb2 as pb
-from hark_server.backends import BackendUnavailable
-from hark_server.backends.transcribe_cpp import TranscribeCppBackend, WorkerError
+from skriv_server.backends import BackendUnavailable
+from skriv_server.backends.transcribe_cpp import TranscribeCppBackend, WorkerError
 
 if TYPE_CHECKING:
     from collections.abc import Iterator

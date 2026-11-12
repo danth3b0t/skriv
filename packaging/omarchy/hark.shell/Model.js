@@ -179,7 +179,7 @@ function clockText(ms) {
   return Math.floor(s / 60) + ":" + (rest < 10 ? "0" : "") + rest
 }
 
-// The category of a history record's error, as `last.failure` (hark_client.status.failure).
+// The category of a history record's error, as `last.failure` (skriv_client.status.failure).
 function failureKind(error) {
   var e = String(error || "")
   if (e.indexOf("asr: degenerate output") === 0) return "degenerate_output"
@@ -188,7 +188,7 @@ function failureKind(error) {
   return "other"
 }
 
-// Same words as the pill (hark_client.indicator.FAILURE_WORDS).
+// Same words as the pill (skriv_client.indicator.FAILURE_WORDS).
 var FAILURE_WORDS = {
   server_timeout: "server timeout", server_down: "server down", degenerate_output: "garbled transcript"
 }
@@ -226,7 +226,7 @@ function lastView(record, status, nowMs) {
     glyph = "alert-circle"
     tone = "live"
   } else if (noSpeech) {
-    // same words as the pill (hark_client.indicator.no_speech_view): quiet is no error, a
+    // same words as the pill (skriv_client.indicator.no_speech_view): quiet is no error, a
     // flat signal from the mic is
     var device = String(record.input_device || "")
     headline = [record.flat_signal ? "No audio from mic" : "No speech", device].filter(function(s) { return s !== "" }).join(" · ")
@@ -282,7 +282,7 @@ function moveRow(list, current, delta) {
   return list[Math.max(0, Math.min(list.length - 1, i + delta))]
 }
 
-// ---- theme tokens (design/SPEC.md §3; same formulas as hark_client.indicator.theme)
+// ---- theme tokens (design/SPEC.md §3; same formulas as skriv_client.indicator.theme)
 
 function parseColors(text) {
   var out = {}
@@ -297,7 +297,7 @@ function rgb(h) {
   return [1, 3, 5].map(function(i) { return parseInt(h.slice(i, i + 2), 16) / 255 })
 }
 
-// halves to even, like Python's round(): the same hex as hark_client.indicator.theme
+// halves to even, like Python's round(): the same hex as skriv_client.indicator.theme
 function roundHalfEven(x) {
   var r = Math.round(x)
   return x % 1 === 0.5 && r % 2 !== 0 ? r - 1 : r

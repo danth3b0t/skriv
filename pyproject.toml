@@ -1,7 +1,7 @@
 [project]
-name = "hark-workspace"
+name = "skriv-workspace"
 version = "0.1.0"
-description = "hark repository root: uv workspace + shared dev tooling"
+description = "skriv repository root: uv workspace + shared dev tooling"
 requires-python = ">=3.12,<3.13"
 
 [tool.uv]
@@ -11,16 +11,16 @@ package = false
 members = ["proto-py", "server", "client"]
 
 [tool.uv.sources]
-hark-server = { workspace = true, editable = true }
-hark-client = { workspace = true, editable = true }
+skriv-server = { workspace = true, editable = true }
+skriv-client = { workspace = true, editable = true }
 
 [dependency-groups]
 dev = [
     "basedpyright>=1.40.2",
     "commitizen>=4.19.3",
     "grpcio-tools>=1.85.1",
-    "hark-client",
-    "hark-server[mlx]",
+    "skriv-client",
+    "skriv-server[mlx]",
     "lefthook>=2.2.2",
     "mypy-protobuf>=5.1.0",
     "pytest>=9.2.0",

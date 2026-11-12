@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from hark_client import corrections
+from skriv_client import corrections
 
 
 @pytest.mark.parametrize(

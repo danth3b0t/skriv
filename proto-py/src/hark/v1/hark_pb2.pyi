@@ -680,7 +680,7 @@ class ServerInfo(_message.Message):
     name: _builtins.str
     """user-visible, e.g. "desktop-3060" """
     implementation: _builtins.str
-    """e.g. "hark-server-py/0.2.0 nemo/2.x" """
+    """e.g. "skriv-server-py/0.2.0 nemo/2.x" """
     accelerator: _builtins.str
     """e.g. "RTX 3060 12GB", "Apple M5 Pro", "cpu" """
     started_unix_ms: _builtins.int
@@ -2393,7 +2393,7 @@ Global___CleanupContext: _TypeAlias = CleanupContext  # noqa: Y015
 class CleanupResponse(_message.Message):
     """The server returns the model's rewrite of the whole text (fillers removed,
     casing, punctuation and wording cleaned). It does not judge fidelity: the
-    client checks the rewrite against its input (hark_client.fidelity) and keeps
+    client checks the rewrite against its input (skriv_client.fidelity) and keeps
     the input when the rewrite adds, drops or reverses anything.
     """
 

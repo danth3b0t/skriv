@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hark_client import symbols
+from skriv_client import symbols
 
 
 @pytest.mark.parametrize(
