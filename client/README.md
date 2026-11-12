@@ -336,6 +336,10 @@ hark ctl paste-last           # daemon: paste it again into the focused window (
 `paste-last` re-applies the guardrails for the window it goes to (a prose result pasted into a terminal loses its
 newlines); its reply gives only the length, never the text.
 
+Accuracy regressions: `hark eval add` puts a kept dictation into a private set of real clips, `hark eval run`
+re-runs them all and fails on a lost identifier, a false substitution or a lost negation
+([docs/eval.md](../docs/eval.md)).
+
 ## Guardrails
 
 - All profiles: escape sequences (CSI incl. the bracketed-paste markers `ESC[200~`/`ESC[201~`, OSC, 8-bit CSI), C0/C1

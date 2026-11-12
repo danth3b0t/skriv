@@ -59,6 +59,8 @@ class Args(argparse.Namespace):
     cleanup_model: str | None
     no_cleanup: bool
     no_onboarding: bool
+    eval_action: str
+    set_dir: str | None
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -127,6 +129,14 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
     )
     lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
+    ev = sub.add_parser("eval", help="regression set of real dictations (docs/eval.md)")
+    ev.add_argument("eval_action", choices=["add", "run", "accept"])
+    ev.add_argument(
+        "id", nargs="?", default="last", help="add: a kept dictation (default last); accept: a clip"
+    )
+    ev.add_argument(
+        "--set", dest="set_dir", help="the set's directory (default <history.dir>/eval)"
+    )
     service.add_parser(sub)
     return p.parse_args(argv, namespace=Args())
 
@@ -259,8 +269,72 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
-    offline = {"learned": cmd_learned, "history": cmd_history, "last": cmd_last}
+    offline = {"learned": cmd_learned, "history": cmd_history, "last": cmd_last, "eval": cmd_eval}
     return offline.get(args.command, cmd_pipeline)(args, cfg)
+
+
+def cmd_eval(args: Args, cfg: Config) -> int:
+    from hark_client import evalset  # noqa: PLC0415
+    from hark_client.config import expand  # noqa: PLC0415
+
+    base = expand(cfg.history.dir)
+    set_dir = Path(args.set_dir).expanduser() if args.set_dir else base / "eval"
+    try:
+        if args.eval_action == "add":
+            out = evalset.add(base, set_dir, args.id or "last")
+            print(f"added {out}; edit {out / evalset.LABEL} (said, critical, forbidden)")
+            return 0
+        if args.eval_action == "accept":
+            print(f"accepted: {evalset.accept(set_dir, args.id or '')!r}")
+            return 0
+    except (LookupError, FileExistsError) as e:
+        print(f"hark eval: {e}", file=sys.stderr)
+        return 1
+    return _eval_run(cfg, set_dir)
+
+
+def _eval_run(cfg: Config, set_dir: Path) -> int:
+    from hark_client import evalset  # noqa: PLC0415
+    from hark_client.config import FeedbackConfig  # noqa: PLC0415
+    from hark_client.feedback import Feedback  # noqa: PLC0415
+    from hark_client.inject import DryRunInjector  # noqa: PLC0415
+    from hark_client.pipeline import Services  # noqa: PLC0415
+    from hark_client.providers import Router  # noqa: PLC0415
+
+    found = evalset.clips(set_dir)
+    if not found:
+        print(
+            f"hark eval: no clips in {set_dir} (`hark eval add` after a dictation)", file=sys.stderr
+        )
+        return 1
+    cfg.history.enabled = False
+    cfg.retry.keep = 0
+    # nothing is pasted: the window and caret of today are not the clip's
+    cfg.paste.check_focus = cfg.paste.smart_spacing = False
+    router = Router(cfg.provider_configs())
+    try:
+        router.refresh()
+        svc = Services(
+            cfg, router, DryRunInjector(out=lambda _: None),
+            Feedback(FeedbackConfig(sounds=False, notify=False)),
+        )  # fmt: skip
+        scores: list[evalset.Score] = []
+        for clip in found:
+            res = evalset.run_clip(svc, clip)
+            s = evalset.score(
+                clip.name, evalset.load_label(clip), res.raw_text, res.canonical_text,
+                res.final_text,
+            )  # fmt: skip
+            scores.append(s)
+            print(evalset.line(s, res.status, res.final_text))
+    finally:
+        router.close()
+    failed = sum(s.failed for s in scores)
+    unreviewed = sum(not s.accepted for s in scores)
+    wers = [s.wer for s in scores if s.wer is not None]
+    mean = f"{sum(wers) / len(wers):.1%}" if wers else "n/a"
+    print(f"{len(scores)} clips: {failed} failed, {unreviewed} unreviewed, recognition WER {mean}")
+    return 1 if failed else 0
 
 
 def cmd_learned(args: Args, cfg: Config) -> int:
