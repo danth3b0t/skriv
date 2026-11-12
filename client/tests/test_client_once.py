@@ -86,23 +86,16 @@ def test_terminal_app_gets_terminal_profile_and_terminal_cleanup(
     capsys: pytest.CaptureFixture[str],
 ):
     fake_context.snapshots = [snapshot("com.mitchellh.ghostty")]
-    # Re-casing the shortlist identifier (a protected span) drops it and its neighbours
-    # (every other edit is at most one word away).
+    # The re-cased shortlist identifier is put back; the terminal profile adds no final period.
     fake_llm.respond("Please run Kubectl get.")
 
     code, rec = run_once(tmp_path, hark_server.target)
 
     assert code == 0
-    assert "[dry-run] would terminal paste: 'please run kubectl get'" in capsys.readouterr().out
+    assert "[dry-run] would terminal paste: 'Please run kubectl get'" in capsys.readouterr().out
     assert rec["profile"] == "terminal"
     cleaned = cast("dict[str, object]", rec["cleanup"])
-    assert cleaned["status"] == "rejected"
-    dropped = cast("list[dict[str, str]]", cleaned["dropped"])
-    assert [(d["find"], d["by"], d["reason"]) for d in dropped] == [
-        ("kubectl", "server", "protected_span"),
-        ("please", "server", "dependent"),
-        ("get", "server", "dependent"),
-    ]
+    assert (cleaned["status"], cleaned["rewrite"]) == ("applied", "Please run kubectl get")
     assert fake_llm.user_message().endswith("\nplease run kubectl get")
 
 

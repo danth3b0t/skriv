@@ -32,11 +32,9 @@ class TlsConfig:
 class CleanupConfig:
     base_url: str = ""  # OpenAI-compatible base, e.g. http://127.0.0.1:8080/v1; "" => disabled
     model: str = ""
-    engine: str = "s1"  # s1 (S1-mini full rewrite -> edits) | edits (JSON edit list)
     api_key_env: str = ""  # name of an env var holding the LLM server's bearer token
     default_budget_ms: int = 400
     max_input_bytes: int = 4000
-    max_edits: int = 16
 
 
 @dataclass
@@ -120,8 +118,6 @@ def validate(cfg: Config) -> None:
             f"refusing plaintext on non-loopback address {cfg.server.listen!r}: configure "
             "server.tls (mTLS recommended) or set server.allow_insecure_non_local = true"
         )
-    if cfg.cleanup.engine not in ("s1", "edits"):
-        raise ConfigError("cleanup.engine must be 's1' or 'edits'")
     if cfg.server.max_concurrent_sessions < 1:
         raise ConfigError("server.max_concurrent_sessions must be >= 1")
 
@@ -140,7 +136,6 @@ class _Args(argparse.Namespace):
     no_warmup: bool
     cleanup_url: str | None
     cleanup_model: str | None
-    cleanup_engine: str | None
     log_level: str | None
 
 
@@ -158,8 +153,6 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p.add_argument("--no-warmup", action="store_true", help="do not load/warm the model at start")
     p.add_argument("--cleanup-url", help="OpenAI-compatible base URL for TextCleanup")
     p.add_argument("--cleanup-model")
-    p.add_argument("--cleanup-engine", choices=["s1", "edits"],
-                   help="s1: S1-mini full rewrite (default); edits: JSON edit list")  # fmt: skip
     p.add_argument("--log-level")
     a = p.parse_args(argv, namespace=_Args())
 
@@ -175,7 +168,6 @@ def parse_args(argv: list[str] | None = None) -> Config:
         (a.allow_insecure_non_local, cfg.server, "allow_insecure_non_local"),
         (a.cleanup_url, cfg.cleanup, "base_url"),
         (a.cleanup_model, cfg.cleanup, "model"),
-        (a.cleanup_engine, cfg.cleanup, "engine"),
         (a.log_level, cfg, "log_level"),
     ]
     for value, obj, name in overrides:

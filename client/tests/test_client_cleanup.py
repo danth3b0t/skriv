@@ -1,4 +1,4 @@
-"""Protected spans and the client-side (authoritative) edit validator."""
+"""Cleanup: the server's rewrite, kept only if `fidelity.check` passes."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import pytest
 
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
-from hark_client import cleanup
+from hark_client import cleanup, fidelity
 from hark_client.context import Term, TermKind, TermSource
 
 from .conftest import KUBECTL
@@ -18,337 +18,131 @@ from .conftest import KUBECTL
 if TYPE_CHECKING:
     from collections.abc import Iterator
 
-K = pb.EditKind
-R = pb.EditRejectionReason
-TEXT = "Grüße, don't run kubectl on port 8080 in parse_config"
-RAW = TEXT.encode()
+
+def term(canonical: str, kind: TermKind = TermKind.IDENTIFIER) -> Term:
+    return Term(canonical, (), 1.0, kind, TermSource.VOCABULARY)
 
 
-def span_text(s: cleanup.Span) -> str:
-    return RAW[s.start : s.end].decode()
-
-
-def test_protected_spans_cover_identifiers_numbers_and_negations():
-    spans = cleanup.protected_spans(TEXT + ".", [KUBECTL])
-    assert [(span_text(s), s.kind) for s in spans] == [
-        ("don't", pb.PROTECTED_SPAN_KIND_NEGATION),
-        ("kubectl", pb.PROTECTED_SPAN_KIND_IDENTIFIER),
-        ("8080", pb.PROTECTED_SPAN_KIND_NUMBER),
-        ("parse_config", pb.PROTECTED_SPAN_KIND_IDENTIFIER),  # code-like, not in the shortlist
-    ]
-
-
-def make_edit(find: str, replace: str, kind: pb.EditKind.ValueType, text: str = TEXT) -> pb.Edit:
-    start = text.encode().index(find.encode())
-    return pb.Edit(
-        byte_start=start, byte_end=start + len(find.encode()), find=find, replace=replace, kind=kind
-    )
+def test_protected_covers_shortlist_terms_and_code_like_tokens():
+    text = "don't run kubectl on port 8080 in parse_config, see ./docs/a.md and --force."
+    assert cleanup.protected(text, [KUBECTL, term("Hyprland")]) == {
+        "kubectl",  # shortlist, present
+        "parse_config",
+        "./docs/a.md",
+        "--force",
+    }
 
 
 @pytest.mark.parametrize(
-    ("edit", "error"),
+    ("before", "after", "why"),
     [
-        (make_edit("kubectl", "Kubectl", K.EDIT_KIND_CAPITALIZATION), "protected span"),
-        (make_edit("run", "ran", K.EDIT_KIND_CAPITALIZATION), "invariant"),
-        (make_edit("on port", "on port", K.EDIT_KIND_SPACING), "invariant"),  # no-op
-        (make_edit("on", "On", K.EDIT_KIND_CAPITALIZATION), "unique"),  # also in "don't"
-        # byte range does not match the quoted text
-        (
-            pb.Edit(byte_start=2, byte_end=4, find="üß", replace="ss", kind=K.EDIT_KIND_SPACING),
-            "unique",
-        ),
-        (
-            make_edit("Grüße", "Grüße.", K.EDIT_KIND_GRAMMAR),
-            "invariant",
-        ),  # not mechanically checkable
-    ],
-)
-def test_validator_rejects(edit: pb.Edit, error: str):
-    checked = cleanup.validate_edits(TEXT, [edit], cleanup.protected_spans(TEXT, [KUBECTL]))
-    assert (checked.text, checked.accepted) == (TEXT, [])
-    ((dropped, why),) = checked.dropped
-    assert dropped == edit
-    assert error in why
-
-
-def test_validator_applies_valid_edits_and_checks_negations():
-    text = "so um I think it is not done"
-    spans = cleanup.protected_spans(text, [])
-    ok = [
-        make_edit("so um I", "so I", K.EDIT_KIND_FILLER_REMOVAL, text),
-        make_edit("done", "done.", K.EDIT_KIND_PUNCTUATION, text),
-    ]
-    checked = cleanup.validate_edits(text, ok, spans)
-    assert (checked.text, checked.accepted, checked.dropped) == (
-        "so I think it is not done.",
-        ok,
-        [],
-    )
-
-
-GROUPED = "so the build fails on the linker step, uh, can you check it"
-IDENT = "Um, so please run kubectl in the cluster, uh, and then check it"
-NEG = "Um, so the thing is I can't merge it today, uh, the build is red"
-F, C, P = K.EDIT_KIND_FILLER_REMOVAL, K.EDIT_KIND_CAPITALIZATION, K.EDIT_KIND_PUNCTUATION
-
-
-@pytest.mark.parametrize(
-    ("text", "edits", "result", "dropped"),
-    [
-        (  # a protected identifier edit is dropped; the filler removals around it stay
-            IDENT, [("Um, so", "So", F), ("kubectl", "Kubectl", C), ("cluster, uh,", "cluster", F)],
-            "So please run kubectl in the cluster and then check it",
-            [("kubectl", "touches a protected span")],
-        ),
-        (  # unprotected, a lost negation is caught globally and pinned on its edit
-            NEG, [("Um, so", "So", F), ("can't", "cant", P), ("today, uh,", "today,", F)],
-            "So the thing is I can't merge it today, the build is red",
-            [("can't", "negation count changed")],
-        ),
-        (  # a dropped edit takes its neighbour: no "step, uh, Can"
-            GROUPED, [("step, uh,", "stage.", F), ("can", "Can", C)], GROUPED,
-            [("step, uh,", "breaks its EDIT_KIND_FILLER_REMOVAL invariant"),
-             ("can", "dropped with its group")],
-        ),
-        (  # ... and so does one a word further away; two words away is another group
-            GROUPED, [("so the", "So the", C), ("on the", "in the", F), ("step, uh,", "step.", F),
-                      ("can", "Can", C)],
-            "So the build fails on the linker step, uh, can you check it",
-            [("on the", "breaks its EDIT_KIND_FILLER_REMOVAL invariant"),
-             ("step, uh,", "dropped with its group"), ("can", "dropped with its group")],
-        ),
-        (  # an edit overlapping an accepted one is dropped alone
-            GROUPED, [("so the", "So the", C), ("the build", "The build", C)],
-            "So the build fails on the linker step, uh, can you check it",
-            [("the build", "overlaps an earlier edit")],
-        ),
-        (  # a failed rule that no edit can be blamed for drops them all
-            "um uh like you know ok so", [("um uh like", "", F), ("you know ok", "ok", F)],
-            "um uh like you know ok so",
-            [("um uh like", "too many words removed"), ("you know ok", "too many words removed")],
-        ),
+        # passes: fillers, casing, punctuation, light rewording, digits for spoken numbers
+        ("um so I think it is not done", "So I think it is not done.", ""),
+        ("I'm gonna buy you a bike", "I'm going to buy you a bike.", ""),
+        ("set the limit to seven", "Set the limit to 7.", ""),
+        ("No no not yet", "No, not yet.", ""),  # a stutter counts once
+        ("on Hyper LAN the paste", "On HyperLAN, the paste", ""),  # merged
+        ("Show me the last_text", "Show me the last text.", ""),  # identifier back to words
+        ("Set the timeout to 3 seconds, sorry 5 seconds.", "Set the timeout to 5 seconds.", ""),
+        ("Make it 10 MB, no, 20 MB.", "Make it 20 MB.", ""),  # the cue's "no" goes with it
+        ("um", "", ""),
+        # fails
+        ("Okay.", "", "dropped everything"),
+        ("run the tests", "Run the tests.\nThen push.", "added a line break"),
+        ("Use useQuery here", "useQuery here.", "dropped"),
+        ("pass --no-history to it", "Pass no-history to it.", "changed '--no-history'"),
+        ("pass --no-history to it", "Pass --no-history to it, please.", ""),
+        ("fetch_rows is slow", "Fetch rows is slow.", ""),  # the trap rule cuts both ways
+        ("I can't merge it today", "I can merge it today.", "negations 1 -> 0"),
+        ("merge it today", "Don't merge it today.", "negations 0 -> 1"),
+        ("Is it done? No, it is not.", "It is not.", "negations 2 -> 1"),  # an answer
+        ("use C not Rust", "Use Rust.", "negations 1 -> 0"),  # no cue
+        ("port 8080", "Port 8081.", "numbers 8080 -> 8081"),
+        ("issue four twenty one", "Issue 421.", "numbers 21 4 -> 421"),
+        ("show the logs", "Here are the logs for the worker.", "added worker"),
+        ("restart the worker and the scheduler", "Restart the worker.", "dropped scheduler"),
     ],
 )  # fmt: skip
-def test_validator_drops_failing_edits_with_their_group(
-    text: str,
-    edits: list[tuple[str, str, pb.EditKind.ValueType]],
-    result: str,
-    dropped: list[tuple[str, str]],
-):
-    proposed = [make_edit(f, r, k, text) for f, r, k in edits]
-    spans = cleanup.protected_spans(text, [KUBECTL]) if text == IDENT else []
-    checked = cleanup.validate_edits(text, proposed, spans)
-    assert checked.text == result
-    assert [(e.find, why) for e, why in checked.dropped] == dropped
+def test_fidelity_check(before: str, after: str, why: str):
+    protected = {"--no-history", "fetch_rows", "last_text"} & set(before.split())
+    got = fidelity.check(before, after, protected, single_line=True)
+    assert got.startswith(why) if why else got == ""
 
 
-CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
+class FixedRewrite(pb_grpc.TextCleanupServicer):
+    """Returns `rewrite` for every request (None: no rewrite, with `skipped`)."""
 
-
-@pytest.mark.parametrize(
-    ("text", "find", "replace", "kind", "result", "error"),
-    [
-        (  # retracted number and the cue's "no" (protected negation) may go
-            CORRECTION, "on port 8080, no wait, on port 8081", "on port 8081",
-            K.EDIT_KIND_SELF_CORRECTION, "Run kubectl on port 8081!", "",
-        ),
-        (  # ... a kept protected identifier may not change
-            CORRECTION, "kubectl on port 8080, no wait, on port 8081", "Kubectl on port 8081",
-            K.EDIT_KIND_SELF_CORRECTION, "", "protected span",
-        ),
-        ("so I like want the the report", "like want the the", "want the",
-         K.EDIT_KIND_FILLER_REMOVAL, "so I want the report", ""),
-        ("it is, uh, you know, broken", "is, uh, you know, broken", "is broken",
-         K.EDIT_KIND_FILLER_REMOVAL, "it is broken", ""),
-        ("it is, uh, I don't know, broken", "uh, I don't know,", "uh,",
-         K.EDIT_KIND_FILLER_REMOVAL, "", "protected span"),
-        ("move it to twenty five", "twenty five", "25.", K.EDIT_KIND_NUMBER_FORMAT,
-         "move it to 25.", ""),
-        ("move it to twenty five", "twenty five", "52", K.EDIT_KIND_NUMBER_FORMAT, "", "invariant"),
-        ("say hello", "hello", '"hello"', K.EDIT_KIND_PUNCTUATION, "", "invariant"),
-        ("never edit it", "never", "Never", K.EDIT_KIND_CAPITALIZATION, "Never edit it", ""),
-        ("There is no wait time", "no", "No", K.EDIT_KIND_CAPITALIZATION, "", "protected span"),
-        ("I mean it, ship it", "I mean it", "It", K.EDIT_KIND_FILLER_REMOVAL, "", "invariant"),
-        ("edit main.py", "main.py", "main.py.", K.EDIT_KIND_PUNCTUATION, "edit main.py.", ""),
-        ("meet at 3:30 pm", "3:30 pm", "3:30pm", K.EDIT_KIND_SPACING, "", "protected span"),
-        ("It works!", "works!", "works.", K.EDIT_KIND_PUNCTUATION, "", "exclamation"),
-        ("um uh like you know ok", "um uh like you know ok", "ok", K.EDIT_KIND_FILLER_REMOVAL,
-         "", "too many words"),
-        # bare cues: the retracted words and the cue's "no" may go ...
-        ("I want it written in C, uh no, in Rust.", "in C, uh no, in", "in",
-         K.EDIT_KIND_SELF_CORRECTION, "I want it written in Rust.", ""),
-        # real ASR output drops the commas: a restart ("in ... in") is enough
-        ("I would like to write a program in C um no in Rust.", "in C um no in", "in",
-         K.EDIT_KIND_SELF_CORRECTION, "I would like to write a program in Rust.", ""),
-        ("I would like to write an application in C a no uh in Rust.", "in C a no uh in", "in",
-         K.EDIT_KIND_SELF_CORRECTION, "I would like to write an application in Rust.", ""),
-        ("Um my name is David. Uh no, uh my name is Dan.", "Um my name is David. Uh no, uh my",
-         "My", K.EDIT_KIND_SELF_CORRECTION, "My name is Dan.", ""),
-        ("Pick the red blue green big car, no, the bus.", "the red blue green big car, no, the",
-         "the", K.EDIT_KIND_SELF_CORRECTION, "Pick the bus.", ""),
-        # ... but not more than 6 words, across a sentence, after a question or with no
-        # retracted words: there the "no" is a protected negation
-        ("Pick the red blue green big old car, no, the bus.",
-         "the red blue green big old car, no, the", "the", K.EDIT_KIND_SELF_CORRECTION, "",
-         "protected span"),
-        ("Use Rust. Then C, no, then Go.", "Use Rust. Then C, no, then", "Then",
-         K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
-        ("Is it done? No, it is not.", "Is it done? No, it", "It", K.EDIT_KIND_SELF_CORRECTION,
-         "", "protected span"),
-        ("No, I don't want C.", "No, I", "I", K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
-        # a one-word slot without commas is not enough evidence
-        ("Meet on Tuesday no Wednesday.", "Tuesday no Wednesday", "Wednesday",
-         K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
-        ("use C not Rust", "C not Rust", "Rust", K.EDIT_KIND_SELF_CORRECTION, "",
-         "protected span"),
-        ("It is, actually, fine.", "It is, actually, fine", "Fine", K.EDIT_KIND_SELF_CORRECTION,
-         "", "invariant"),  # not the same kind: no repeated word, not a single-word slot
-    ],
-)  # fmt: skip
-def test_validator_s1_edit_kinds(
-    text: str, find: str, replace: str, kind: pb.EditKind.ValueType, result: str, error: str
-):
-    edits, spans = [make_edit(find, replace, kind, text)], cleanup.protected_spans(text, [KUBECTL])
-    checked = cleanup.validate_edits(text, edits, spans)
-    assert checked.text == (text if error else result)
-    assert [error in why for _, why in checked.dropped] == ([True] if error else [])
-
-
-@pytest.mark.parametrize(
-    ("text", "find", "replace", "terms", "error"),
-    [
-        ("like Super Whisper.", "Super Whisper.", "Superwhisper.", ["Superwhisper"], ""),
-        ("in open pencil But", "open pencil", "OpenPencil.", ["OpenPencil"], ""),
-        ("like Super Whisper.", "Super Whisper.", "Superwhisper.", [], "protected span"),
-        ("like Super Whisperer.", "Super Whisperer.", "Superwhisper.", ["Superwhisper"],
-         "protected span"),  # a letter changes too
-    ],
-)  # fmt: skip
-def test_validator_merges_words_into_known_terms(
-    text: str, find: str, replace: str, terms: list[str], error: str
-):
-    # "Super" and "Whisper" are protected bias terms, as in the real dictation.
-    shortlist = [
-        Term(t, (), 0.5, TermKind.NAME, TermSource.VOCABULARY) for t in ("Super", "Whisper")
-    ]
-    edits = [make_edit(find, replace, K.EDIT_KIND_SPACING, text)]
-    checked = cleanup.validate_edits(text, edits, cleanup.protected_spans(text, shortlist), terms)
-    assert checked.text == (text if error else text.replace(find, replace))
-    assert [error in why for _, why in checked.dropped] == ([True] if error else [])
-
-
-@pytest.mark.parametrize(
-    ("text", "language", "skipped"),
-    [
-        ("Tohle je test diktování v češtině.", "", True),
-        ("Ich glaube, das ist nicht richtig.", "", True),
-        ("please run it", "cs", True),
-        ("Grüße! I think the café on main street is fine", "", False),
-        ("ls -la ~/projects", "", False),
-        ("please run it", "en-US", False),
-    ],
-)
-def test_non_english_text_is_not_cleaned(text: str, language: str, *, skipped: bool):
-    with grpc.insecure_channel("127.0.0.1:1") as nowhere:  # English text gets an RPC error
-        out = cleanup.run(
-            nowhere, text=text, terms=[], utterance_id="u1", profile_id="prose",
-            app_category="prose", language=language, deadline_ms=200,
-        )  # fmt: skip
-    assert out.text == text
-    assert (
-        (out.status, out.reason) == ("skipped", "non_english") if skipped else out.status == "error"
-    )
-
-
-class BadCleanup(pb_grpc.TextCleanupServicer):
-    """A server whose validator let an edit of a protected identifier through,
-    next to a filler removal when the text starts with "Um, so"."""
+    def __init__(self) -> None:
+        self.rewrite: str | None = None
+        self.requests: list[pb.CleanupRequest] = []
 
     def Cleanup(
         self, request: pb.CleanupRequest, context: grpc.ServicerContext
     ) -> pb.CleanupResponse:
-        edits = [make_edit("kubectl", "Kubectl", K.EDIT_KIND_CAPITALIZATION, request.text)]
-        if request.text.startswith("Um, so"):
-            edits.insert(0, make_edit("Um, so", "So", K.EDIT_KIND_FILLER_REMOVAL, request.text))
-        return pb.CleanupResponse(
-            edits=edits,
-            rejections=[
-                pb.EditRejection(
-                    find="get", replace="Get!", reason=R.EDIT_REJECTION_REASON_INVARIANT
-                ),
-                pb.EditRejection(find="run", replace="run", reason=R.EDIT_REJECTION_REASON_NO_OP),
-            ],
-        )
+        self.requests.append(request)
+        if self.rewrite is None:
+            return pb.CleanupResponse(skipped="not_english")
+        return pb.CleanupResponse(text=self.rewrite)
 
 
 @pytest.fixture
-def bad_cleanup_channel() -> Iterator[grpc.Channel]:
-    server = grpc.server(ThreadPoolExecutor(max_workers=2))
-    pb_grpc.add_TextCleanupServicer_to_server(BadCleanup(), server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    server.start()
+def server() -> Iterator[tuple[FixedRewrite, grpc.Channel]]:
+    servicer = FixedRewrite()
+    srv = grpc.server(ThreadPoolExecutor(max_workers=2))
+    pb_grpc.add_TextCleanupServicer_to_server(servicer, srv)
+    port = srv.add_insecure_port("127.0.0.1:0")
+    srv.start()
     with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
-        yield channel
-    server.stop(0)
+        yield servicer, channel
+    srv.stop(0)
 
 
 @pytest.mark.parametrize(
-    ("text", "result", "status", "reason", "applied"),
+    ("text", "rewrite", "terms", "result", "status", "reason"),
     [
-        ("please run kubectl get", "please run kubectl get", "rejected",
-         "0 of 2 edits applied; dropped: invariant, touches a protected span", []),
-        ("Um, so please just run kubectl get", "So please just run kubectl get", "partial",
-         "1 of 3 edits applied; dropped: invariant, touches a protected span", ["Um, so"]),
+        ("um please run kubectl get", "Please run kubectl get.", [KUBECTL],
+         "Please run kubectl get.", "applied", ""),
+        ("please run kubectl get", "please run kubectl get", [KUBECTL],
+         "please run kubectl get", "no_edits", ""),
+        # a re-cased identifier is put back; a sentence-start capital is no reason to reject
+        ("hark-server should log it", "Hark-server should log it.", [term("hark-server")],
+         "hark-server should log it.", "applied", ""),
+        ("please run kubectl get", "Please don't run kubectl get.", [KUBECTL],
+         "please run kubectl get", "rejected", "negations 0 -> 1"),
+        ("please run kubectl get", "Please run the cube control get.", [KUBECTL],
+         "please run kubectl get", "rejected", "changed 'kubectl'"),
+        # merged into a shortlist term the text did not have
+        ("from Super Whisper", "From Superwhisper.",
+         [term("Super", TermKind.NAME), term("Whisper", TermKind.NAME), term("Superwhisper")],
+         "From Superwhisper.", "applied", ""),
+        ("Tohle je test.", None, [], "Tohle je test.", "skipped", "not_english"),
     ],
 )  # fmt: skip
-def test_protected_span_violation_drops_only_that_edit(
-    bad_cleanup_channel: grpc.Channel,
+def test_run_keeps_the_rewrite_only_if_faithful(
+    server: tuple[FixedRewrite, grpc.Channel],
     text: str,
+    rewrite: str | None,
+    terms: list[Term],
     result: str,
     status: str,
     reason: str,
-    applied: list[str],
 ):
+    servicer, channel = server
+    servicer.rewrite = rewrite
     out = cleanup.run(
-        bad_cleanup_channel, text=text, terms=[KUBECTL], utterance_id="u1",
-        profile_id="prose", app_category="prose", language="", deadline_ms=2000,
+        channel, text=text, terms=terms, utterance_id="u1", profile_id="terminal",
+        app_category="terminal", language="", deadline_ms=2000,
     )  # fmt: skip
-    assert (out.text, out.status, out.reason) == (result, status, reason)
-    assert [e["find"] for e in out.edits] == applied
-    assert out.dropped == [  # the server's no-op echo is not a loss
-        {"find": "get", "replace": "Get!", "by": "server", "reason": "invariant"},
-        {"find": "kubectl", "replace": "Kubectl", "by": "client",
-         "reason": "touches a protected span"},
-    ]  # fmt: skip
+    assert (out.text, out.status) == (result, status)
+    assert out.reason.startswith(reason) if reason else out.reason == ""
+    (request,) = servicer.requests
+    assert (request.text, request.profile_id) == (text, "terminal")  # the shortlist stays here
 
 
-@pytest.mark.parametrize("send_terms", [True, False])
-def test_known_terms_leave_only_when_the_provider_may_see_context(*, send_terms: bool):
-    seen: list[pb.CleanupRequest] = []
-
-    class Recording(BadCleanup):
-        def Cleanup(
-            self, request: pb.CleanupRequest, context: grpc.ServicerContext
-        ) -> pb.CleanupResponse:
-            seen.append(request)
-            return super().Cleanup(request, context)
-
-    server = grpc.server(ThreadPoolExecutor(max_workers=2))
-    pb_grpc.add_TextCleanupServicer_to_server(Recording(), server)
-    port = server.add_insecure_port("127.0.0.1:0")
-    server.start()
-    try:
-        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
-            out = cleanup.run(
-                channel, text="please run kubectl get", terms=[KUBECTL], utterance_id="u1",
-                profile_id="prose", app_category="prose", language="", deadline_ms=2000,
-                send_terms=send_terms,
-            )  # fmt: skip
-    finally:
-        server.stop(0)
-    (request,) = seen
-    assert list(request.known_terms) == (["kubectl"] if send_terms else [])
-    assert len(request.protected_spans) == 1  # spans are offsets into the text: always sent
-    # the client validator keeps the shortlist either way
-    assert {"find": "kubectl", "replace": "Kubectl", "by": "client",
-            "reason": "touches a protected span"} in out.dropped  # fmt: skip
+def test_language_setting_skips_cleanup_without_a_call():
+    with grpc.insecure_channel("127.0.0.1:1") as nowhere:
+        out = cleanup.run(
+            nowhere, text="please run it", terms=[], utterance_id="u1", profile_id="prose",
+            app_category="prose", language="cs", deadline_ms=200,
+        )  # fmt: skip
+    assert (out.text, out.status, out.reason) == ("please run it", "skipped", "non_english")
