@@ -154,6 +154,22 @@ def status_view(status: str) -> tuple[View, float] | None:
     return View("cancelled", "cross", "dim", label, label), LINGER_CANCELLED
 
 
+def no_speech_view(res: Result) -> tuple[View, float]:
+    """Nothing heard: which mic it listened to and `hark doctor`. Quiet is not an error (a
+    press with nothing said); a flat signal from the mic is."""
+    hint = "hark doctor"
+    if res.flat_signal:
+        label = "No audio from mic"
+        name = _join(label, res.input_device, hint)
+        return (
+            View("error", "mic-off", "live", name, label, detail=res.input_device, hint=hint),
+            LINGER_PROBLEM,
+        )
+    name = _join("No speech", res.input_device, hint)
+    view = View("cancelled", "cross", "dim", name, "No speech", detail=res.input_device, hint=hint)
+    return view, LINGER_LONG_TAG
+
+
 def failure_reason(error: str) -> str:
     """A short reason for ``Failed · …`` from a Result.error ("" = none worth showing)."""
     e = error.lower()
@@ -173,7 +189,10 @@ def outcome_view(
     ``recovery``: the key that opens the panel (failures name it); ``retry_hint``: name
     `hark retry` on a failure instead when there is no such key."""
     status = "error" if res is None else res.status
-    simple = status_view(status)
+    if res is not None and status == "no_speech" and res.input_device:
+        simple = no_speech_view(res)
+    else:
+        simple = status_view(status)
     if simple is not None:
         return simple
     if res is None or status not in ("pasted", "copied", "focus_changed", "paste_failed"):

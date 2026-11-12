@@ -114,6 +114,10 @@ def pill(view: View) -> tuple[str, str, str, str, str]:
          ("alert", "live", "Failed", "", KEY), 4.0),
         (None, False, ("alert", "live", "Failed", "", KEY), 4.0),  # the finish itself crashed
         (Result("u", "no_speech"), True, ("cross", "dim", "No speech", "", ""), 0.6),
+        (Result("u", "no_speech", input_device="USB Mic"), True,
+         ("cross", "dim", "No speech", "USB Mic", "hark doctor"), 1.5),  # quiet: not an error
+        (Result("u", "no_speech", input_device="USB Mic", flat_signal=True), True,
+         ("mic-off", "live", "No audio from mic", "USB Mic", "hark doctor"), 4.0),
         (Result("u", "too_short"), True, ("cross", "dim", "Too short", "", ""), 0.6),
         (Result("u", "cancelled"), True, ("cross", "dim", "Cancelled", "", ""), 0.6),
     ],

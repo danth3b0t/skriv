@@ -267,7 +267,11 @@ While `hark run` works, a small pill shows its state (design/SPEC.md §4): a red
 hand-picked profile) with the live input level and, after a minute, the elapsed time (**0:25 left** in the last 30 s
 before `audio.max_ms`), three dots while working, then the outcome for a moment: ✓ (sent,
 with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 5:00*), **Copied**, **Paste
-failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. A press that starts nothing says why:
+failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. **No speech** names the input it
+listened to and `hark doctor`; it is not an error (a press with nothing said, a pause to think: silence inside a
+dictation never discards it, only too little speech in all of it). When every sample was the same value (a muted or
+dead input) it says **No audio from mic** instead, and a notification says which device and to run `hark doctor`
+(which flags a flat signal too); history records `input_device` and `flat_signal`. A press that starts nothing says why:
 **Paused**, **Mic lost**, or the working dots while the previous dictation finishes. On Omarchy, failure pills name
 the key that opens hark's panel (**Super Alt D**); elsewhere a failure names `hark retry` when its audio is kept.
 It never takes focus or clicks, so the paste still goes to the window you dictated into.

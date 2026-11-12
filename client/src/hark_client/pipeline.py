@@ -37,7 +37,7 @@ from hark_client import (
     symbols,
 )
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
-from hark_client.audio import speech_ms
+from hark_client.audio import flat, speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
@@ -92,6 +92,8 @@ class Result:
     provider: str = ""  # the provider that transcribed it
     fallback: bool = False  # ... was not the first in priority order (a failover counts)
     mic_interrupted: bool = False  # the mic dropped out while recording
+    input_device: str = ""  # the microphone it was recorded from ("" = not a live recording)
+    flat_signal: bool = False  # no_speech because the input sent no signal at all (a mic problem)
     delivery: str = "none"  # sent | copied | failed | none (docs/protocol/ctl-v1.md)
 
 
@@ -159,6 +161,7 @@ class Utterance:
         self.t_release = 0.0  # time.perf_counter() at key release (set by finish)
         self.stop_reason = ""
         self.mic_interrupted = False  # set by the daemon's mic watchdog
+        self.input_device = ""  # set by the daemon: the mic's name
         self.failed_over = False
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
@@ -301,6 +304,8 @@ class Utterance:
                 "too_short" if held_ms < min_ms else "no_speech",
                 timings={"held_ms": held_ms, "audio_ms": self.audio_ms, "speech_ms": speech},
             )
+            with self._lock:  # quiet speech or a silent pause is no_speech; this is the mic
+                res.flat_signal = res.status == "no_speech" and flat(bytes(self.pcm))
             self._report("gate", f"{res.status}: {res.timings}")
             if res.status == "no_speech":
                 self._record(self._stamp(res))
@@ -394,6 +399,7 @@ class Utterance:
         """The facts every result carries (docs/protocol/ctl-v1.md `last`)."""
         res.stop_reason = self.stop_reason
         res.mic_interrupted = self.mic_interrupted
+        res.input_device = self.input_device
         provider = self.provider
         if provider is not None and res.status not in ("too_short", "no_speech", "cancelled"):
             res.provider = provider.name
@@ -686,6 +692,8 @@ class Utterance:
             "stop_reason": res.stop_reason,
             "fallback": res.fallback,
             "mic_interrupted": res.mic_interrupted,
+            "input_device": res.input_device,
+            "flat_signal": res.flat_signal,
             "timings_ms": res.timings,
             "client_unix_us": {
                 "keyup": self.keyup_unix_us,

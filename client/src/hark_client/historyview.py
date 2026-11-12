@@ -102,7 +102,9 @@ def show(r: Record, *, kept: bool = False) -> str:
     line("id", uid + (f"  (audio kept: hark retry {short_id(uid)})" if kept else ""))
     line("time", t.strftime("%Y-%m-%d %H:%M:%S") if t else _str(r, "ts"))
     app = _str(r, "app") or "?"
-    line("app", f"{app} ({_str(r, 'app_id')})  profile={_str(r, 'profile') or '-'}")
+    mic = f"  mic={_str(r, 'input_device')}" if _str(r, "input_device") else ""
+    mic += " (flat signal: no audio at all)" if r.get("flat_signal") else ""
+    line("app", f"{app} ({_str(r, 'app_id')})  profile={_str(r, 'profile') or '-'}{mic}")
     line("status", _str(r, "status") + (f"  error: {_str(r, 'error')}" if _str(r, "error") else ""))
     provider = _dict(r.get("provider"))
     if provider:

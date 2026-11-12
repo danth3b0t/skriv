@@ -99,9 +99,10 @@ def check_mic(r: Report, cfg: Config) -> None:
 
         name, rate = mic.describe_input(cfg.audio.device)
         r.ok("input device", f"{name} @ {rate} Hz")
-        from hark_client.audio import rms_dbfs  # noqa: PLC0415
+        from hark_client.audio import flat, rms_dbfs  # noqa: PLC0415
 
-        level = rms_dbfs(mic.record(0.5, cfg.audio.device))
+        pcm = mic.record(0.5, cfg.audio.device)
+        level, constant = rms_dbfs(pcm), flat(pcm)
     except (
         OSError,
         ValueError,
@@ -111,13 +112,14 @@ def check_mic(r: Report, cfg: Config) -> None:
     except Exception as e:  # noqa: BLE001 - report any PortAudio failure, do not crash doctor
         r.fail("input device", f"{type(e).__name__}: {e}")
         return
-    if level < -80:
+    if level < -80 or constant:
         hint = (
             "grant Microphone access to Hark.app or your terminal (System Settings > Privacy & Security)"
             if sys.platform == "darwin"
             else "check the input source/mute (pavucontrol, wpctl)"
         )
-        r.warn("level", f"{level:.0f} dBFS over 0.5 s: digital silence; {hint}")
+        what = "digital silence" if level < -80 else "a flat signal (every sample the same)"
+        r.warn("level", f"{level:.0f} dBFS over 0.5 s: {what}; {hint}")
     else:
         r.ok("level", f"{level:.0f} dBFS over 0.5 s")
 

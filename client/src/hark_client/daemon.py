@@ -145,6 +145,7 @@ class Controller:
                 return self._refuse("error busy", "busy")
             profile, self.profile_override = self.profile_override, None  # used up by it
             self.current = utt = Utterance(self.svc, profile=profile, preroll=self.preroll.take())
+            utt.input_device = self.mic.device_name if self.mic is not None else ""
             self._max_hit = False
             self._cue_pending = self._start_cue()
             if self.on_recording is not None:
@@ -288,6 +289,15 @@ class Controller:
                     shadow=self.shadow, reason=end,
                 )  # fmt: skip
                 self.last_result = (time.time(), res)
+                if res.flat_signal:
+                    self.svc.feedback.notify(
+                        f"No audio from {res.input_device or 'the microphone'}: it sends a flat"
+                        " signal (muted, or the wrong input?); run `hark doctor`"
+                    )
+                elif res.status == "no_speech":
+                    log.info(
+                        "no speech heard from %s; `hark doctor` tests the mic", res.input_device
+                    )
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
                 self._kept(kept, utt, res)

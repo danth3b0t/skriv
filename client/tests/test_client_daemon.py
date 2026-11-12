@@ -35,6 +35,7 @@ if TYPE_CHECKING:
 
     from hark_client.daemon import Controller
     from hark_client.mic import Mic
+    from hark_client.pipeline import Result
 
     from .conftest import FakeContext
 
@@ -202,6 +203,39 @@ class FakeMic:
         if self.reopen_fails:
             raise OSError("no input device")
         self.delivering = True
+
+
+def test_nothing_heard_names_the_mic_and_only_a_flat_signal_is_a_mic_problem(
+    controller: tuple[Controller, DryRunInjector], tmp_path: Path
+):
+    c, injector = controller
+    c.mic = cast("Mic", FakeMic())
+    feedback = c.svc.feedback
+    assert isinstance(feedback, RecordingFeedback)
+    results: list[Result] = []
+    for audio in (
+        bytes(32000),  # a muted input: digital silence
+        pcm16(noise(1000, -60)),  # a quiet room, nothing said
+        pcm(0.2) + bytes(64000) + pcm(0.2),  # speech, a long pause to think, speech
+    ):
+        c.handle("start")
+        c.on_pcm(audio)
+        c.handle("stop")
+        wait_idle(c)
+        assert c.last_result is not None
+        results.append(c.last_result[1])
+    facts = [(r.status, r.input_device, r.flat_signal) for r in results]
+    assert facts == [
+        ("no_speech", "fake", True),
+        ("no_speech", "fake", False),
+        ("pasted", "fake", False),
+    ]
+    assert len(injector.pasted) == 1
+    assert feedback.notifications == [
+        "No audio from fake: it sends a flat signal (muted, or the wrong input?); run `hark doctor`"
+    ]
+    (flat, *_) = history.recent(tmp_path, 3)
+    assert (flat["input_device"], flat["flat_signal"]) == ("fake", True)
 
 
 def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
