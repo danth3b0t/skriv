@@ -11,19 +11,19 @@ hand-edited ``label.json``:
   reword, so a new wording is *unreviewed*, not a failure: `hark eval accept ID` adds it.
 
 A run fails (exit 1) on a missing critical string, a forbidden one, or fewer negations in an
-unreviewed final text than in ``said``. Nothing here judges meaning automatically.
+unreviewed final text than in ``said`` (after a spoken self-correction in it is resolved). Words, negations and exact strings are counted as
+`hark_client.fidelity` counts them for cleanup.
 """
 
 from __future__ import annotations
 
 import json
-import re
 import shutil
 import time
 from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
-from hark_client import history, retry
+from hark_client import fidelity, history, retry
 from hark_client.asr import CHUNK_SAMPLES
 from hark_client.audio import read_wav
 from hark_client.pipeline import Utterance
@@ -35,8 +35,6 @@ if TYPE_CHECKING:
 
 LABEL = "label.json"
 LAST = "last.json"
-_TOKEN_RE = re.compile(r"[^\W_]+(?:'[^\W_]+)?")
-NEGATIONS = frozenset({"not", "no", "never", "cannot", "nothing", "none", "nor", "without"})
 
 
 @dataclass
@@ -62,13 +60,9 @@ class Score:
         return bool(self.missing or self.forbidden or (self.negations_lost and not self.accepted))
 
 
-def tokens(text: str) -> list[str]:
-    return [m.group().lower().replace("\u2019", "'") for m in _TOKEN_RE.finditer(text)]
-
-
 def wer(ref: str, hyp: str) -> float:
     """Word error rate of ``hyp`` against ``ref`` (case and punctuation ignored)."""
-    r, h = tokens(ref), tokens(hyp)
+    r, h = fidelity.tokens(ref), fidelity.tokens(hyp)
     if not r:
         return float(bool(h))
     prev = list(range(len(h) + 1))
@@ -80,10 +74,6 @@ def wer(ref: str, hyp: str) -> float:
     return prev[-1] / len(r)
 
 
-def negations(text: str) -> int:
-    return sum(1 for t in tokens(text) if t in NEGATIONS or t.endswith("n't"))
-
-
 def _same(a: str, b: str) -> bool:
     return " ".join(a.split()) == " ".join(b.split())
 
@@ -91,15 +81,14 @@ def _same(a: str, b: str) -> bool:
 def score(clip: str, label: Label, raw: str, canonical: str, final: str) -> Score:
     missing = [
         (c, "cleanup" if c in canonical else "recognition")
-        for c in label.critical
-        if c not in final
+        for c in fidelity.missing(label.critical, final)
     ]
     return Score(
         clip=clip,
         wer=round(wer(label.said, raw), 3) if label.said else None,
         missing=missing,
         forbidden=[f for f in label.forbidden if f in final],
-        negations_lost=bool(label.said) and negations(final) < negations(label.said),
+        negations_lost=bool(label.said) and not fidelity.negations_kept(label.said, final),
         accepted=any(_same(final, a) for a in label.accepted),
     )
 
