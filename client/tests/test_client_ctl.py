@@ -87,16 +87,28 @@ V1_LAST = {
     "profile": "str",
     "paste_verdict": "str",
     "keyup_to_paste_ms": "float",
+    "stop_reason": "str",
+    "provider": "str",
+    "fallback": "bool",
+    "cleanup": "str",
+    "delivery": "str",
+    "retry_available": "bool",
+    "mic_interrupted": "bool",
 }
 
 
-def v1_status(last: object) -> dict[str, object]:
+def v1_status(last: object, rtt: str = "float") -> dict[str, object]:
     return {
         "version": "int",
         "ok": "bool",
         "command": "str",
         "state": "str",
+        "phase": "str",
         "finishing": "int",
+        "paused": "bool",
+        "mic": {"status": "str"},
+        "server": {"name": "str", "state": "str", "rtt_ms": rtt, "fallback": "bool"},
+        "config": {"changed": "bool", "restart_needed": "list"},
         "last": last,
         "learning": {"enabled": "bool", "watching": "bool"},
         "profile_override": "NoneType",
@@ -110,7 +122,7 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
     server.start()
     try:
         idle = _json(sock_path, {"version": 1, "command": "status"})
-        assert _shape(idle) == v1_status("NoneType")
+        assert _shape(idle) == v1_status("NoneType", rtt="NoneType")  # no health check yet
         assert (idle["ok"], idle["state"], idle["finishing"]) == (True, "idle", 0)
 
         started = _json(sock_path, {"version": 1, "command": "start"})
@@ -127,7 +139,12 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
         done = _json(sock_path, {"version": 1, "command": "status"})
         assert _shape(done) == v1_status(V1_LAST)
         last = cast("dict[str, object]", done["last"])
-        assert (last["status"], last["paste_verdict"]) == ("pasted", "unknown")
+        assert (last["status"], last["paste_verdict"], last["delivery"]) == (
+            "pasted",
+            "unknown",
+            "sent",
+        )
+        assert (done["phase"], last["stop_reason"], last["fallback"]) == ("idle", "key_up", False)
         assert "text" not in json.dumps(last)  # never the dictated text
         again = _json(sock_path, {"version": 1, "command": "paste-last"})
         assert (again["ok"], again["result"]) == (
@@ -153,6 +170,32 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
             reply = _json(sock_path, request)
             assert _shape(reply) == V1_ERROR, request
             assert (reply["ok"], cast("dict[str, str]", reply["error"])["code"]) == (False, code)
+    finally:
+        server.close()
+
+
+def test_subscribe_sends_the_status_now_and_on_every_change(
+    sock_path: Path, controller: tuple[Controller, DryRunInjector]
+):
+    c, _ = controller
+    server = ctl.CtlServer(sock_path, c.handle, c.status_json, c.wait_change)
+    server.start()
+    try:
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:
+            s.settimeout(5)
+            s.connect(str(sock_path))
+            s.sendall(b'{"version": 1, "command": "subscribe"}\n')
+            lines = s.makefile("rb")
+
+            def phase() -> object:
+                return cast("dict[str, object]", json.loads(lines.readline()))["phase"]
+
+            assert phase() == "idle"
+            c.handle("start")
+            assert phase() == "recording"
+            c.handle("cancel")
+            assert phase() == "idle"
+        assert ctl.send("subscribe", sock_path).startswith("error unknown command")
     finally:
         server.close()
 

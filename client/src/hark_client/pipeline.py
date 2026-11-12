@@ -93,6 +93,24 @@ class Result:
     gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
     pasted_text: str = ""  # exactly what was pasted (smart spacing applied)
     swap_text: str = ""  # the uncleaned text as it would have been pasted (`hark ctl swap-raw`)
+    stop_reason: str = ""  # key_up | limit ("" = never got that far)
+    provider: str = ""  # the provider that transcribed it
+    fallback: bool = False  # ... was not the first in priority order (a failover counts)
+    mic_interrupted: bool = False  # the mic dropped out while recording
+    delivery: str = "none"  # confirmed | sent | copied | failed | none (docs/protocol/ctl-v1.md)
+
+
+FAILOVER_MIN_S = 0.5  # less time left than this: no failover, the dictation fails
+
+
+def delivery(res: Result) -> str:
+    """Where the text went, from the paste outcome and read-back verdict."""
+    paste = res.paste
+    if paste is None:
+        return "none"
+    if paste.ok and paste.method != "clipboard":
+        return "confirmed" if res.paste_verdict == "landed" else "sent"
+    return "copied" if paste.in_clipboard else "failed"
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -142,7 +160,11 @@ class Utterance:
         self._lock = threading.Lock()
         self._done = False
         self._cancelled = False
+        self._committed = False  # past the point of no return (clipboard write / paste)
         self.keyup_unix_us = 0
+        self.stop_reason = ""
+        self.mic_interrupted = False  # set by the daemon's mic watchdog
+        self.failed_over = False
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
         self._starter.start()
@@ -244,12 +266,33 @@ class Utterance:
     def audio_ms(self) -> int:
         return len(self.pcm) // 2 * 1000 // SAMPLE_RATE
 
-    def cancel(self, reason: pb.CancelReason.ValueType = pb.CANCEL_REASON_USER_ABORT) -> None:
+    def cancel(self, reason: pb.CancelReason.ValueType = pb.CANCEL_REASON_USER_ABORT) -> bool:
+        """Drop the dictation; False when it is already being pasted (too late)."""
         with self._lock:
+            if self._committed:
+                return False
             self._done = self._cancelled = True
             stream = self.stream
         if stream is not None:
             stream.cancel(reason)
+        return True
+
+    @property
+    def cancelled(self) -> bool:
+        with self._lock:
+            return self._cancelled
+
+    def _commit(self) -> bool:
+        """The point of no return before the clipboard write / paste; False if cancelled."""
+        with self._lock:
+            if self._cancelled:
+                return False
+            self._committed = True
+            return True
+
+    def wait_started(self) -> None:
+        """Until the provider is chosen and the key-down context is known (bounded)."""
+        self._starter.join()
 
     # -- hotkey up -----------------------------------------------------------------
 
@@ -268,6 +311,7 @@ class Utterance:
         """keyup_unix_us: when the key was released, if earlier than this call.
         shadow: the daemon's record of its pastes and later keys (spacing fallback)."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
+        self.stop_reason = "limit" if reason == pb.END_REASON_MAX_DURATION else "key_up"
         held_ms = _ms(self.t0)
         with self._lock:
             speech = speech_ms(self._unmasked())
@@ -283,38 +327,110 @@ class Utterance:
             )
             self._report("gate", f"{res.status}: {res.timings}")
             if res.status == "no_speech":
-                self._record(res)
-            return res
+                self._record(self._stamp(res))
+            return self._stamp(res)
         self._starter.join()  # bounded: health probes + the context deadline
         with self._lock:
             self._done = True
             stream = self.stream
         if stream is None:  # cancelled while the provider was being chosen
-            return Result(self.id, "cancelled", timings=self.timings)
+            return self._stamp(Result(self.id, "cancelled", timings=self.timings))
         stream.end(reason)
         t_up = time.perf_counter()
         self.timings["held_ms"] = held_ms
         self.timings["speech_ms"] = speech
         self.timings["audio_ms"] = self.audio_ms
+        budget_s = self.svc.cfg.server.final_timeout_ms / 1000
         try:
-            result = self._finish(t_up, shadow)
+            result = self._finish(t_up, shadow, budget_s)
         except AsrError as e:
-            if self.provider is not None and stream.final is None and stream.ended is None:
-                self.provider.mark_down(str(e))  # no answer at all: the next dictation moves on
-            result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
-            self._report("asr", f"FAILED: {e}")
-            self.svc.feedback.sound("error")
-            hint = "; `hark retry` re-runs it" if self.svc.cfg.retry.keep > 0 else ""
-            self.svc.feedback.notify(f"Transcription failed: {e}{hint}")
-        self._record(result)
+            result = self._asr_failed(e, stream, t_up, shadow, reason)
+        self._record(self._stamp(result))
         return result
 
-    def _finish(self, t_up: float, shadow: ShadowBuffer | None) -> Result:  # noqa: PLR0912, PLR0915 - the pipeline, stage by stage
+    def _asr_failed(
+        self,
+        e: AsrError,
+        stream: TranscribeStream,
+        t_up: float,
+        shadow: ShadowBuffer | None,
+        reason: pb.EndReason.ValueType,
+    ) -> Result:
+        """Cancelled, failed over to the next healthy provider, or failed."""
+        if self.cancelled:
+            return Result(self.id, "cancelled", timings=self.timings)
+        if self.provider is not None and stream.final is None and stream.ended is None:
+            self.provider.mark_down(str(e))  # no answer at all: the next dictation moves on
+            try:
+                result = self._failover(t_up, shadow, reason, str(e))
+            except AsrError as e2:
+                if self.cancelled:
+                    return Result(self.id, "cancelled", timings=self.timings)
+                e = e2
+            else:
+                if result is not None:
+                    return result
+        self._report("asr", f"FAILED: {e}")
+        self.svc.feedback.sound("error")
+        hint = "; `hark retry` re-runs it" if self.svc.cfg.retry.keep > 0 else ""
+        self.svc.feedback.notify(f"Transcription failed: {e}{hint}")
+        return Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
+
+    def _failover(
+        self, t_up: float, shadow: ShadowBuffer | None, reason: pb.EndReason.ValueType, error: str
+    ) -> Result | None:
+        """Once: the buffered audio to the next healthy provider, within what is left of the
+        key-up budget. None: no other healthy provider, or too little time."""
+        left = self.svc.cfg.server.final_timeout_ms / 1000 - (time.perf_counter() - t_up)
+        failed = self.provider
+        if left < FAILOVER_MIN_S or failed is None:
+            return None
+        provider, route = self.svc.router.pick()
+        if provider is failed or provider.health.state != "ok":
+            return None
+        left = self.svc.cfg.server.final_timeout_ms / 1000 - (time.perf_counter() - t_up)
+        if left < FAILOVER_MIN_S:
+            return None
+        self._report("failover", f"{failed.name} failed ({error}); {provider.name} gets the audio")
+        self.route = [
+            *self.route,
+            {"name": failed.name, "state": "failed", "detail": error},
+            *route,
+        ]
+        self.start_message = self._session_start(self.snapshot_at_start, provider)
+        stream = TranscribeStream(provider.channel)
+        with self._lock:
+            if self._cancelled:
+                stream.cancel()
+                return Result(self.id, "cancelled", timings=self.timings)
+            self.provider, self.stream, self.failed_over = provider, stream, True
+            stream.feed(bytes(self.pcm))
+        stream.start(self.start_message)
+        stream.end(reason)
+        try:
+            return self._finish(t_up, shadow, left)
+        except AsrError:
+            if stream.final is None and stream.ended is None:
+                provider.mark_down("failover: no answer")
+            raise
+
+    def _stamp(self, res: Result) -> Result:
+        """The facts every result carries (docs/protocol/ctl-v1.md `last`)."""
+        res.stop_reason = self.stop_reason
+        res.mic_interrupted = self.mic_interrupted
+        provider = self.provider
+        if provider is not None and res.status not in ("too_short", "no_speech", "cancelled"):
+            res.provider = provider.name
+            res.fallback = self.failed_over or provider is not self.svc.router.providers[0]
+        res.delivery = delivery(res)
+        return res
+
+    def _finish(self, t_up: float, shadow: ShadowBuffer | None, timeout_s: float) -> Result:  # noqa: PLR0912, PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
         stream, provider = self.stream, self.provider
         if stream is None or provider is None:
             raise AsrError("no stream")  # finish() returns before this
-        final = stream.wait_final(cfg.server.final_timeout_ms / 1000)
+        final = stream.wait_final(timeout_s)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
         self._report(
             "context",
@@ -411,6 +527,10 @@ class Utterance:
             self._report("paste", "nothing to paste")
             svc.feedback.sound("error")
             return res
+        if not self._commit():
+            res.status = "cancelled"
+            self._report("paste", "cancelled before the paste")
+            return res
 
         t1 = time.perf_counter()
         changed_to = self._focus_changed(snap.focus)
@@ -425,6 +545,7 @@ class Utterance:
                 ok=False,
                 method=svc.injector.name,
                 detail="focus changed; text copied" if ok else "focus changed; copy failed",
+                in_clipboard=ok,
             )
             svc.feedback.notify(
                 "Focus moved to another window; the text is in the clipboard"
@@ -607,6 +728,10 @@ class Utterance:
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
             "paste_verdict": res.paste_verdict,
+            "delivery": res.delivery,
+            "stop_reason": res.stop_reason,
+            "fallback": res.fallback,
+            "mic_interrupted": res.mic_interrupted,
             "timings_ms": res.timings,
             "client_unix_us": {
                 "keyup": self.keyup_unix_us,

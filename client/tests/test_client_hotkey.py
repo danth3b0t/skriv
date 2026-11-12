@@ -115,7 +115,7 @@ def test_recordings_ended_or_started_elsewhere_reset_the_tap_state():
     assert events == ["down", "tap", "down", "up", "up", KeyPress("esc")]
 
 
-def test_esc_cancels_any_recording_once():
+def test_esc_cancels_any_recording_once_and_a_dictation_until_it_is_pasted():
     events: list[object] = []
     ptt = make(events)
     ptt._press(K.alt_r)
@@ -127,7 +127,12 @@ def test_esc_cancels_any_recording_once():
     ptt.recording(True)
     ptt._press(K.esc)  # started by `hark ctl`
     ptt._press(K.esc)  # nothing left to cancel
-    assert events == ["down", "tap", "cancel", "down", "cancel", "cancel", KeyPress("esc")]
+    ptt.finishing(True)  # stopped, being transcribed
+    ptt._press(K.esc)
+    ptt.finishing(False)  # pasted
+    ptt._press(K.esc)
+    esc = KeyPress("esc")
+    assert events == ["down", "tap", "cancel", "down", "cancel", "cancel", esc, "cancel", esc]
 
 
 def test_without_tap_ms_every_press_is_push_to_talk():

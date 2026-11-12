@@ -112,7 +112,7 @@ def test_send_context_false_sends_audio_only_and_canonicalizes_locally(
     assert cast("dict[str, object]", rec["provider"])["send_context"] is False
 
 
-def test_a_provider_that_stops_answering_is_skipped_from_the_next_dictation(
+def test_a_provider_that_stops_answering_fails_over_at_once_and_is_skipped_next_time(
     tmp_path: Path, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot("kitty")]
@@ -139,7 +139,7 @@ def test_a_provider_that_stops_answering_is_skipped_from_the_next_dictation(
     try:
         dictate()
         primary.close()
-        dictate()  # health still cached as ok: this one fails and marks the primary down
+        dictate()  # health still cached as ok: the primary fails, the fallback gets the audio
         dictate()
     finally:
         router.close()
@@ -147,7 +147,14 @@ def test_a_provider_that_stops_answering_is_skipped_from_the_next_dictation(
     lines = (tmp_path / "history.jsonl").read_text().splitlines()
     records = [cast("Record", json.loads(x)) for x in lines]
     served = [(cast("dict[str, str]", r["provider"])["name"], r["status"]) for r in records]
-    assert served == [("primary", "pasted"), ("primary", "error"), ("fallback", "pasted")]
+    assert served == [("primary", "pasted"), ("fallback", "pasted"), ("fallback", "pasted")]
+    assert [r["fallback"] for r in records] == [False, True, True]
+    assert [h["state"] for h in cast("list[dict[str, str]]", records[1]["route"])] == [
+        "ok",  # the cached health that sent it to the primary
+        "failed",
+        "down",
+        "ok",
+    ]
     assert cast("list[dict[str, str]]", records[2]["route"])[0]["state"] == "down"
 
 

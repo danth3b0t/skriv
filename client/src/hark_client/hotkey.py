@@ -119,6 +119,7 @@ class PushToTalk:
         self._down_at = 0.0
         self._mode: Mode = "idle"
         self._external = False  # a recording is running (from any source)
+        self._finishing = False  # a dictation is being transcribed/pasted: Esc cancels it too
         self._mods: dict[object, str] = {}  # held modifier key -> mods name
         self._lock = threading.Lock()
         self.swallow_esc = swallow_esc
@@ -161,9 +162,21 @@ class PushToTalk:
             self._external = on
             if not on:
                 self._mode = "idle"  # a later release of a held key does nothing
+            hold = on or self._finishing
+        self._hold_esc(hold=hold)
+
+    def finishing(self, on: bool) -> None:  # noqa: FBT001 - a state flag, called by the daemon
+        """A dictation started (True) or stopped (False) being transcribed and pasted: until
+        it is pasted, Esc cancels it."""
+        with self._lock:
+            self._finishing = on
+            hold = on or self._external
+        self._hold_esc(hold=hold)
+
+    def _hold_esc(self, *, hold: bool) -> None:
         grab = self._grab
         if grab is not None:  # in order with the actions, off the caller's (locked) path
-            self._dispatch(lambda: grab.hold(on=on))
+            self._dispatch(lambda: grab.hold(on=hold))
 
     def _intercept(self, event_type: object, event: object) -> object | None:
         """macOS event tap filter, right after the listener reported ``event``: None drops it.
@@ -198,7 +211,9 @@ class PushToTalk:
         if key == self._keyboard.Key.esc and self._swallowing:
             self._drop = True  # auto-repeat of the Esc that cancelled
             return None
-        if key == self._keyboard.Key.esc and (self._mode != "idle" or self._external):
+        if key == self._keyboard.Key.esc and (
+            self._mode != "idle" or self._external or self._finishing
+        ):
             self._mode, self._external = "idle", False
             self._swallowing = self._drop = self.swallow_esc
             return self.on_cancel

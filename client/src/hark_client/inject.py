@@ -74,6 +74,7 @@ class PasteResult:
     method: str
     detail: str = ""
     focus_changed: bool = False  # the target lost focus; the text is left in the clipboard
+    in_clipboard: bool = False  # not pasted (or not known to be), but the text is in the clipboard
 
 
 class Injector(Protocol):
@@ -126,7 +127,9 @@ class ClipboardOnlyInjector:
 
     def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         ok = self.inner.copy(text)
-        return PasteResult(ok=ok, method=self.name, detail="copied" if ok else "copy failed")
+        return PasteResult(
+            ok=ok, method=self.name, detail="copied" if ok else "copy failed", in_clipboard=ok
+        )
 
     def copy(self, text: str) -> bool:
         return self.inner.copy(text)
@@ -327,7 +330,7 @@ class LinuxInjector:
         if outcome == "focus_changed":
             return PasteResult(
                 ok=False, method=self.name, detail=f"{how}; text left in clipboard",
-                focus_changed=True,
+                focus_changed=True, in_clipboard=True,
             )  # fmt: skip
         if outcome == "unsupported":
             outcome, how = self._send_keys(terminal=terminal)
@@ -335,11 +338,13 @@ class LinuxInjector:
             return PasteResult(
                 ok=False, method=self.name,
                 detail=f"{how} timed out (may have pasted; not retried); text left in clipboard",
+                in_clipboard=True,
             )  # fmt: skip
         if outcome != "sent":
             return PasteResult(
-                ok=False, method=self.name, detail=f"{how} failed; text left in clipboard"
-            )
+                ok=False, method=self.name, detail=f"{how} failed; text left in clipboard",
+                in_clipboard=True,
+            )  # fmt: skip
         if previous is not None:
             self._restorer.schedule(gen, previous, lambda: self.read_clipboard() == text, self.copy)
         return PasteResult(ok=True, method=self.name, detail=how)
@@ -372,6 +377,7 @@ class MacInjector:
             return PasteResult(
                 ok=False, method=self.name,
                 detail="no Accessibility permission to post Cmd+V; text left in clipboard",
+                in_clipboard=True,
             )  # fmt: skip
         macos.send_cmd_v()
         if saved is not None:

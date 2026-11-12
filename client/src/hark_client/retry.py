@@ -71,6 +71,15 @@ def save(
     return out
 
 
+def update_meta(entry: Path, meta: Mapping[str, object]) -> None:
+    """Replace a kept dictation's meta.json (its outcome, once known)."""
+    _write_private(entry / "meta.json", json.dumps(meta, ensure_ascii=False, sort_keys=True) + "\n")
+
+
+def drop(entry: Path) -> None:
+    shutil.rmtree(entry, ignore_errors=True)
+
+
 def purge(ring: Path, keep: int) -> int:
     """Delete all but the newest ``keep`` entries (UUIDv7 names sort by time); returns the count."""
     dirs = sorted(p for p in ring.iterdir() if p.is_dir() and not p.is_symlink())

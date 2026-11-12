@@ -7,24 +7,30 @@ import math
 import os
 import subprocess
 import sys
+import threading
 import time
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 
+from hark_client import retry
 from hark_client.audio import speech_ms
+from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
 from hark_client.continuation import PASTE_ECHO_S, KeyPress
 from hark_client.fields import FieldText
 from hark_client.indicator import Indicator, View
-from hark_client.inject import DryRunInjector
+from hark_client.inject import DryRunInjector, PasteResult
 from hark_client.learn import LearnedStore, Learner
+from hark_client.providers import Router
+from hark_server.backends.mock import MockBackend
 
-from .conftest import RecordingFeedback, pcm, snapshot, wait_idle
+from .conftest import HarkServer, RecordingFeedback, make_controller, pcm, snapshot, wait_idle
 from .test_client_indicator import FakeBackend
 
 if TYPE_CHECKING:
+    from collections.abc import Callable, Iterator
     from pathlib import Path
 
     import numpy.typing as npt
@@ -159,14 +165,27 @@ def test_paste_last_reinserts_the_last_text_guarded_for_the_focused_window(
 
 
 class FakeMic:
+    device_name, rate = "fake", 16000
+
     def __init__(self) -> None:
         self.calls: list[str] = []
+        self.delivering = True  # callbacks arrive
+        self.reopen_fails = False
 
     def start(self) -> None:
         self.calls.append("start")
 
     def stop(self) -> None:
         self.calls.append("stop")
+
+    def healthy(self, max_silence_s: float) -> bool:
+        return self.delivering
+
+    def reopen(self) -> None:
+        self.calls.append("reopen")
+        if self.reopen_fails:
+            raise OSError("no input device")
+        self.delivering = True
 
 
 def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
@@ -408,3 +427,134 @@ def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     dictate(c)
     assert [terminal for _, terminal in injector.pasted] == [False, True, False, False]
     assert c.status_json()["profile_override"] == "chat"
+
+
+def until(cond: Callable[[], bool]) -> None:
+    for _ in range(500):
+        if cond():
+            return
+        time.sleep(0.01)
+    raise AssertionError("timed out")
+
+
+class GatedInjector(DryRunInjector):
+    """Pastes only once released: a dictation stuck right at the point of no return."""
+
+    def __init__(self) -> None:
+        super().__init__(out=lambda _: None)
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
+        self.entered.set()
+        self.release.wait(5)
+        return super().paste(text, terminal=terminal, target=target)
+
+
+@pytest.fixture
+def slow(tmp_path: Path, fake_context: FakeContext) -> Iterator[tuple[Controller, GatedInjector]]:
+    """A controller whose server takes 300 ms per decode and whose pastes wait for release."""
+    fake_context.snapshots = [snapshot("kitty")]
+    server = HarkServer(backend=MockBackend(decode_ms=300))
+    router = Router([ProviderConfig(address=server.target)])
+    yield make_controller(tmp_path, router, GatedInjector())
+    router.close()
+    server.close()
+
+
+def test_one_dictation_at_a_time_cancellable_until_it_is_pasted(
+    slow: tuple[Controller, GatedInjector], tmp_path: Path
+):
+    c, injector = slow
+    hotkey_told: list[bool] = []
+    c.on_recording = hotkey_told.append
+    finishing: list[bool] = []
+    c.on_finishing = finishing.append
+    c.handle("start")
+    c.on_pcm(pcm(0.6))
+    c.handle("stop")
+    assert c.status_json()["phase"] == "finishing"
+    assert c.handle("start") == "error busy"  # nothing records; the listener is told so
+    assert hotkey_told == [True, False, False]
+    # the audio is kept for `hark retry` before it is transcribed
+    until(lambda: [e.meta.get("status") for e in retry.entries(tmp_path)] == ["finishing"])
+    assert c.handle("cancel") == "ok cancelled"
+    wait_idle(c)
+    assert injector.pasted == []
+    assert c.last_result is not None
+    assert c.last_result[1].status == "cancelled"
+    assert [e.meta["status"] for e in retry.entries(tmp_path)] == ["cancelled"]
+    assert finishing == [True, False]
+
+    c.handle("start")
+    c.on_pcm(pcm(0.6))
+    c.handle("stop")
+    assert injector.entered.wait(5)
+    assert c.handle("cancel") == "error too late: already pasting"
+    injector.release.set()
+    wait_idle(c)
+    assert len(injector.pasted) == 1
+    assert c.last_result[1].status == "pasted"
+
+
+def test_the_length_limit_stops_only_its_own_recording(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, _ = controller
+    c.svc.cfg.audio.max_ms = 400
+    c.handle("start")
+    first = c.current
+    c.on_pcm(pcm(0.6))  # over the limit: stopped in the background
+    wait_idle(c)
+    assert c.last_result is not None
+    assert c.last_result[1].stop_reason == "limit"
+    c.handle("start")
+    assert c.stop(reason="limit", only=first) == "ok idle"  # a late stop of the first one
+    assert c.status() == "ok recording finishing=0"
+    c.handle("cancel")
+
+
+def test_a_mic_that_stops_delivering_is_reopened_and_the_dictation_flagged(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+    mic = FakeMic()
+    c.mic = cast("Mic", mic)
+    c.handle("start")
+    c.on_pcm(pcm(0.3))
+    mic.delivering = False  # unplugged mid-dictation
+    c.check_mic()
+    assert (mic.calls, c.mic_status) == (["reopen"], "lost")
+    c.check_mic()
+    assert c.mic_status == "ok"
+    c.on_pcm(pcm(0.3))
+    c.handle("stop")
+    wait_idle(c)
+    assert c.last_result is not None
+    assert c.last_result[1].mic_interrupted
+    assert len(injector.pasted) == 1  # what was heard is still pasted
+    mic.delivering, mic.reopen_fails = False, True
+    assert c.handle("start").startswith("error mic unavailable")
+    assert c.status_json()["mic"] == {"status": "lost"}
+    assert c.status() == "ok idle finishing=0"
+
+
+def test_reload_applies_per_dictation_settings_and_names_the_rest(
+    controller: tuple[Controller, DryRunInjector], tmp_path: Path
+):
+    c, _ = controller
+    path = tmp_path / "config.toml"
+    base = f'[history]\ndir = "{tmp_path}"\n[audio]\nmin_ms = 0\n[feedback]\nstart_cue = "never"\n'
+    path.write_text(base)
+    c.watch_config(path)
+    assert c.handle("reload") == "ok reloaded"
+    path.write_text(base.replace("min_ms = 0", "min_ms = 5") + '[[words]]\nword = "Hyprland"\n')
+    os.utime(path, (time.time() + 5, time.time() + 5))  # mtime resolution
+    assert c.status_json()["config"] == {"changed": True, "restart_needed": []}
+    assert c.handle("reload") == "ok reloaded; restart for audio"
+    assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # used by the next dictation
+    assert c.svc.cfg.audio.min_ms == 0  # needs a restart
+    assert c.status_json()["config"] == {"changed": False, "restart_needed": ["audio"]}
+    path.write_text("[[words]]\n")
+    assert c.handle("reload").startswith("error words[0].word is required")
+    assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # the running config stays

@@ -11,6 +11,7 @@ Two protocols on the same socket, one request line and one reply line per connec
   ``{"version": 1, "ok": true, "command": "status", ...}``; errors are
   ``{"version": 1, "ok": false, "error": {"code": ..., "message": ...}}``.
   Spec: docs/protocol/ctl-v1.md (pinned by client/tests/test_client_ctl.py).
+- JSON ``subscribe`` (UIs): the connection stays open; a status line now and on every change.
 
 Socket: $HARK_CTL_SOCKET if set, else $XDG_RUNTIME_DIR/hark/ctl.sock on Linux,
 ~/Library/Caches/hark/ctl.sock on macOS, else $TMPDIR/hark-<uid>/ctl.sock. The directory is
@@ -28,6 +29,7 @@ import socketserver
 import sys
 import tempfile
 import threading
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
@@ -38,10 +40,12 @@ log = logging.getLogger("hark.ctl")
 
 COMMANDS = (
     "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
-    "profile",
+    "profile", "reload",
 )  # fmt: skip
 MAX_LINE = 512
 PROTOCOL_VERSION = 1
+SUBSCRIBE_KEEPALIVE_S = 30.0
+SUBSCRIBE_COALESCE_S = 0.1
 
 type JsonObject = dict[str, object]
 
@@ -109,11 +113,25 @@ def _json_request(  # noqa: PLR0911 - one reply per error code
         return error_reply("internal", f"{type(e).__name__}: {e}")
 
 
+def _is_subscribe(line: bytes) -> bool:
+    try:
+        obj = cast("object", json.loads(line))
+    except ValueError:
+        return False
+    return (
+        isinstance(obj, dict)
+        and cast("JsonObject", obj).get("version") == PROTOCOL_VERSION
+        and cast("JsonObject", obj).get("command") == "subscribe"
+    )
+
+
 class CtlServer:
     """Unix-socket server; handlers run on a per-connection thread.
 
     ``handler(command) -> "ok ..."`` serves both protocols; ``status_json() -> dict`` answers a
     JSON ``status`` (default: the text reply wrapped by :func:`text_to_json`).
+    ``wait_change(seen, timeout_s) -> version`` enables JSON ``subscribe``: it returns the
+    status version once it differs from ``seen`` (or at the timeout).
     """
 
     def __init__(
@@ -121,6 +139,7 @@ class CtlServer:
         path: Path,
         handler: Callable[[str], str],
         status_json: Callable[[], JsonObject] | None = None,
+        wait_change: Callable[[int, float], int] | None = None,
     ) -> None:
         self.path = path
         path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
@@ -143,10 +162,33 @@ class CtlServer:
                 }
             return text_to_json(command, handler(command))
 
+        def send_line(conn: socketserver.StreamRequestHandler, obj: JsonObject) -> None:
+            conn.wfile.write(json.dumps(obj, separators=(",", ":")).encode() + b"\n")
+            conn.wfile.flush()
+
+        def subscribe(conn: socketserver.StreamRequestHandler) -> None:
+            if wait_change is None:
+                send_line(conn, error_reply("unknown_command", "this daemon cannot subscribe"))
+                return
+            seen = wait_change(-1, 0.0)
+            try:
+                while True:
+                    send_line(conn, json_handler("status"))
+                    now = wait_change(seen, SUBSCRIBE_KEEPALIVE_S)
+                    if now != seen:
+                        time.sleep(SUBSCRIBE_COALESCE_S)  # a burst of changes -> one line
+                        now = wait_change(-1, 0.0)
+                    seen = now
+            except OSError:
+                return  # the subscriber went away
+
         class Handler(socketserver.StreamRequestHandler):
             @override
             def handle(self) -> None:
                 line = self.rfile.readline(MAX_LINE + 1).strip()
+                if line.startswith(b"{") and len(line) <= MAX_LINE and _is_subscribe(line):
+                    subscribe(self)
+                    return
                 if line.startswith(b"{"):
                     obj = (
                         error_reply("too_long", f"request over {MAX_LINE} bytes")

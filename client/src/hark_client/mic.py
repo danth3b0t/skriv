@@ -3,11 +3,13 @@
 sounddevice ships no type information, so the unknown-type rules are relaxed for this
 module only; everything it exports has precise signatures.
 """
-# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportAny=false
+# pyright: reportMissingTypeStubs=false, reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false, reportAny=false, reportPrivateUsage=false
 
 from __future__ import annotations
 
+import contextlib
 import logging
+import time
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
@@ -41,25 +43,48 @@ class Mic:
 
     def __init__(self, on_pcm: Callable[[bytes], None], device: str = "") -> None:
         self.on_pcm = on_pcm
-        self.device_name, rate = describe_input(device)
-        self.rate = rate
-        self._resampler = Resampler(rate)
+        self._spec = device
+        self.device_name, self.rate = describe_input(device)
+        self._resampler = Resampler(self.rate)
         self.status_errors = 0
+        self.last_callback = time.monotonic()  # a running stream calls back every 20 ms
+        self._stream = self._open()
 
-        def callback(indata: Float32, frames: int, time: object, status: object) -> None:
-            if status:
-                self.status_errors += 1
-            self.on_pcm(self._resampler.process(indata.copy()))
-
-        self._stream = sd.InputStream(
-            device=_device(device),
-            samplerate=rate,
+    def _open(self) -> sd.InputStream:
+        return sd.InputStream(
+            device=_device(self._spec),
+            samplerate=self.rate,
             channels=1,
             dtype="float32",
-            blocksize=rate // 50,  # 20 ms
+            blocksize=self.rate // 50,  # 20 ms
             latency="low",
-            callback=callback,
+            callback=self._callback,
         )
+
+    def _callback(self, indata: Float32, frames: int, time_info: object, status: object) -> None:
+        self.last_callback = time.monotonic()
+        if status:
+            self.status_errors += 1
+        self.on_pcm(self._resampler.process(indata.copy()))
+
+    def healthy(self, max_silence_s: float) -> bool:
+        """Running and delivering audio (callbacks, whatever their level) recently."""
+        return self.active and time.monotonic() - self.last_callback < max_silence_s
+
+    def reopen(self) -> None:
+        """Close the stream and open a fresh one on the configured device (or the current
+        default: PortAudio's device list is re-read), started. Raises if that fails."""
+        with contextlib.suppress(Exception):
+            self._stream.abort()
+        with contextlib.suppress(Exception):
+            self._stream.close()
+        sd._terminate()  # re-read the device list: a docked headset, an unplugged USB mic
+        sd._initialize()
+        self.device_name, self.rate = describe_input(self._spec)
+        self._resampler = Resampler(self.rate)
+        self.last_callback = time.monotonic()  # grace until the first callback
+        self._stream = self._open()
+        self._stream.start()
 
     @property
     def active(self) -> bool:
@@ -67,6 +92,7 @@ class Mic:
 
     def start(self) -> None:
         if not self.active:
+            self.last_callback = time.monotonic()
             self._stream.start()
 
     def stop(self) -> None:

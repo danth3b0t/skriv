@@ -79,12 +79,13 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "action",
         choices=[
             "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
-            "profile",
+            "profile", "reload",
         ],
         help="paste-last: paste the last dictated text again into the focused window; "
         "undo: delete the last dictation's text if nothing was typed after it; "
         "swap-raw: replace it with the uncleaned text (again: back); "
-        "profile next|auto|set NAME: the profile for the next dictation",
+        "profile next|auto|set NAME: the profile for the next dictation; "
+        "reload: re-read the config file (the next dictation uses it)",
     )  # fmt: skip
     c.add_argument("args", nargs="*", help="profile: next | auto | set NAME")
     c.add_argument(
@@ -345,7 +346,12 @@ def cmd_last(args: Args, cfg: Config) -> int:
 
 def cmd_pipeline(args: Args, cfg: Config) -> int:
     from hark_client import ctl, daemon, fields  # noqa: PLC0415
-    from hark_client.config import ConfigError, FeedbackConfig, expand  # noqa: PLC0415
+    from hark_client.config import (  # noqa: PLC0415
+        ConfigError,
+        FeedbackConfig,
+        default_config_path,
+        expand,
+    )
     from hark_client.feedback import Feedback  # noqa: PLC0415
     from hark_client.inject import make_injector  # noqa: PLC0415
     from hark_client.learn import LearnedStore, Learner, store_path  # noqa: PLC0415
@@ -396,7 +402,12 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
             field_reader=reader, learned=learned if cfg.learn.enabled else None, learner=learner,
         )  # fmt: skip
         try:
-            return daemon.run(svc, _menu_bar(args) if args.command == "app" else None)
+            config_path = Path(args.config) if args.config else default_config_path()
+            return daemon.run(
+                svc,
+                _menu_bar(args) if args.command == "app" else None,
+                config_path if config_path.exists() else None,
+            )
         except ctl.DaemonRunningError as e:
             print(f"hark: {e}", file=sys.stderr)
             return 1

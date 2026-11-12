@@ -215,11 +215,14 @@ unless one was picked by hand (below).
 - **Tap or hold** (listener: macOS/X11): a press released within `tap_ms` (250 ms) keeps recording hands-free (the
   indicator says **Hands-free**); the next press stops at once. Held longer it is push-to-talk. A press while a
   recording started by `hark ctl` runs stops it. On Wayland bind `hark ctl toggle` (tap) or start/stop (hold).
-- **Esc** cancels any recording (hotkey, hands-free or `hark ctl start`). With `swallow_esc` the focused app never
+- **Esc** cancels any recording (hotkey, hands-free or `hark ctl start`), and a stopped dictation until its paste
+  starts (`hark ctl cancel` too; on Wayland the submap ends at release, so use the always-bound `SUPER+Escape`).
+  One dictation at a time: pressing the hotkey while the last one is still being transcribed records nothing. With `swallow_esc` the focused app never
   sees that Esc keystroke (down, auto-repeat, up); every other key, and Esc while idle, passes untouched. macOS:
   the pynput event tap becomes a filter (`darwin_intercept`), which needs **Accessibility** (without it hark logs a
   warning and stays listen-only); its callbacks only update the key state, the actions run on a worker thread so
-  typing is never held up. X11: a passive grab of Esc exists only while recording (**untested on real hardware**).
+  typing is never held up. X11: a passive grab of Esc exists only while recording or finishing (**untested on
+  real hardware**).
   Wayland: a compositor submap, see the Hyprland example above.
 - **Start sound**: the mic would record it. By default it plays only when no recording indicator is shown (the
   pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`

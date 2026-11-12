@@ -74,7 +74,7 @@ def write_wav(path: Path, seconds: float, rate: int = 16000, channels: int = 1) 
 
 
 class HarkServer:
-    def __init__(self, cleanup_url: str = "") -> None:
+    def __init__(self, cleanup_url: str = "", backend: MockBackend | None = None) -> None:
         self.loop = asyncio.new_event_loop()
         self.thread = threading.Thread(target=self.loop.run_forever, daemon=True)
         self.thread.start()
@@ -85,7 +85,7 @@ class HarkServer:
             cfg.cleanup.base_url = cleanup_url
             cfg.cleanup.model = "fake-llm"
         self.running: Running = asyncio.run_coroutine_threadsafe(
-            start(cfg, MockBackend()), self.loop
+            start(cfg, backend or MockBackend()), self.loop
         ).result(10)
         self.target = f"127.0.0.1:{self.running.port}"
 
@@ -221,14 +221,19 @@ def controller(
 ) -> Iterator[tuple[Controller, DryRunInjector]]:
     """A daemon controller without a mic: drive it with on_pcm() and handle()."""
     fake_context.snapshots = [snapshot("kitty")]
+    router = Router([ProviderConfig(address=hark_server.target)])
+    yield make_controller(tmp_path, router, DryRunInjector(out=lambda _: None))
+    router.close()
+
+
+def make_controller[I: DryRunInjector](
+    tmp_path: Path, router: Router, injector: I
+) -> tuple[Controller, I]:
     cfg = Config()
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0
     cfg.feedback.start_cue = "never"  # audio fed right after start is not masked
-    injector = DryRunInjector(out=lambda _: None)
-    router = Router([ProviderConfig(address=hark_server.target)])
-    yield Controller(Services(cfg, router, injector, RecordingFeedback()), None), injector
-    router.close()
+    return Controller(Services(cfg, router, injector, RecordingFeedback()), None), injector
 
 
 def wait_idle(c: Controller) -> None:
