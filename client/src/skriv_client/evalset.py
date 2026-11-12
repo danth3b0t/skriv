@@ -24,7 +24,7 @@ from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
 from skriv_client import fidelity, history, retry
-from skriv_client.asr import CHUNK_SAMPLES
+from skriv_client.asr import CHUNK_SAMPLES, SAMPLE_RATE
 from skriv_client.audio import read_wav
 from skriv_client.pipeline import Utterance
 
@@ -164,17 +164,22 @@ def add(history_dir: Path, set_dir: Path, query: str) -> Path:
     return out
 
 
-def run_clip(svc: Services, clip: Path) -> Result:
+def run_clip(svc: Services, clip: Path, *, realtime: bool = False) -> Result:
     """The clip through the whole pipeline with its key-down context (nothing is pasted:
     ``svc`` should carry a dry-run injector). The shortlist is cut to ``context.max_terms``
-    (0: recognition and cleanup without context)."""
+    (0: recognition and cleanup without context). `realtime`: the audio arrives at its own
+    speed and the key goes up at its end, as in a dictation (else all at once)."""
     snap = retry.load_snapshot(retry.Entry(clip.name, clip, {}))
     snap = replace(snap, terms=snap.terms[: max(0, svc.cfg.context.max_terms)])
     utt = Utterance(svc, replay=snap)
     pcm = read_wav(clip / "audio.wav")
     step = CHUNK_SAMPLES * 2
-    for i in range(0, len(pcm), step):
-        utt.feed(pcm[i : i + step])
+    t0 = time.perf_counter()
+    for i in range(0, len(pcm) + step, step):
+        if realtime:  # chunk i ends i / 2 samples in
+            time.sleep(max(0.0, t0 + i / 2 / SAMPLE_RATE - time.perf_counter()))
+        if i < len(pcm):
+            utt.feed(pcm[i : i + step])
     res = utt.finish()
     _write(
         clip / LAST,

@@ -146,6 +146,10 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "--set", dest="set_dir", help="the set's directory (default <history.dir>/eval)"
     )
     ev.add_argument("--report", help="run: also write every clip's stages and score as JSON here")
+    ev.add_argument(
+        "--realtime", action="store_true",
+        help="run: send each clip's audio at its own speed (latency as in a dictation)",
+    )  # fmt: skip
     service.add_parser(sub)
     return p.parse_args(argv, namespace=Args())
 
@@ -313,10 +317,12 @@ def cmd_eval(args: Args, cfg: Config) -> int:
     except (LookupError, FileExistsError) as e:
         print(f"skriv eval: {e}", file=sys.stderr)
         return 1
-    return _eval_run(cfg, set_dir, Path(args.report) if args.report else None)
+    return _eval_run(
+        cfg, set_dir, Path(args.report) if args.report else None, realtime=args.realtime
+    )
 
 
-def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
+def _eval_run(cfg: Config, set_dir: Path, report: Path | None, *, realtime: bool) -> int:
     from skriv_client import evalset  # noqa: PLC0415
     from skriv_client.config import FeedbackConfig  # noqa: PLC0415
     from skriv_client.feedback import Feedback  # noqa: PLC0415
@@ -346,7 +352,7 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
         records: list[dict[str, object]] = []
         latency: list[float] = []  # release_to_paste_ms of the clips that reached the paste
         for clip in found:
-            res = evalset.run_clip(svc, clip)
+            res = evalset.run_clip(svc, clip, realtime=realtime)
             s = evalset.score(
                 clip.name, evalset.load_label(clip), res.raw_text, res.canonical_text,
                 res.final_text,
