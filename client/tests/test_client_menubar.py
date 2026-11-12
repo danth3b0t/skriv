@@ -36,7 +36,11 @@ def test_state_icon_follows_pause_recording_and_a_recent_failure(
     c.last_result = (now, Result("u1", "error"))
     assert menu_state(c, now + 9) == "error"
     assert menu_state(c, now + 11) == "idle"  # the warning icon does not stay forever
-    c.last_result = (now, Result("u2", "pasted"))
+    c.last_result = (now, Result("u2", "no_speech", flat_signal=True))  # the mic sent nothing
+    assert menu_state(c, now) == "error"
+    c.last_result = (now, Result("u3", "no_speech"))  # silence is no failure
+    assert menu_state(c, now) == "idle"
+    c.last_result = (now, Result("u4", "pasted"))
     assert menu_state(c, now) == "idle"
     assert preview("a\nb  c") == "a b c"
     assert preview("x" * 50, 10) == "x" * 9 + "…"

@@ -28,6 +28,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Literal, Protocol
 
 from hark_client.audio import rms_dbfs
+from hark_client.status import failure
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -56,7 +57,13 @@ RECOVERY_KEY = "Super Alt D"  # hark-panel on Omarchy (packaging/omarchy)
 OMARCHY_THEME = Path.home() / ".local/state/omarchy/current/theme"  # where Omarchy's shell reads it
 LONG_S = 60  # a recording longer than this shows its elapsed time
 COUNTDOWN_S = 30  # this close to audio.max_ms the time left shows instead
-CLEANUP_APPLIED = frozenset({"applied", "partial", "no_edits"})  # cleanup ran and was kept
+CLEANUP_APPLIED = frozenset({"applied", "no_edits"})  # cleanup ran and was kept
+# the words after ``Failed · `` per `last.failure` (other: none)
+FAILURE_WORDS = {
+    "server_timeout": "server timeout",
+    "server_down": "server down",
+    "degenerate_output": "garbled transcript",
+}
 # linger (s) per outcome, design/SPEC.md §4
 LINGER_SENT = 0.5
 LINGER_TAG = 0.8  # ✓ via provider, ✓ cleanup skipped
@@ -172,12 +179,7 @@ def no_speech_view(res: Result) -> tuple[View, float]:
 
 def failure_reason(error: str) -> str:
     """A short reason for ``Failed · …`` from a Result.error ("" = none worth showing)."""
-    e = error.lower()
-    if "within" in e or "deadline" in e or "timeout" in e or "timed out" in e:
-        return "server timeout"
-    if "unavailable" in e or "refused" in e or "no stream" in e or "closed" in e:
-        return "server down"
-    return ""
+    return FAILURE_WORDS.get(failure(error), "")
 
 
 def outcome_view(
