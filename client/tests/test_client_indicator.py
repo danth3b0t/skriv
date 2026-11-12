@@ -124,6 +124,24 @@ def test_daemon_drives_the_indicator_through_a_dictation_and_a_cancel(
     assert ind.view == View("cancelled", "Cancelled")
 
 
+def test_a_hotkey_tap_shows_hands_free_and_the_listener_follows_recordings(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, _ = controller
+    c.indicator = ind = Indicator(FakeBackend())
+    seen: list[bool] = []
+    c.on_recording = seen.append
+    c.hands_free()  # nothing recording: ignored
+    assert ind.view is None
+    c.handle("start")
+    assert ind.view == View("recording", "Listening")
+    c.hands_free()
+    assert ind.view == View("recording", "Hands-free")
+    c.handle("cancel")
+    c.handle("cancel")
+    assert seen == [True, False]
+
+
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit panel")
 def test_macos_panel_cannot_take_focus():
     import importlib  # noqa: PLC0415

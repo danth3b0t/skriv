@@ -59,6 +59,8 @@ class Controller:
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
         self.last_text = ""  # newest pasted/copied text (`hark ctl paste-last`)
         self.indicator: Indicator | None = None
+        # told (under the lock, so in order) when a recording starts or ends: the hotkey listener
+        self.on_recording: Callable[[bool], None] | None = None
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -83,6 +85,8 @@ class Controller:
                 return "ok already recording"
             self.current = utt = Utterance(self.svc, preroll=self.preroll.take())
             self._max_hit = False
+            if self.on_recording is not None:
+                self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
         if self.indicator is not None:
             self.indicator.recording(utt.id)
         if self.svc.learner is not None:
@@ -98,7 +102,19 @@ class Controller:
             self.mic.stop()  # outside the lock: waits for the last callback
         with self._lock:
             utt, self.current = self.current, None
+            if utt is not None and self.on_recording is not None:
+                self.on_recording(False)  # noqa: FBT003
         return utt
+
+    def hands_free(self) -> None:
+        """The hotkey was tapped: the recording goes on until the next tap."""
+        with self._lock:
+            utt = self.current
+        if utt is None:
+            return
+        log.info("hands-free: tap the hotkey again to stop")
+        if self.indicator is not None:
+            self.indicator.recording(utt.id, "Hands-free")
 
     def stop(self) -> str:
         keyup = unix_us()
@@ -268,8 +284,9 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
                 "no Input Monitoring permission: the hotkey will not fire (see `hark doctor`)"
             )
     return PushToTalk(
-        cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input
-    )
+        cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input,
+        on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000,
+    )  # fmt: skip
 
 
 def _make_mic(svc: Services, controller: Controller) -> Mic:
@@ -314,6 +331,7 @@ def run(svc: Services) -> int:
         mic.start()
     server.start()
     if hotkey is not None:
+        controller.on_recording = hotkey.recording
         hotkey.start()
 
     stop = threading.Event()

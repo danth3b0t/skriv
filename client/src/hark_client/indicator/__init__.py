@@ -110,10 +110,11 @@ class Indicator:
     def _may_update(self, uid: str) -> bool:
         return uid == self._owner or self._view is None or self._view.state in FINAL_STATES
 
-    def recording(self, uid: str) -> None:
+    def recording(self, uid: str, label: str = "Listening") -> None:
+        """Recording started, or its mode changed (``label``: "Hands-free" after a tap)."""
         with self._lock:
             self._level_at = float("-inf")
-            self._show(uid, View("recording", "Listening"))
+            self._show(uid, View("recording", label))
 
     def level(self, pcm16: bytes) -> None:
         """Mic callback thread: redraws the level while recording (rate-limited)."""

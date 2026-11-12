@@ -89,6 +89,9 @@ class AudioConfig:
 class HotkeyConfig:
     key: str = "alt_r"  # pynput Key name (alt_r = Right Option) or a single character
     listener: str = "auto"  # auto | pynput | none (the ctl socket is always on)
+    # A press released sooner than this is a tap: recording continues hands-free until the
+    # next press. 0 = hold-to-talk only.
+    tap_ms: int = 250
 
 
 @dataclass
@@ -299,6 +302,7 @@ def validate(cfg: Config) -> None:
         ("learn.window_ms", cfg.learn.window_ms),
         ("learn.max_terms", cfg.learn.max_terms),
         ("retry.keep", cfg.retry.keep),
+        ("hotkey.tap_ms", cfg.hotkey.tap_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
