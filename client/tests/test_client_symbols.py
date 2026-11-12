@@ -58,6 +58,14 @@ from hark_client import symbols
         # a command line starts in lower case
         ("Git status.", "git status."),
         ("Hark history", "hark history"),
+        # the recognizer's "Get" for git, at the start of a command line
+        ("Get status.", "git status."),
+        ("Get push dash dash force, but not main.", "git push --force, but not main."),
+        ("get pull origin main", "git pull origin main"),
+        ("Get commit messages from last week.", "Get commit messages from last week."),
+        ("Get status of the build.", "Get status of the build."),
+        ("Then get status.", "Then get status."),  # not at the start
+        ("Get the status.", "Get the status."),
         # stays prose
         ("Use the slash command to see help.", "Use the slash command to see help."),
         ("Look at docs slash bench.", "Look at docs slash bench."),
@@ -80,3 +88,15 @@ from hark_client import symbols
 )
 def test_spoken_symbols(spoken: str, written: str):
     assert symbols.apply(spoken)[0] == written
+
+
+@pytest.mark.parametrize(
+    ("spoken", "written"),
+    [
+        ("Run Rough Check with dash-fix, then go.", "Run Rough Check with --fix, then go."),
+        ("Pass dash-v here.", "Pass -v here."),
+        ("I want a dash-free text.", "I want a dash-free text."),  # not on the shortlist
+    ],
+)
+def test_joined_dash_takes_a_shortlist_flag_without_a_command(spoken: str, written: str):
+    assert symbols.apply(spoken, ["--fix", "-v"])[0] == written

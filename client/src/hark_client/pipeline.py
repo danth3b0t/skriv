@@ -40,7 +40,7 @@ from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import flat, speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
-from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
+from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, TermKind, WordInfo
 from hark_client.context.words import (
     dictionary,
     dictionary_terms,
@@ -494,7 +494,8 @@ class Utterance:
         )
 
         if prof.terminal:
-            canon, res.symbols = symbols.apply(canon)
+            flags = (t.canonical for t in snap.terms if t.kind is TermKind.FLAG)
+            canon, res.symbols = symbols.apply(canon, flags)
             if res.symbols:
                 self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
 
