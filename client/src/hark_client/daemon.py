@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from hark.v1 import hark_pb2 as pb
 from hark_client import config, context, guardrails, history, indicator, retry
-from hark_client.asr import unix_us
+from hark_client.asr import SAMPLE_RATE, unix_us
 from hark_client.audio import PreRoll
 from hark_client.config import ConfigError, expand
 from hark_client.continuation import ShadowBuffer
@@ -99,8 +99,10 @@ class Controller:
             if utt is None:
                 self.preroll.push(pcm)
                 return
-            utt.feed(pcm)
-            over = utt.audio_ms - utt.preroll_ms >= self.svc.cfg.audio.max_ms and not self._max_hit
+            # never more than audio.max_ms (pre-roll included): the server refuses longer audio
+            room = SAMPLE_RATE * self.svc.cfg.audio.max_ms // 1000 * 2 - len(utt.pcm)
+            utt.feed(pcm[: max(0, room)])
+            over = room <= len(pcm) and not self._max_hit
             if over:
                 self._max_hit = True
             cue, self._cue_pending = self._cue_pending, False
@@ -622,7 +624,9 @@ def run(
     controller.mic = mic
     # Warm per-window term pools in the background so key-down only refreshes cheap sources.
     context.start_prefetch(str(expand(svc.cfg.history.dir)))
-    ui = indicator.make(svc.cfg.indicator, retry_hint=svc.cfg.retry.keep > 0)
+    ui = indicator.make(
+        svc.cfg.indicator, retry_hint=svc.cfg.retry.keep > 0, limit_s=svc.cfg.audio.max_ms / 1000
+    )
     if ui is not None:
         controller.indicator = ui
         svc.on_stage = ui.stage

@@ -144,7 +144,7 @@ preroll_ms = 200              # needs keep_open
 keep_open = true              # mic stream stays open between dictations
 min_ms = 300                  # shorter presses are cancelled (short "cancel" sound, nothing pasted)
 min_speech_ms = 300           # less speech energy than this is discarded too (status no_speech); 0 = off
-max_ms = 120000
+max_ms = 300000               # 5 min, pre-roll included (the server's limit); the pill counts down the last 30 s
 
 [hotkey]
 key = "alt_r"                 # pynput Key name (alt_r = Right Option, cmd_r, f13, ...) or one character
@@ -264,8 +264,9 @@ systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server
 ## Recording indicator
 
 While `hark run` works, a small pill shows its state (design/SPEC.md §4): a red dot (a lock when hands-free, plus a
-hand-picked profile) with the live input level, three dots while working, then the outcome for a moment: ✓ (sent,
-with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 2:00*), **Copied**, **Paste
+hand-picked profile) with the live input level and, after a minute, the elapsed time (**0:25 left** in the last 30 s
+before `audio.max_ms`), three dots while working, then the outcome for a moment: ✓ (sent,
+with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 5:00*), **Copied**, **Paste
 failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. A press that starts nothing says why:
 **Paused**, **Mic lost**, or the working dots while the previous dictation finishes. On Omarchy, failure pills name
 the key that opens hark's panel (**Super Alt D**); elsewhere a failure names `hark retry` when its audio is kept.

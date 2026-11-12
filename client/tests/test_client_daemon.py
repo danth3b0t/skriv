@@ -416,12 +416,14 @@ def test_the_length_limit_stops_only_its_own_recording(
 ):
     c, _ = controller
     c.svc.cfg.audio.max_ms = 400
+    c.on_pcm(pcm(0.3))  # 200 ms of it become the pre-roll
     c.handle("start")
     first = c.current
     c.on_pcm(pcm(0.6))  # over the limit: stopped in the background
     wait_idle(c)
     assert c.last_result is not None
     assert c.last_result[1].stop_reason == "limit"
+    assert c.last_result[1].timings["audio_ms"] == 400  # pre-roll included, never more
     c.handle("start")
     assert c.stop(reason="limit", only=first) == "ok idle"  # a late stop of the first one
     assert c.status() == "ok recording finishing=0"

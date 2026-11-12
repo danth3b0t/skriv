@@ -59,9 +59,10 @@ class Clock:
         return self.t
 
 
-def make(*, recovery: str = "") -> tuple[Indicator, FakeBackend, Clock]:
+def make(*, recovery: str = "", limit_s: float = 0.0) -> tuple[Indicator, FakeBackend, Clock]:
     backend, clock = FakeBackend(), Clock()
-    return Indicator(backend, recovery=recovery, clock=clock), backend, clock
+    ind = Indicator(backend, recovery=recovery, limit_s=limit_s, clock=clock)
+    return ind, backend, clock
 
 
 def sent(**facts: Any) -> Result:
@@ -258,6 +259,19 @@ def test_recording_shows_hands_free_the_pinned_profile_and_time_after_a_minute()
     ind.level(pcm(0.02))
     assert ind.view is not None
     assert (ind.view.glyph, ind.view.pinned) == ("lock", "chat")
+
+
+def test_recording_counts_down_the_last_seconds_before_the_length_limit():
+    ind, _, clock = make(limit_s=300)
+    ind.recording("a")
+    clock.t += 269.5  # 30.5 s left: still the elapsed time
+    ind.level(pcm(0.02))
+    assert ind.view is not None
+    assert ind.view.detail == "4:30"
+    clock.t += 5.5
+    ind.level(pcm(0.02))
+    assert ind.view is not None
+    assert (ind.view.detail, ind.view.name) == ("0:25 left", "Recording · 0:25 left")
 
 
 def test_daemon_drives_the_indicator_through_a_dictation_and_a_cancel(

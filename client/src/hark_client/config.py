@@ -124,7 +124,7 @@ class AudioConfig:
     keep_open: bool = True  # keep the mic stream running between dictations
     min_ms: int = 300  # shorter presses are cancelled
     min_speech_ms: int = 300  # less speech energy than this: discarded (0: off)
-    max_ms: int = 120_000
+    max_ms: int = 300_000  # 5 min, the server's limit too (server.max_audio_ms)
 
 
 @dataclass
