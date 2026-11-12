@@ -1,5 +1,13 @@
-"""Utterance sessions: validation, audio placement, context, eager finalize, and
-the finalize pipeline (primary -> anchor -> N-best within finalize_budget_ms).
+"""Utterance sessions: model routing, validation, audio placement, context, eager
+finalize, and the finalize pipeline (primary -> language fallback -> anchor -> N-best
+within finalize_budget_ms).
+
+Models: the first backend is the default; the others (e.g. an English-only model beside
+a multilingual one) are loaded on first use and stay resident. A session without
+model_id goes to the model with the fewest languages that covers all of
+SessionStart.languages (none: the default). If a model that detects the language writes
+text implausible for the requested languages (hark_server.language) and English is one
+of them, the audio is decoded again with an English-only model (language fallback).
 
 Shared by Transcribe (streaming) and Recognize (unary). Logs never contain
 audio, transcripts or context; only ids, sizes and timings.
@@ -21,18 +29,23 @@ import numpy as np
 
 from hark.v1 import hark_pb2 as pb
 
-from . import __version__
+from . import __version__, language
 from .backends import SAMPLE_RATE, Backend, BiasPlan, DecodeOut
 from .errors import E, HarkError, check_privacy, protocol_violation
 from .hits import derive_hits, word_byte_spans
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .backends import Pcm
 
 log = logging.getLogger("hark_server.session")
 
-PROTOCOL = pb.ProtocolVersion(major=1, minor=0)
+PROTOCOL = pb.ProtocolVersion(major=1, minor=1)
 FS = pb.FieldStatus
+# A session that needs a model that is not loaded yet waits this long for it, then
+# goes to the default model (the load goes on in the background).
+LAZY_LOAD_WAIT_S = 3.0
 
 
 def _now_us() -> int:
@@ -57,11 +70,19 @@ class CoreSettings:
     max_message_bytes: int = 32 * 1024 * 1024
 
 
-class AsrCore:
-    """Process-wide state: the backend, admission control, capabilities."""
+def _languages(backend: Backend) -> frozenset[str]:
+    return language.bases(backend.capabilities().languages)
 
-    def __init__(self, backend: Backend, settings: CoreSettings) -> None:
-        self.backend = backend
+
+class AsrCore:
+    """Process-wide state: the backends, routing, admission control, capabilities."""
+
+    def __init__(self, backends: Sequence[Backend], settings: CoreSettings) -> None:
+        if not backends:
+            raise ValueError("need at least one backend")
+        self.backends = list(backends)
+        self.backend = self.backends[0]  # the default model
+        self._loading: dict[str, asyncio.Task[bool]] = {}
         self.settings = settings
         self.active = 0
         self.instance_id = uuid.uuid4().hex
@@ -94,7 +115,7 @@ class AsrCore:
                 started_unix_ms=self.started_unix_ms,
                 instance_id=self.instance_id,
             ),
-            models=[self.backend.describe()],
+            models=[b.describe() for b in self.backends],
             cleanup_profiles=self.cleanup_profiles,
             limits=pb.ServerLimits(
                 max_concurrent_sessions=s.max_concurrent_sessions,
@@ -105,12 +126,78 @@ class AsrCore:
             features=self.features(),
             privacy=self.privacy,
         )
+        for model in caps.models[1:]:
+            model.is_default = False
         caps.etag = hashlib.sha256(caps.SerializeToString(deterministic=True)).hexdigest()[:16]
         return caps
 
-    def open(self, start: pb.SessionStart) -> Session:
-        """Validate and admit. Raises HarkError (session is then REJECTED)."""
-        session = Session(self, start)  # validation only, no side effects
+    def find(self, model_id: str) -> Backend | None:
+        """The backend serving `model_id`; "" => the default."""
+        if not model_id:
+            return self.backend
+        return next((b for b in self.backends if b.model_id == model_id), None)
+
+    def route(self, start: pb.SessionStart) -> Backend:
+        """start.model_id if set (unknown: the default, rejected by validation), else the
+        model with the fewest languages that covers start.languages (ties: config order),
+        else the default (which rejects an unsupported primary language)."""
+        if start.model_id:
+            return self.find(start.model_id) or self.backend
+        wanted = language.bases(start.languages)
+        best, best_n = self.backend, None
+        for b in self.backends if wanted else ():
+            have = _languages(b)
+            ok = b.state != pb.MODEL_STATE_FAILED and wanted <= have
+            if ok and (best_n is None or len(have) < best_n):
+                best, best_n = b, len(have)
+        return best
+
+    def english_only(self, exclude: Backend) -> Backend | None:
+        """A model that only speaks English (the language fallback's target)."""
+        return next(
+            (b for b in self.backends if b is not exclude and _languages(b) == frozenset({"en"})),
+            None,
+        )
+
+    async def ready(self, backend: Backend, wait_s: float) -> bool:
+        """Load and warm `backend` if it is cold (once; in the background), waiting at most
+        `wait_s`. True if it is ready."""
+        if backend.state == pb.MODEL_STATE_READY:
+            return True
+        if backend.state == pb.MODEL_STATE_FAILED:
+            return False
+        task = self._loading.get(backend.model_id)
+        if task is None:
+            task = asyncio.ensure_future(self._load(backend))
+            self._loading[backend.model_id] = task
+        try:
+            return await asyncio.wait_for(asyncio.shield(task), wait_s)
+        except TimeoutError:
+            return False
+
+    async def _load(self, backend: Backend) -> bool:
+        t0 = time.perf_counter()
+        try:
+            await backend.warmup()
+        except Exception:
+            log.exception("model %s failed to load", backend.model_id)
+            return False
+        finally:
+            self._loading.pop(backend.model_id, None)
+        log.info(
+            "model %s loaded on first use in %d ms",
+            backend.model_id, (time.perf_counter() - t0) * 1000,
+        )  # fmt: skip
+        return True
+
+    async def open(self, start: pb.SessionStart) -> Session:
+        """Route, validate and admit. Raises HarkError (session is then REJECTED)."""
+        backend = self.route(start)
+        unready = backend is not self.backend and not await self.ready(backend, LAZY_LOAD_WAIT_S)
+        if unready and not start.model_id:  # one asked for by model_id is reported not ready
+            log.info("model %s not ready; using %s", backend.model_id, self.backend.model_id)
+            backend = self.backend
+        session = Session(self, start, backend)  # validation only, no side effects
         if self.active >= self.settings.max_concurrent_sessions:
             raise HarkError(
                 E.ERROR_CODE_OVERLOADED,
@@ -129,20 +216,25 @@ class _Context:
     plan: BiasPlan | None
     hit_terms: list[pb.BiasTerm]
     truncated: bool
+    strength: float = 1.0
+
+
+type _Computed = tuple[pb.FinalResult, list[pb.ServerWarning]]
 
 
 @dataclass
 class _Eager:
-    task: asyncio.Task[pb.FinalResult]
+    task: asyncio.Task[_Computed]
     samples: int
     revision: int
 
 
 class Session:
-    def __init__(self, core: AsrCore, start: pb.SessionStart) -> None:
+    def __init__(self, core: AsrCore, start: pb.SessionStart, backend: Backend) -> None:
         self.core = core
-        self.backend = core.backend
+        self.backend = backend
         self.start = start
+        self.final_warnings: list[pb.ServerWarning] = []  # sent before the FinalResult
         self.session_id = uuid.uuid4().hex
         self.utterance_id = start.utterance_id
         self.admitted = False
@@ -288,7 +380,8 @@ class Session:
             )
         plan = self.backend.plan_bias(kept, strength) if boosting else None
         self.dropped_ids = dropped
-        return _Context(ctx.revision, plan, kept, bool(dropped or aliases_cut)), warnings
+        truncated = bool(dropped or aliases_cut)
+        return _Context(ctx.revision, plan, kept, truncated, strength), warnings
 
     def _limit_terms(
         self, terms: list[pb.BiasTerm]
@@ -448,12 +541,13 @@ class Session:
 
     # ------------------------------------------------------------------ finalize
     async def finalize(self) -> pb.FinalResult:
+        """The FinalResult; warnings about it (language fallback) in final_warnings."""
         received = len(self.pcm) // 2
         eager, self.eager = self.eager, None
         result: pb.FinalResult | None = None
         if eager and eager.samples == received and eager.revision == self.ctx.revision:
             try:
-                result = await eager.task
+                result, self.final_warnings = await eager.task
                 result.timings.eager_hit = True
             except Exception:
                 log.exception("session %s: eager decode failed; decoding again", self.session_id)
@@ -461,7 +555,7 @@ class Session:
             eager.task.cancel()
         if result is None:
             pcm = np.frombuffer(bytes(self.pcm), dtype="<i2")
-            result = await self._compute(pcm, self.ctx, self.t_end)
+            result, self.final_warnings = await self._compute(pcm, self.ctx, self.t_end)
         end_to_final = int((time.perf_counter() - self.t_end) * 1000)
         t = result.timings
         t.end_to_final_ms = end_to_final
@@ -491,11 +585,37 @@ class Session:
             return "NOT_REQUESTED"
         return "decode"
 
+    async def _language_fallback(
+        self, pcm: Pcm, ctx: _Context, primary: DecodeOut
+    ) -> tuple[Backend, BiasPlan | None, DecodeOut, pb.ServerWarning] | None:
+        """Decode again with an English-only model if this model detects the language, wrote
+        text implausible for SessionStart.languages, and English is one of them (not for a
+        model asked for by model_id)."""
+        allowed = language.bases(self.start.languages)
+        if "en" not in allowed or not self.caps.language_detection or self.start.model_id:
+            return None
+        reason = language.implausible(primary.text, allowed)
+        target = self.core.english_only(self.backend) if reason else None
+        if target is None or not await self.core.ready(target, LAZY_LOAD_WAIT_S):
+            return None
+        plan = target.plan_bias(ctx.hit_terms, ctx.strength) if ctx.plan is not None else None
+        out = await target.decode(pcm, plan)
+        log.info(
+            "session %s: language fallback (%s) %s -> %s",
+            self.session_id, reason, self.backend.model_id, target.model_id,
+        )  # fmt: skip
+        warning = _warning(
+            pb.WARNING_CODE_LANGUAGE_FALLBACK,
+            f"{reason}: {self.backend.model_id} output implausible for "
+            f"{','.join(sorted(allowed))}; decoded again with {target.model_id}",
+        )
+        return target, plan, out, warning
+
     async def _compute(  # noqa: PLR0912, PLR0915 - one pipeline sharing budget, flags and timings
         self, pcm: Pcm, ctx: _Context, t0: float
-    ) -> pb.FinalResult:
-        """Primary decode, then optional work in shedding order (anchor before
-        N-best: N-best is shed first). Required features are never shed."""
+    ) -> _Computed:
+        """Primary decode (and language fallback), then optional work in shedding order
+        (anchor before N-best: N-best is shed first). Required features are never shed."""
         opts, req, caps = self.start.options, set(self.start.required_features), self.caps
         audio_ms = len(pcm) * 1000 // SAMPLE_RATE
 
@@ -515,19 +635,29 @@ class Session:
         for k, v in primary.backend_ms.items():
             timings.backend_ms[k] = v
 
+        # Language fallback: from here on, the model that wrote the result.
+        backend, plan, warnings = self.backend, ctx.plan, list[pb.ServerWarning]()
+        t = time.perf_counter()
+        fallback = await self._language_fallback(pcm, ctx, primary)
+        if fallback is not None:
+            backend, plan, primary, warning = fallback
+            caps = backend.describe()
+            warnings.append(warning)
+            timings.backend_ms["language_fallback"] = int((time.perf_counter() - t) * 1000)
+
         # Anchor.
         anchor: DecodeOut | None = None
-        policy = self._anchor_policy(ctx.plan)
+        policy = self._anchor_policy(plan)
         if policy is None:
             anchor, flags.anchor = primary, FS.FIELD_STATUS_PRESENT
         elif policy != "decode":
             flags.anchor = FS.Value(f"FIELD_STATUS_{policy}")
-        elif "result.anchor" not in req and self.backend.estimate_ms(audio_ms) > remaining_ms():
+        elif "result.anchor" not in req and backend.estimate_ms(audio_ms) > remaining_ms():
             flags.anchor = FS.FIELD_STATUS_SKIPPED_BUDGET
         else:
             t = time.perf_counter()
             try:
-                anchor = await self.backend.decode(pcm, None)
+                anchor = await backend.decode(pcm, None)
                 flags.anchor = FS.FIELD_STATUS_PRESENT
             except Exception:
                 log.exception("session %s: anchor decode failed", self.session_id)
@@ -541,14 +671,12 @@ class Session:
             flags.n_best = FS.FIELD_STATUS_NOT_REQUESTED
         elif caps.n_best.max_n <= 1:
             flags.n_best = FS.FIELD_STATUS_UNSUPPORTED
-        elif "result.n_best" not in req and self.backend.estimate_ms(audio_ms) > remaining_ms():
+        elif "result.n_best" not in req and backend.estimate_ms(audio_ms) > remaining_ms():
             flags.n_best = FS.FIELD_STATUS_SKIPPED_BUDGET
         else:
             t = time.perf_counter()
             try:
-                alternatives = await self.backend.n_best(
-                    pcm, ctx.plan, min(n_req, caps.n_best.max_n)
-                )
+                alternatives = await backend.n_best(pcm, plan, min(n_req, caps.n_best.max_n))
                 flags.n_best = FS.FIELD_STATUS_PRESENT
             except Exception:
                 log.exception("session %s: n-best failed", self.session_id)
@@ -586,8 +714,8 @@ class Session:
                 spans,
                 anchor.words if anchor else None,
                 ctx.hit_terms,
-                mechanism=caps.bias.mechanism if ctx.plan else pb.BIAS_MECHANISM_NONE,
-                term_boosts=ctx.plan.term_boosts if ctx.plan else {},
+                mechanism=caps.bias.mechanism if plan else pb.BIAS_MECHANISM_NONE,
+                term_boosts=plan.term_boosts if plan else {},
             )
             flags.bias_hits = FS.FIELD_STATUS_PRESENT
         else:
@@ -616,8 +744,13 @@ class Session:
                         pw.confidence = w.confidence
             return h
 
-        biased = ctx.plan is not None
-        result = pb.FinalResult(utterance_id=self.utterance_id, context_revision=ctx.revision)
+        biased = plan is not None
+        result = pb.FinalResult(
+            utterance_id=self.utterance_id, context_revision=ctx.revision, model_id=backend.model_id
+        )
+        spoken = _languages(backend)
+        if len(spoken) == 1:  # a single-language model: the only language it can write
+            (result.detected_language,) = spoken
         origin = pb.HYPOTHESIS_ORIGIN_BIASED if biased else pb.HYPOTHESIS_ORIGIN_UNBIASED
         result.n_best.append(hyp(primary, origin, words=with_words, terms=word_terms))
         for alt in alternatives:
@@ -632,4 +765,4 @@ class Session:
         result.timings.CopyFrom(timings)
         result.flags.CopyFrom(flags)
         result.privacy.CopyFrom(pb.PrivacyAck())  # nothing retained, logged or cached
-        return result
+        return result, warnings

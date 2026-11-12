@@ -213,11 +213,12 @@ class Client:
 
 
 class Serve(Protocol):
-    """The `serve` fixture: `client = await serve(backend=..., **server_config_overrides)`."""
+    """The `serve` fixture: `client = await serve(backend=..., **server_config_overrides)`;
+    `backend` may be [default, other models...]."""
 
     def __call__(
         self,
-        backend: Backend | None = None,
+        backend: Backend | Sequence[Backend] | None = None,
         cleanup: dict[str, object] | None = None,
         **server_kw: object,
     ) -> Awaitable[Client]: ...
@@ -229,7 +230,7 @@ async def serve() -> AsyncIterator[Serve]:
     started: list[tuple[Running, grpc.aio.Channel]] = []
 
     async def _serve(
-        backend: Backend | None = None,
+        backend: Backend | Sequence[Backend] | None = None,
         cleanup: dict[str, object] | None = None,
         **server_kw: object,
     ) -> Client:

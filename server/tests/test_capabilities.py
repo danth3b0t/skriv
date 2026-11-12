@@ -32,7 +32,7 @@ class _HealthStub(Protocol):
 async def test_capabilities_describe_model_limits_and_privacy(serve: Serve):
     client = await serve(max_concurrent_sessions=3)
     caps = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest(client_protocol_minor=0))
-    assert (caps.protocol.major, caps.protocol.minor) == (1, 0)
+    assert (caps.protocol.major, caps.protocol.minor) == (1, 1)
     (model,) = caps.models
     assert model.model_id == "mock"
     assert model.state == pb.MODEL_STATE_READY

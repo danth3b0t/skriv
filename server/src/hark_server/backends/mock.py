@@ -47,8 +47,10 @@ class MockBackend(Backend):
         max_terms: int = 100,
         max_aliases_per_term: int = 8,
         max_term_bytes: int = 128,
+        languages: list[str] | None = None,
     ) -> None:
         super().__init__(model_id)
+        self.languages = languages or ["en"]  # more than one: "detects" the language
         self.script = list(script or DEFAULT_SCRIPT)
         self.word_ms = word_ms
         self.silence_rms = silence_rms
@@ -65,7 +67,8 @@ class MockBackend(Backend):
             display_name="Mock (deterministic)",
             family="mock",
             is_default=True,
-            languages=["en"],
+            languages=self.languages,
+            language_detection=len(self.languages) > 1,
             streaming_mode=pb.STREAMING_MODE_BUFFERED,
             partials=False,
             audio_formats=[

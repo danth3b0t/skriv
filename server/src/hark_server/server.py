@@ -24,6 +24,8 @@ from .cleanup import CleanupServicer
 from .session import AsrCore, CoreSettings
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from hark.v1 import hark_pb2 as pb
 
     from .config import Config
@@ -52,7 +54,8 @@ class Running:
         await self.server.stop(grace)
         if self.cleanup is not None:
             await self.cleanup.close()
-        self.core.backend.close()
+        for backend in self.core.backends:
+            backend.close()
 
 
 class _Asr(AsrServicer):
@@ -92,13 +95,18 @@ def _credentials(cfg: Config) -> grpc.ServerCredentials | None:
     )
 
 
-async def start(cfg: Config, backend: Backend | None = None) -> Running:
-    """Bind, start, and (if configured) load + warm the model before SERVING."""
-    backend = backend or create_backend(
-        cfg.backend.kind, cfg.backend.model, cfg.backend.model_id, dict(cfg.backend.options)
-    )
+async def start(cfg: Config, backend: Backend | Sequence[Backend] | None = None) -> Running:
+    """Bind, start, and (if configured) load + warm the default model before SERVING.
+    `backend`: instead of [backend] in `cfg`; a sequence is [default, others...]; a single
+    backend brings its companions."""
+    if backend is None:
+        backend = create_backend(
+            cfg.backend.kind, cfg.backend.model, cfg.backend.model_id, dict(cfg.backend.options)
+        )
+    backends = [backend, *backend.companions()] if isinstance(backend, Backend) else backend
+    backend = backends[0]
     core = AsrCore(
-        backend,
+        backends,
         CoreSettings(
             name=cfg.server.name,
             accelerator=cfg.server.accelerator,
@@ -137,9 +145,10 @@ async def start(cfg: Config, backend: Backend | None = None) -> Running:
         await health_servicer.set(CLEANUP_SERVICE, SERVING)  # ty: ignore[invalid-argument-type]
     await server.start()
     log.info(
-        "listening on %s (port %d, %s), backend=%s model_id=%s",
+        "listening on %s (port %d, %s), backend=%s models=%s",
         cfg.server.listen, port, "TLS" + (" mTLS" if cfg.server.tls.client_ca else "")
-        if creds else "plaintext", cfg.backend.kind, backend.model_id,
+        if creds else "plaintext", cfg.backend.kind,
+        ", ".join(b.model_id + ("" if b is backend else " (on first use)") for b in backends),
     )  # fmt: skip
 
     running = Running(server, port, core, health_servicer, cleanup)

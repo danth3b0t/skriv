@@ -3,7 +3,7 @@
 A backend owns one model and a single worker thread. All model work (load,
 warmup, decode) runs on that thread: accelerator runtimes (MLX streams, CUDA
 contexts) are thread-affine, and one thread also serializes jobs the way a
-single GPU would. Sessions, validation, budgets, anchors and bias hits live in
+single GPU would. Backends of one accelerator share the thread (`executor`). Sessions, validation, budgets, anchors and bias hits live in
 the server (`hark_server.session`); backends only decode.
 """
 
@@ -80,11 +80,12 @@ class BackendUnavailable(RuntimeError):  # noqa: N818 - public name, imported by
 class Backend(abc.ABC):
     """One loaded model. Subclasses implement the `_..._sync` methods."""
 
-    def __init__(self, model_id: str) -> None:
+    def __init__(self, model_id: str, executor: ThreadPoolExecutor | None = None) -> None:
+        """`executor`: another backend's worker thread, shared (one accelerator)."""
         self.model_id = model_id
         self.state = pb.MODEL_STATE_COLD
         self.perf = pb.PerfEstimate()
-        self._executor = ThreadPoolExecutor(1, thread_name_prefix=f"backend-{model_id}")
+        self._executor = executor or ThreadPoolExecutor(1, thread_name_prefix=f"backend-{model_id}")
         self._pending = 0
         self._lock = threading.Lock()
 
@@ -116,6 +117,11 @@ class Backend(abc.ABC):
             w = t.weight if t.HasField("weight") else 1.0
             boosts[t.id] = strength * (bias.boost_min + w * (bias.boost_max - bias.boost_min))
         return BiasPlan(terms=list(terms), term_boosts=boosts)
+
+    def companions(self) -> list[Backend]:
+        """Models served beside this one (e.g. an English-only model next to a multilingual
+        one), usually on its worker thread. The server loads them on first use."""
+        return []
 
     def open_stream(self, plan: BiasPlan | None) -> AudioStream | None:
         """A per-session incremental decoder, or None: decode at end of audio only."""

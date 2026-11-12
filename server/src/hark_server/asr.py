@@ -56,8 +56,8 @@ class AsrServicer(pb_grpc.AsrServicer):
         request: pb.WarmupRequest,
         context: _Context[pb.WarmupRequest, pb.WarmupResponse],
     ) -> pb.WarmupResponse:
-        backend = self.core.backend
-        if request.model_id and request.model_id != backend.model_id:
+        backend = self.core.find(request.model_id)
+        if backend is None:
             await HarkError(E.ERROR_CODE_MODEL_NOT_FOUND, "unknown model_id").abort(context)
         try:
             ms = await backend.warmup()
@@ -78,14 +78,16 @@ class AsrServicer(pb_grpc.AsrServicer):
         utterance_id = request.config.utterance_id
         session: Session | None = None
         try:
-            session = self.core.open(request.config)
+            session = await self.core.open(request.config)
             warnings = list(session.start_warnings)
             for chunk in request.audio:
                 warnings += session.add_audio(chunk)
             session.end_of_audio(None)
             final = await session.finalize()
             return pb.RecognizeResponse(
-                accepted=session.accepted(), final_result=final, warnings=warnings
+                accepted=session.accepted(),
+                final_result=final,
+                warnings=warnings + session.final_warnings,
             )
         except HarkError as e:
             log.info("recognize %s: %s", pb.ErrorCode.Name(e.code), e.message)
@@ -119,7 +121,7 @@ class AsrServicer(pb_grpc.AsrServicer):
             if first.WhichOneof("msg") != "start":
                 raise protocol_violation("first message must be start")
             utterance_id = first.start.utterance_id
-            session = self.core.open(first.start)
+            session = await self.core.open(first.start)
             yield pb.TranscribeResponse(accepted=session.accepted())
             accepted = True
             log.info("session %s: accepted", session.session_id)
@@ -138,7 +140,10 @@ class AsrServicer(pb_grpc.AsrServicer):
                 )
 
                 if fin is not None and fin in done:
-                    yield pb.TranscribeResponse(final_result=fin.result())
+                    final = fin.result()
+                    for w in session.final_warnings:
+                        yield pb.TranscribeResponse(warning=w)
+                    yield pb.TranscribeResponse(final_result=final)
                     return
 
                 if read is not None and read in done:
