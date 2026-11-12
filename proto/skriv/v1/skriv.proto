@@ -591,6 +591,14 @@ message CleanupRequest {
   CleanupContext context = 7;
   uint32 budget_ms = 9;                // generation budget, < gRPC deadline
   PrivacyFlags privacy = 10;
+  // The context shortlist, most relevant first (empty if the provider gets no
+  // context). An instruct cleanup model writes these spellings when the text
+  // says them; S1-mini's fixed prompt has no place for them.
+  repeated BiasTerm terms = 12;
+  // Key-down priming: `text` is empty; the server sends the model the prompt
+  // that this utterance's Cleanup will start with (profile and terms), so the
+  // model's prompt cache holds it at key-up. No rewrite: skipped = "primed".
+  bool prime = 13;
 }
 
 message CleanupContext {
@@ -611,7 +619,7 @@ message CleanupResponse {
   bool truncated = 5;        // budget hit: no rewrite
   optional string text = 8;  // the rewrite ("" is valid: the input was only fillers)
   string skipped = 9;        // why `text` is unset when not truncated: "empty",
-                             // "not_english", "max_tokens"
+                             // "not_english", "max_tokens", "primed"
 }
 
 // =============================================================================

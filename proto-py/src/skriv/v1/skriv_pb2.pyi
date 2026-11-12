@@ -2333,6 +2333,8 @@ class CleanupRequest(_message.Message):
     CONTEXT_FIELD_NUMBER: _builtins.int
     BUDGET_MS_FIELD_NUMBER: _builtins.int
     PRIVACY_FIELD_NUMBER: _builtins.int
+    TERMS_FIELD_NUMBER: _builtins.int
+    PRIME_FIELD_NUMBER: _builtins.int
     request_id: _builtins.str
     utterance_id: _builtins.str
     text: _builtins.str
@@ -2341,10 +2343,22 @@ class CleanupRequest(_message.Message):
     language: _builtins.str
     budget_ms: _builtins.int
     """generation budget, < gRPC deadline"""
+    prime: _builtins.bool
+    """Key-down priming: `text` is empty; the server sends the model the prompt
+    that this utterance's Cleanup will start with (profile and terms), so the
+    model's prompt cache holds it at key-up. No rewrite: skipped = "primed".
+    """
     @_builtins.property
     def context(self) -> Global___CleanupContext: ...
     @_builtins.property
     def privacy(self) -> Global___PrivacyFlags: ...
+    @_builtins.property
+    def terms(self) -> _containers.RepeatedCompositeFieldContainer[Global___BiasTerm]:
+        """The context shortlist, most relevant first (empty if the provider gets no
+        context). An instruct cleanup model writes these spellings when the text
+        says them; S1-mini's fixed prompt has no place for them.
+        """
+
     def __init__(
         self,
         *,
@@ -2356,10 +2370,12 @@ class CleanupRequest(_message.Message):
         context: Global___CleanupContext | None = ...,
         budget_ms: _builtins.int = ...,
         privacy: Global___PrivacyFlags | None = ...,
+        terms: _abc.Iterable[Global___BiasTerm] | None = ...,
+        prime: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["context", b"context", "privacy", b"privacy"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "language", b"language", "privacy", b"privacy", "profile_id", b"profile_id", "request_id", b"request_id", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "language", b"language", "prime", b"prime", "privacy", b"privacy", "profile_id", b"profile_id", "request_id", b"request_id", "terms", b"terms", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 

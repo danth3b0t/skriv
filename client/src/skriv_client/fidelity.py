@@ -14,10 +14,13 @@ that mechanically. A rewrite fails when it
   judge of prose;
 - has a different number of negations ("not", "never", "n't", "without", ...);
 - has different numbers, once spoken numbers are read as digits ("seven" == "7");
-- adds an identifier (camelCase, PascalCase, snake_case, dotted) that is neither in the input
-  (in any case) nor protected, unless it is adjacent input words run together as written
-  ("Hyper LAN" -> "HyperLAN") or with their spoken separators ("model dot train" ->
-  "model.train"): "read wave" -> "ReadWave" invents a name;
+- has fewer question marks: a question became a statement;
+- adds an identifier (camelCase, PascalCase, snake_case, dotted), a path or a flag that is
+  neither in the input (in any case) nor protected (nor part of a protected string), unless it
+  is adjacent input words run together as written ("Hyper LAN" -> "HyperLAN") or with their
+  spoken separators ("model dot train" -> "model.train"): "read wave" -> "ReadWave" invents a
+  name;
+- drops a sentence that has content words;
 - drops the first word of a sentence that is a content word not set off by a comma: the
   verb of an imperative ("Use useQuery here" -> "useQuery here");
 - adds or drops content words: words (by a crude stem) that are not function, discourse or
@@ -28,6 +31,11 @@ that mechanically. A rewrite fails when it
 A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds" -> "5 seconds")
 is checked against the corrected text.
 
+A shortlist term the rewrite wrote in place of words that sound like it ("Indo we.conf" ->
+"tauri.conf.json", "XDG runtime di" -> "XDG_RUNTIME_DIR") is a repair, not an invention: the
+words it replaced and the term itself are left out of the protected-string, content-word and
+opening-verb rules (see `_unbacked`). Negations, numbers and question marks still count.
+
 `accept` applies the check sentence by sentence when the whole rewrite fails it, so one bad
 change in a long dictation does not cost the other sentences their cleanup.
 """
@@ -36,10 +44,11 @@ from __future__ import annotations
 
 import re
 from collections import Counter
+from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from collections.abc import Collection, Iterable, Iterator
+    from collections.abc import Collection, Iterable, Iterator, Mapping, Sequence
 
 _TOKEN = re.compile(r"[^\W_]+(?:'[^\W_]+)?")
 _WORD = re.compile(r"[\w']+")  # identifiers whole: "fetch_rows"
@@ -292,13 +301,19 @@ def _align(said: list[str], wrote: list[str]) -> list[tuple[list[str], list[str]
 
 
 def accept(
-    before: str, after: str, protected: Collection[str] = (), *, single_line: bool
+    before: str,
+    after: str,
+    protected: Collection[str] = (),
+    *,
+    single_line: bool,
+    terms: Mapping[str, Sequence[str]] | None = None,
 ) -> tuple[str, str]:
     """What to keep of the rewrite `after`, and why the rest was refused ("" if nothing
     was). The whole rewrite if `check` passes; else, sentence by sentence (see `_align`), each
     rewritten sentence that passes `check` against the sentences it came from, and the input's
-    sentences where it does not. `before` if no sentence passes, or if the mix fails `check`."""
-    why = check(before, after, protected, single_line=single_line)
+    sentences where it does not. `before` if no sentence passes, or if the mix fails `check`.
+    `terms`: shortlist terms the rewrite wrote (canonical -> spoken forms), see `check`."""
+    why = check(before, after, protected, single_line=single_line, terms=terms)
     if not why:
         return after, ""
     said, wrote = sentences(before), sentences(after)
@@ -312,7 +327,7 @@ def accept(
         bad = (
             "added a sentence"
             if not b.strip()
-            else check(b.strip(), a.strip(), protected, single_line=single_line)
+            else check(b.strip(), a.strip(), protected, single_line=single_line, terms=terms)
         )
         if bad:
             refused.append(bad)
@@ -324,20 +339,29 @@ def accept(
     if len(refused) == len(groups):
         return before, why
     mixed = "".join(pieces).rstrip() + after[len(after.rstrip()) :]
-    if check(before, mixed, protected, single_line=single_line):
+    if check(before, mixed, protected, single_line=single_line, terms=terms):
         return before, why
     return mixed, f"kept {len(refused)} of {len(groups)} sentences as said: {refused[0]}"
 
 
-def check(before: str, after: str, protected: Collection[str] = (), *, single_line: bool) -> str:
+def check(
+    before: str,
+    after: str,
+    protected: Collection[str] = (),
+    *,
+    single_line: bool,
+    terms: Mapping[str, Sequence[str]] | None = None,
+) -> str:
     """Why `after` does not say what `before` said, or "" if it does (see the module doc).
-    `protected`: strings that must keep their exact spelling, case and count.
+    `protected`: strings that must keep their exact spelling, case and count. `terms`:
+    shortlist terms (canonical -> spoken forms) that may replace words that sound like them.
 
     A spoken self-correction the rewrite resolved ("port 8080, sorry, I mean port 8081" ->
     "port 8081") passes if the rest of the rewrite passes against the corrected text."""
-    why = _check(before, after, protected, single_line=single_line)
+    terms = terms or {}
+    why = _check(before, after, protected, single_line=single_line, terms=terms)
     if why and any(  # the cheap check first: most texts have no cue
-        not _check(meant, after, protected, single_line=single_line)
+        not _check(meant, after, protected, single_line=single_line, terms=terms)
         for meant in _retractions(before)
     ):
         return ""
@@ -346,8 +370,10 @@ def check(before: str, after: str, protected: Collection[str] = (), *, single_li
 
 _IDENTIFIER = re.compile(
     r"(?<![\w.])(?=[\w.]*(?:[a-z][A-Z]|[^\W_]_[^\W_]|[^\W\d_]\.[^\W\d_]))[\w.]*\w"
+    r"|(?<!\S)[~$.]?[\w.-]*/[\w./-]*\w"  # a path: "web/src", "~/bin/x"
+    r"|(?<![\w-])--?[A-Za-z][\w-]*\w"  # a flag
 )
-_SPOKEN_SEPARATORS = {"underscore": "_", "dot": ".", "point": "."}
+_SPOKEN_SEPARATORS = {"underscore": "_", "dot": ".", "point": ".", "slash": "/", "dash": "-"}
 
 
 def _invented(before: str, after: str, protected: Collection[str]) -> list[str]:
@@ -366,7 +392,7 @@ def _invented(before: str, after: str, protected: Collection[str]) -> list[str]:
         m.group()
         for m in _IDENTIFIER.finditer(after)
         if not count(m.group(), before, re.IGNORECASE)  # re-cased: "UVSync" -> "uvSync"
-        and m.group() not in protected
+        and not any(m.group() in p for p in protected)  # "XDG_DIR" of "$XDG_DIR"
         and m.group() not in joined
         and m.group().lower() not in spelled
     })  # fmt: skip
@@ -403,13 +429,106 @@ def _initial_verbs(text: str) -> list[str]:
     return out
 
 
+_SQUASH = re.compile(r"[^a-z0-9]")
+SOUNDS_LIKE = 0.4  # letter similarity of the replaced words to a term or its spoken form
+MAX_EXTRA_WORDS = 2  # a term may replace this many more words than it has spoken
+
+
+def _squash(text: str) -> str:
+    return _SQUASH.sub("", text.lower())
+
+
+def _unbacked(before: str, after: str, terms: Mapping[str, Sequence[str]]) -> tuple[str, str]:
+    """`before` and `after` without the spans where `after` writes a shortlist term (more
+    often than `before` has it) in place of words of `before` that sound like it: at least one
+    replaced word, no more than the term's longest spoken form plus MAX_EXTRA_WORDS, none of
+    them a shortlist term (one term never replaces another), not just some of the term's own
+    words (that adds the rest), and letters at least SOUNDS_LIKE similar (difflib ratio) to the
+    term or one of its spoken forms."""
+    if not terms:
+        return before, after
+    b_toks, a_toks = list(_TOKEN.finditer(before)), list(_TOKEN.finditer(after))
+    ops = SequenceMatcher(
+        None,
+        [t.group().lower() for t in b_toks],
+        [t.group().lower() for t in a_toks],
+        autojunk=False,
+    ).get_opcodes()
+
+    def before_index(j: int, *, end: bool) -> int:
+        """The token of `before` aligned with token j of `after` (end: one past it)."""
+        for tag, i1, i2, j1, j2 in ops:
+            if j1 <= j < j2:
+                if tag == "equal":
+                    return i1 + (j - j1) + end
+                return i2 if end else i1
+        return len(b_toks)
+
+    cut_b: list[tuple[int, int]] = []
+    cut_a: list[tuple[int, int]] = []
+    for term, spoken in terms.items():
+        if count(term, after) <= count(term, before):
+            continue
+        forms = [term, *spoken]
+        longest = max(len(tokens(f)) for f in forms)
+        for m in re.finditer(r"(?<!\w)" + re.escape(term) + r"(?!\w)", after):
+            js = [j for j, t in enumerate(a_toks) if m.start() <= t.start() < m.end()]
+            if not js:
+                continue
+            i1, i2 = before_index(js[0], end=False), before_index(js[-1], end=True)
+            if not 0 < i2 - i1 <= longest + MAX_EXTRA_WORDS:
+                continue
+            said = before[b_toks[i1].start() : b_toks[i2 - 1].end()]
+            if any(count(t, said) for t in terms):
+                continue
+            if set(tokens(said)) < set(tokens(term)):  # "gate" -> "gate.py" adds ".py"
+                continue
+            if max(SequenceMatcher(None, _squash(said), _squash(f)).ratio() for f in forms) < (
+                SOUNDS_LIKE
+            ):
+                continue
+            cut_b.append((b_toks[i1].start(), b_toks[i2 - 1].end()))
+            cut_a.append((m.start(), m.end()))
+
+    def cut(text: str, spans: list[tuple[int, int]]) -> str:
+        for start, end in sorted(spans, reverse=True):
+            text = text[:start] + " " + text[end:]
+        return text
+
+    return cut(before, cut_b), cut(after, cut_a)
+
+
+def _dropped_sentence(before: str, after: str) -> bool:
+    """A sentence of `before` with content words that has no counterpart in `after`."""
+    said, wrote = sentences(before), sentences(after)
+    if len(said) < 2:
+        return False
+    return any(old and not new and content("".join(old)) for old, new in _align(said, wrote))
+
+
 def _check(  # noqa: PLR0911 - one return per rule
-    before: str, after: str, protected: Collection[str], *, single_line: bool
+    before: str,
+    after: str,
+    protected: Collection[str],
+    *,
+    single_line: bool,
+    terms: Mapping[str, Sequence[str]],
 ) -> str:
     if not tokens(after) and any(t not in FILLERS for t in tokens(before)):
         return "dropped everything"
     if single_line and "\n" in after.strip() and "\n" not in before:
         return "added a line break"
+    if negations(before) != negations(after):
+        return f"negations {negations(before)} -> {negations(after)}"
+    if numbers(before) != numbers(after):
+        return f"numbers {' '.join(numbers(before))} -> {' '.join(numbers(after))}"
+    if after.count("?") < before.count("?"):
+        return "dropped a question mark"
+    if invented := _invented(before, after, protected):
+        return f"added {', '.join(invented)}"
+    if _dropped_sentence(before, after):
+        return "dropped a sentence"
+    before, after = _unbacked(before, after, terms)  # the rest: what was not a term repair
     gained = [q for q in protected if count(q, after) > count(q, before)]
     for p in sorted(protected):
         lost = count(p, before) - count(p, after)
@@ -423,12 +542,6 @@ def _check(  # noqa: PLR0911 - one return per rule
             or (p.isalnum() and any(p.lower() in q.lower() for q in gained))
         ):
             return f"changed {p!r}"
-    if negations(before) != negations(after):
-        return f"negations {negations(before)} -> {negations(after)}"
-    if numbers(before) != numbers(after):
-        return f"numbers {' '.join(numbers(before))} -> {' '.join(numbers(after))}"
-    if invented := _invented(before, after, protected):
-        return f"added {', '.join(invented)}"
     old, new = content(before), content(after)
     words_before, words_after = tokens(before), tokens(after)
     respaced = _respaced(words_before, words_after)

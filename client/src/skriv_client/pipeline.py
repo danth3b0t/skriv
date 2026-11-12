@@ -4,7 +4,8 @@ hotkey down -> Utterance():
     context.collect() starts on a thread; the provider router picks the server
     (skriv_client.providers) meanwhile. SessionStart goes out when the context is ready or
     the deadline passes (with an empty context then; without context at all if the
-    provider has send_context = false); audio recorded meanwhile is replayed first.
+    provider has send_context = false); audio recorded meanwhile is replayed first. Then the
+    cleanup model is primed with the shortlist (skriv_client.cleanup.prime), in the background.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> anchor confidence -> canonicalize -> spoken symbols (terminal profile) ->
@@ -209,6 +210,30 @@ class Utterance:
             self.stream.feed(bytes(self.pcm))  # recorded while the provider was chosen
             self.stream.start(self.start_message)
         self.timings["session_start_ms"] = _ms(self.t0)
+        threading.Thread(
+            target=self._prime, args=(snap, provider), daemon=True, name="skriv-prime"
+        ).start()
+
+    def _prime(self, snap: ContextSnapshot, provider: Provider) -> None:
+        cfg = self.svc.cfg
+        profile_name = self.profile_override or cfg.profile_for(snap.focus)
+        prof = cfg.profile(profile_name)
+        if not (prof.cleanup and cfg.cleanup.enabled):
+            return
+        if not provider.caps.cleanup_profile(prof.cleanup_profile):
+            return
+        t = time.perf_counter()
+        why = cleanup.prime(
+            provider.channel,
+            terms=snap.terms,
+            send_terms=provider.cfg.send_context,
+            utterance_id=self.id,
+            profile_id=prof.cleanup_profile,
+            app_category=profile_name,
+        )
+        self.timings["prime_ms"] = _ms(t)
+        if why:
+            log.info("cleanup priming failed: %s", why)
 
     def _session_start(self, snap: ContextSnapshot, provider: Provider) -> pb.SessionStart:
         cfg = self.svc.cfg
@@ -651,7 +676,8 @@ class Utterance:
         return cleanup.run(
             provider.channel,
             text=text,
-            terms=snap.terms,  # never sent: only decides what the rewrite must keep
+            terms=snap.terms,
+            send_terms=provider.cfg.send_context,
             utterance_id=self.id,
             profile_id=prof.cleanup_profile,
             app_category=profile_name,

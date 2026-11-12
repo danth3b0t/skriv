@@ -67,12 +67,45 @@ def test_protected_covers_shortlist_terms_and_code_like_tokens():
         ("issue four twenty one", "Issue 421.", "numbers 21 4 -> 421"),
         ("show the logs", "Show the logs for the worker.", "added worker"),
         ("restart the worker and the scheduler", "Restart the worker.", "dropped scheduler"),
+        ("Run the tests first. It's flaky. Then push the branch and open the review.",
+         "Run the tests first. Then push the branch and open the review.", "dropped a sentence"),
+        ("can you check the logs?", "Check the logs.", "dropped a question mark"),
+        ("put it in the bin folder", "Put it in ~/bin.", "added ~/bin"),  # an invented path
+        ("run it with dry run", "Run it with --dry-run.", "added --dry-run"),  # an invented flag
+        ("open web slash src", "Open web/src.", ""),  # a spelled path
     ],
 )  # fmt: skip
 def test_fidelity_check(before: str, after: str, why: str):
     protected = {"--no-history", "fetch_rows", "last_text"} & set(before.split())
     got = fidelity.check(before, after, protected, single_line=True)
     assert got.startswith(why) if why else got == ""
+
+
+XDG = Term("$XDG_RUNTIME_DIR", ("xdg runtime dir",), 1.0, TermKind.IDENTIFIER, TermSource.REPO)
+TAURI = Term("tauri.conf.json", ("tauri dot conf dot json",), 1.0, TermKind.PATH, TermSource.REPO)
+GATE = Term("gate.py", ("gate dot py",), 1.0, TermKind.PATH, TermSource.REPO)
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "why"),
+    [
+        # a shortlist term written in place of what the recognizer made of it
+        ("The socket lives in $XDG runtime di, not in /tmp.",
+         "The socket lives in $XDG_RUNTIME_DIR, not in /tmp.", ""),
+        ("Indo we.conf, set the window to not be resizable.",
+         "In tauri.conf.json, set the window to not be resizable.", ""),
+        # not a repair: the term adds a word that was not said, or replaces unrelated words
+        ("uv run pytest -k gate", "uv run pytest -k gate.py", "added py"),
+        ("Restart the scheduler and the worker.", "Restart tauri.conf.json and the worker.",
+         "added"),
+        # a repair does not excuse a lost negation or number
+        ("The socket lives in $XDG runtime di, not /tmp.",
+         "The socket lives in $XDG_RUNTIME_DIR, /tmp.", "negations 1 -> 0"),
+    ],
+)  # fmt: skip
+def test_judge_accepts_shortlist_repairs_only(before: str, after: str, why: str):
+    result, got = cleanup.judge(before, after, [XDG, TAURI, GATE], single_line=True)
+    assert got.startswith(why) if why else (result, got) == (after, "")
 
 
 @pytest.mark.parametrize(
@@ -167,19 +200,37 @@ def test_run_keeps_the_rewrite_only_if_faithful(
     servicer, channel = server
     servicer.rewrite = rewrite
     out = cleanup.run(
-        channel, text=text, terms=terms, utterance_id="u1", profile_id="terminal",
-        app_category="terminal", language="", deadline_ms=2000,
+        channel, text=text, terms=terms, send_terms=True, utterance_id="u1",
+        profile_id="terminal", app_category="terminal", language="", deadline_ms=2000,
     )  # fmt: skip
     assert (out.text, out.status) == (result, status)
     assert out.reason.startswith(reason) if reason else out.reason == ""
     (request,) = servicer.requests
-    assert (request.text, request.profile_id) == (text, "terminal")  # the shortlist stays here
+    assert (request.text, request.profile_id, request.prime) == (text, "terminal", False)
+    assert [t.canonical for t in request.terms] == [t.canonical for t in terms]
+
+
+@pytest.mark.parametrize("send_terms", [True, False])
+def test_prime_sends_the_shortlist_without_text(
+    server: tuple[FixedRewrite, grpc.Channel], send_terms: bool
+):
+    servicer, channel = server
+    why = cleanup.prime(
+        channel, terms=[KUBECTL], send_terms=send_terms, utterance_id="u1",
+        profile_id="terminal", app_category="terminal",
+    )  # fmt: skip
+    assert why == ""
+    (request,) = servicer.requests
+    assert (request.prime, request.text, request.profile_id) == (True, "", "terminal")
+    assert [(t.canonical, [a.text for a in t.aliases]) for t in request.terms] == (
+        [("kubectl", ["cube control"])] if send_terms else []
+    )
 
 
 def test_language_setting_skips_cleanup_without_a_call():
     with grpc.insecure_channel("127.0.0.1:1") as nowhere:
         out = cleanup.run(
-            nowhere, text="please run it", terms=[], utterance_id="u1", profile_id="prose",
-            app_category="prose", language="cs", deadline_ms=200,
+            nowhere, text="please run it", terms=[], send_terms=True, utterance_id="u1",
+            profile_id="prose", app_category="prose", language="cs", deadline_ms=200,
         )  # fmt: skip
     assert (out.text, out.status, out.reason) == ("please run it", "skipped", "non_english")
