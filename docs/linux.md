@@ -8,7 +8,7 @@ local CPU engine as the fallback when the desktop is off.
 laptop (Omarchy)                                   desktop (RTX 3060)
  hark.service ── gRPC + mTLS over Tailscale ──────► hark-server.service :50051 ──► hark-llama.service :8080
   (hark run)                                         (ASR + TextCleanup proxy)     (llama-server, cleanup)
-  └─ fallback: hark-server.service on 127.0.0.1 (CPU engine, feat/m1-cpu)
+  └─ fallback: hark-cpu-server.service on 127.0.0.1:50052 (transcribe.cpp, CPU)
 ```
 
 ## 1. Install the package
@@ -153,6 +153,19 @@ hl.bind("F13", hl.dsp.exec_cmd("hark ctl stop"), { release = true })
 
 ## 3. The desktop: GPU server + cleanup LLM
 
+The ASR engine on Linux is the `transcribe_cpp` backend: Parakeet TDT 0.6B v3 (GGUF) on
+[transcribe.cpp](https://github.com/handy-computer/transcribe.cpp), on the GPU through Vulkan (NVIDIA or AMD).
+The package does not ship it; build it once in the checkout from section 1 (CUDA instead:
+`scripts/fetch-transcribe cuda`, needs `nvcc`):
+
+```sh
+sudo pacman -S cmake vulkan-headers shaderc        # shaderc: glslc, for the Vulkan shaders
+cd ~/projects/hark && scripts/fetch-transcribe vulkan   # build/transcribe/vulkan/lib + models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf
+```
+
+It has no vocabulary input, so bias terms do not reach the decoder (bias `NONE`); the client canonicalizes the
+result with them instead ([server/README.md](../server/README.md#backends)). Then:
+
 ```sh
 sudo pacman -S llama-cpp ggml-cuda
 /usr/lib/hark/scripts/fetch-models          # S1-mini cleanup model -> ~/.local/share/hark/models
@@ -178,7 +191,13 @@ key = "/home/me/.config/hark/pki/desktop.key"
 client_ca = "/home/me/.config/hark/pki/ca.crt"   # mTLS: only certs from this CA get in
 
 [backend]
-kind = "mock"        # until a Linux GPU backend lands: nemo_gpupb is a stub (server/README.md)
+kind = "transcribe_cpp"
+model = "/home/me/projects/hark/models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf"
+
+[backend.options]
+device = "vulkan"                                   # "cuda" with a cuda build
+library = "/home/me/projects/hark/build/transcribe/vulkan/lib"
+binding = "/home/me/projects/hark/build/transcribe/python"
 
 [cleanup]
 base_url = "http://127.0.0.1:8080/v1"
@@ -229,19 +248,17 @@ leaf certificates 825 days (`--days N`).
 
 ## 5. Laptop fallback: local CPU engine
 
-When the desktop is off, the laptop runs its own `hark-server` on loopback with the CPU ASR engine (being built
-in `feat/m1-cpu`; see that branch's docs for the backend name and model download):
+When the desktop is off, the laptop runs its own `hark-server` on loopback with the same `transcribe_cpp` backend
+on the CPU ([bench](bench/2026-11-12-transcribe-cpp-cpu.md)), from a checkout:
 
 ```sh
-# ~/.config/hark/server.toml on the laptop: loopback, so plaintext is fine
-#   [server]  listen = "127.0.0.1:50051"
-#   [backend] kind = "<cpu engine from feat/m1-cpu>"
-hark service install server
+uv sync && scripts/fetch-transcribe          # CPU build + the GGUF (libopenblas speeds up the TDT decoder)
+sed "s|@REPO@|$PWD|g" packaging/systemd/hark-cpu-server.service > ~/.config/systemd/user/hark-cpu-server.service
+systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server   # 127.0.0.1:50052
 ```
 
-How the client chooses between the desktop and the local engine (health-checked fallback) is part of the CPU
-engine work; until it lands, switch by hand: `hark --server 127.0.0.1:50051 run`, or point `server.address` at
-`127.0.0.1:50051` and drop the `tls_*` keys.
+List it last in the client's `[[providers]]` (desktop first); the client takes the first healthy one per
+dictation: [client/README.md](../client/README.md#providers-and-the-offline-fallback).
 
 ## Troubleshooting
 

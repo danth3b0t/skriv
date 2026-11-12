@@ -212,18 +212,12 @@ def create_backend(kind: str, model: str, model_id: str, options: Mapping[str, o
         from .parakeet_mlx import ParakeetMlxBackend  # noqa: PLC0415 - import cycle
 
         cls, args = ParakeetMlxBackend, (model, model_id)
-    elif kind == "nemo_gpupb":
-        from .nemo_gpupb import NemoGpuPbBackend  # noqa: PLC0415 - import cycle
-
-        cls, args = NemoGpuPbBackend, (model, model_id)
     elif kind == "transcribe_cpp":
         from .transcribe_cpp import TranscribeCppBackend  # noqa: PLC0415 - import cycle
 
         cls, args = TranscribeCppBackend, (model, model_id)
     else:
-        raise ValueError(
-            f"unknown backend {kind!r} (mock | parakeet_mlx | nemo_gpupb | transcribe_cpp)"
-        )
+        raise ValueError(f"unknown backend {kind!r} (mock | parakeet_mlx | transcribe_cpp)")
     try:
         inspect.signature(cls).bind(*args, **options)
     except TypeError as e:

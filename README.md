@@ -48,7 +48,7 @@ scripts/cpu-server-up` (transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of s
 | Path | What |
 |---|---|
 | `proto/hark/v1/hark.proto` | client ↔ inference-server protocol (gRPC), see `docs/protocol/ADR-001-protocol.md` |
-| `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, transcribe_cpp CPU/Metal/Vulkan, NeMo GPU-PB stub) + TextCleanup proxy |
+| `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, transcribe_cpp CPU/Metal/Vulkan) + TextCleanup proxy |
 | `client/` | `hark`: hotkey, audio, context engine, streaming, canonicalization, cleanup, guardrails, paste |
 | `proto-py/` | generated Python stubs (`proto-py/gen-proto`) |
 | `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up`, `build-macos-app`, `hark-certs` (mTLS) |

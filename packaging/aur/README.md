@@ -51,9 +51,8 @@ anyway, and its units are inert until enabled. Separate venvs would ship the ~10
 runtime package would be a third package for no user-visible gain. The heavy, hardware-specific parts are
 already optional: llama.cpp comes from the repos (`llama-cpp` + `ggml-cuda` / `ggml-vulkan` as optdepends,
 launched by `hark-llama.service`), models are downloaded per user (`/usr/lib/hark/scripts/fetch-models` →
-`~/.local/share/hark/models`). When the NeMo/CUDA ASR backend stops being a stub, its torch + CUDA wheels
-(several GB) belong in a separate split package (`hark-server-cuda-git`, own venv); the CPU engine
-(`feat/m1-cpu`) goes into this venv if it is wheels, or becomes a dependency if it is a native binary.
+`~/.local/share/hark/models`). The Linux ASR engine, transcribe.cpp (`transcribe_cpp` backend), is a native
+library that `scripts/fetch-transcribe` builds in a checkout; it is not packaged yet.
 
 **`options=('!strip' '!debug')`.** The ELF files are prebuilt manylinux wheels (edited by auditwheel/patchelf,
 which `strip` can corrupt) and python-build-standalone; there is no source of ours to debug.

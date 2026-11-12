@@ -23,7 +23,7 @@ key = ""
 client_ca = ""
 
 [backend]
-kind = "parakeet_mlx"             # mock | parakeet_mlx | nemo_gpupb | transcribe_cpp
+kind = "parakeet_mlx"             # mock | parakeet_mlx | transcribe_cpp
 model = "mlx-community/parakeet-tdt-0.6b-v3"
 model_id = ""                     # "" => last path component of `model`
 

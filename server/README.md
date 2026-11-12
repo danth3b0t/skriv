@@ -62,7 +62,7 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 | `server.max_audio_ms` | | 300000 | per-utterance cap (`AUDIO_TOO_LONG`) |
 | `server.default_finalize_budget_ms` | | 1000 | used when a client sends 0 |
 | `server.eager_end` | | `true` | advertise and honour `EagerEnd` |
-| `backend.kind` | `--backend` | `mock` | `mock`, `parakeet_mlx`, `nemo_gpupb`, `transcribe_cpp` |
+| `backend.kind` | `--backend` | `mock` | `mock`, `parakeet_mlx`, `transcribe_cpp` |
 | `backend.model` / `backend.model_id` | `--model` / `--model-id` | backend default | model to load / id advertised to clients |
 | `backend.options` | | `{}` | backend constructor kwargs (checked at startup) |
 | `cleanup.base_url` | `--cleanup-url` | `""` (off) | OpenAI-compatible base, e.g. `http://127.0.0.1:8080/v1` |
@@ -76,19 +76,18 @@ Tailscale use.
 
 ## Backends
 
-| | `mock` | `parakeet_mlx` | `nemo_gpupb` | `transcribe_cpp` |
-|---|---|---|---|---|
-| Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | Linux + NVIDIA + NeMo. **Stub.** | anywhere: CPU; Metal / Vulkan / CUDA if built so (`scripts/fetch-transcribe`) |
-| Streaming | BUFFERED | INCREMENTAL from 30 s of audio (sentence segments decoded while audio streams), BUFFERED below | BUFFERED (planned) | BUFFERED |
-| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) | NONE (transcribe.cpp has no vocabulary input for Parakeet); terms only for hit detection |
-| Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FULL_PASS (batch of two) | FREE (== primary) |
-| N-best | up to 3 (unbiased, RANK_ONLY) | 1 | unbiased beam (planned) | 1 |
-| Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | yes / yes (planned) | decoder emission, 80 ms / min token probability per word, uncalibrated |
+| | `mock` | `parakeet_mlx` | `transcribe_cpp` |
+|---|---|---|---|
+| Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | anywhere: CPU; Metal / Vulkan / CUDA if built so (`scripts/fetch-transcribe`) |
+| Streaming | BUFFERED | INCREMENTAL from 30 s of audio (sentence segments decoded while audio streams), BUFFERED below | BUFFERED |
+| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | NONE (transcribe.cpp has no vocabulary input for Parakeet); terms only for hit detection |
+| Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FREE (== primary) |
+| N-best | up to 3 (unbiased, RANK_ONLY) | 1 | 1 |
+| Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | decoder emission, 80 ms / min token probability per word, uncalibrated |
 
 - **mock**: every `word_ms` (200) window of non-silent audio emits the next word of a fixed script. Latency is configurable (`decode_ms`, `decode_ms_per_s`, `load_ms`). The tests use it.
 - **parakeet_mlx**: `from_pretrained` + `get_logmel` → `encoder` → greedy `decode`, all on one worker thread (MLX streams are thread-affine). parakeet-mlx 0.7 *does* have decode-time word boosting, but only in beam search; it is not wired up yet (see the bench doc).
 - **transcribe_cpp**: Parakeet TDT 0.6B v3 GGUF (Q4_K_M by default) on [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) 0.4.2 / ggml, the offline fallback for machines without a GPU server in reach. The model runs in a worker child process (`hark_server.backends.transcribe_worker`, JSON lines): a native crash fails one decode and the next decode restarts the worker; a decode longer than `decode_timeout_s` kills it. `scripts/fetch-transcribe` builds the pinned library into `build/` and downloads the model; `scripts/cpu-server-up` runs it. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
-- **nemo_gpupb**: capabilities, the weight→boost mapping and the intended per-stream GPU-PB call path (as code comments) are in place. Construction fails with a clear error when NeMo is missing; `load()` fails with "stub".
 
 Adding a backend: subclass `hark_server.backends.Backend`, then implement `capabilities()`, `_load_sync`, `_warmup_sync` and
 `_decode_sync`, plus optionally `plan_bias` and `_n_best_sync`. Validation, budgets, anchors, hits, gaps and
@@ -137,10 +136,9 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 
 ## Known limitations
 
-- No partials. Below `incremental_min_ms` (30 s) parakeet_mlx decodes at end of audio, so finalize time grows with utterance length up to ~1 s at 30 s with bias terms; longer dictations are decoded a sentence at a time while they stream ([bench](../docs/bench/2026-11-12-parakeet-mlx-incremental.md)). mock and nemo_gpupb are BUFFERED only.
+- No partials. Below `incremental_min_ms` (30 s) parakeet_mlx decodes at end of audio, so finalize time grows with utterance length up to ~1 s at 30 s with bias terms; longer dictations are decoded a sentence at a time while they stream ([bench](../docs/bench/2026-11-12-parakeet-mlx-incremental.md)). mock and transcribe_cpp are BUFFERED only.
 - One model per process. `backend_params` from clients are ignored (none are used yet). Free-text context is ignored by all backends (`CONTEXT_IGNORED`).
 - parakeet_mlx: N-best is 1 (beam result + greedy anchor), boosting costs ~2.3× greedy finalize latency, `detected_language` is not reported, and confidence is uncalibrated.
-- nemo_gpupb is a stub.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, Opus, gRPC reflection, `SUPERSEDED` handling of retried attempts, server-side session expiry, hit scores, and REJECTED hits for `bias_diagnostics`.
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.
 - Cleanup: no in-budget retry, non-streaming upstream call. `grammar` has no mechanical check, so no profile enables it. The client validator (authoritative) mirrors the per-kind checks, the protected-span rule for self-corrections and the negation/digit/removed-words/`!` rules, but not the changed-bytes budget or the "sloppy result" patterns. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).

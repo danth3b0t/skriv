@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import filecmp
-import importlib.util
 import subprocess
 from pathlib import Path
 
 import pytest
 
-from hark_server.backends import BackendUnavailable, create_backend
 from hark_server.config import ConfigError, parse_args
 
 SERVER = Path(__file__).resolve().parents[1]
@@ -53,13 +51,6 @@ def test_toml_config_rejects_unknown_keys(tmp_path: Path):
     bad.write_text('[server]\nlisten_addr = "127.0.0.1:6000"\n')
     with pytest.raises(ConfigError, match=r"server\.listen_addr"):
         parse_args(["--config", str(bad)])
-
-
-def test_nemo_backend_fails_clearly_without_nemo():
-    if importlib.util.find_spec("nemo") is not None:
-        pytest.skip("NeMo is installed on this host")
-    with pytest.raises(BackendUnavailable, match="NeMo"):
-        create_backend("nemo_gpupb", "", "", {})
 
 
 def test_checked_in_stubs_match_proto(tmp_path: Path):

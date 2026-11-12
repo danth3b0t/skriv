@@ -55,7 +55,7 @@ class ServerConfig:
 
 @dataclass
 class BackendConfig:
-    kind: str = "mock"  # mock | parakeet_mlx | nemo_gpupb | transcribe_cpp
+    kind: str = "mock"  # mock | parakeet_mlx | transcribe_cpp
     model: str = ""  # backend-specific model name / path ("" => backend default)
     model_id: str = ""  # id clients use in SessionStart.model_id ("" => derived)
     options: dict[str, object] = field(default_factory=dict)  # backend constructor kwargs
@@ -148,7 +148,7 @@ def parse_args(argv: list[str] | None = None) -> Config:
     p = argparse.ArgumentParser(prog="hark-server", description="hark.v1 gRPC inference server")
     p.add_argument("--config", help="TOML config file (CLI flags override it)")
     p.add_argument("--listen", help="host:port or unix:/path (default 127.0.0.1:50051)")
-    p.add_argument("--backend", choices=["mock", "parakeet_mlx", "nemo_gpupb", "transcribe_cpp"])
+    p.add_argument("--backend", choices=["mock", "parakeet_mlx", "transcribe_cpp"])
     p.add_argument("--model", help="backend model name/path")
     p.add_argument("--model-id", help="model id advertised to clients")
     p.add_argument("--tls-cert")
