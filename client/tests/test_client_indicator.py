@@ -90,6 +90,19 @@ def test_a_new_recording_wins_over_an_older_dictation_still_finishing():
     assert ind.view == View("cancelled", "Cancelled")
 
 
+def test_a_notice_never_covers_a_dictation_and_hides_by_itself():
+    ind, _, clock = make()
+    ind.recording("a")
+    ind.notice("Profile: chat")
+    assert ind.view == View("recording", "Listening")
+    ind.finished("a", "pasted")
+    ind.notice("Profile: chat")
+    assert ind.view == View("info", "Profile: chat")
+    clock.t += 1.5
+    ind.tick()
+    assert ind.view is None
+
+
 def test_input_level_is_scaled_and_rate_limited():
     ind, backend, clock = make()
     loud = np.full(320, 32767, dtype="<i2").tobytes()  # 0 dBFS
