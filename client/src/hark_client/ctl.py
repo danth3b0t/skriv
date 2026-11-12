@@ -3,8 +3,8 @@
 Two protocols on the same socket, one request line and one reply line per connection:
 
 - Text (key binds): ``start``, ``stop``, ``toggle``, ``cancel``, ``status``, ``ping``,
-  ``paste-last``, ``undo``, ``swap-raw``, ``profile [next | auto | set NAME]`` (words after the
-  command are its arguments) ->
+  ``paste-last``, ``profile [next | auto | set NAME]``, ``reload`` (words after the command are
+  its arguments) ->
   ``ok[ <detail>]`` or ``error <message>``. Example: ``echo toggle | nc -U "$sock"``.
 - JSON v1 (UIs, scripts), any line starting with ``{``: ``{"version": 1, "command": "status"}``
   (arguments: ``"args": ["set", "chat"]``) ->
@@ -39,8 +39,7 @@ if TYPE_CHECKING:
 log = logging.getLogger("hark.ctl")
 
 COMMANDS = (
-    "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
-    "profile", "reload",
+    "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "profile", "reload",
 )  # fmt: skip
 MAX_LINE = 512
 PROTOCOL_VERSION = 1

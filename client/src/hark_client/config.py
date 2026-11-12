@@ -136,10 +136,7 @@ class HotkeyConfig:
     # The Esc that cancels a recording does not reach the focused app (macOS: needs
     # Accessibility; X11: grabs Esc while recording). Nothing is suppressed when idle.
     swallow_esc: bool = True
-    # Extra keys the listener handles itself (pynput Key names, e.g. f14; "" = none). They are
-    # not seen as typing, unlike `hark ctl` bound to a key (which undo would take for an edit).
-    undo_key: str = ""  # = hark ctl undo
-    swap_key: str = ""  # = hark ctl swap-raw
+    # Extra key the listener handles itself (a pynput Key name, e.g. f14; "" = none).
     profile_key: str = ""  # = hark ctl profile next
 
 

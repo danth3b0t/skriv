@@ -89,7 +89,6 @@ class Result:
     paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
     gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
     pasted_text: str = ""  # exactly what was pasted (smart spacing applied)
-    swap_text: str = ""  # the uncleaned text as it would have been pasted (`hark ctl swap-raw`)
     stop_reason: str = ""  # key_up | limit ("" = never got that far)
     provider: str = ""  # the provider that transcribed it
     fallback: bool = False  # ... was not the first in priority order (a failover counts)
@@ -506,7 +505,6 @@ class Utterance:
         res.final_text, res.guard_events = guardrails.apply(
             res.cleanup.text, terminal=prof.terminal
         )
-        uncleaned, _ = guardrails.apply(canon, terminal=prof.terminal)
         t["guard_ms"] = _ms(t1)
         self._report(
             "guard", f"{res.final_text!r} profile={profile_name} events={res.guard_events}"
@@ -527,7 +525,6 @@ class Utterance:
         t["focus_check_ms"] = _ms(t1)
         t1 = time.perf_counter()
         text = res.final_text  # what is pasted (smart spacing below)
-        res.swap_text = uncleaned
         if changed_to is not None:
             ok = svc.injector.copy(res.final_text)
             res.status = "focus_changed"
@@ -543,7 +540,7 @@ class Utterance:
             )  # fmt: skip
         else:
             if cfg.paste.smart_spacing and cfg.paste.join_space:
-                text = self._spacing(snap.focus, res, shadow, uncleaned)
+                text = self._spacing(snap.focus, res, shadow)
                 t["spacing_ms"] = _ms(t1)
                 t1 = time.perf_counter()
             if shadow is not None:  # before pasting: the listener sees the paste chord
@@ -603,11 +600,8 @@ class Utterance:
             self._report("anchor", f"{out.text!r} ({summary})")
         return out
 
-    def _spacing(
-        self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None, uncleaned: str
-    ) -> str:
-        """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision
-        (and spaces ``uncleaned`` the same way into ``res.swap_text``)."""
+    def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
+        """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision."""
         caret = _caret_context(focus)
         if not caret.trusted:
             before = shadow.before(focus.window_id) if shadow is not None else None
@@ -615,7 +609,6 @@ class Utterance:
                 before, None, "shadow" if before is not None else "none", detail=caret.detail
             )
         sp = continuation.decide(caret.before, caret.after, res.final_text)
-        res.swap_text = continuation.decide(caret.before, caret.after, uncleaned).text
         res.spacing = {
             "before_repr": repr(caret.before[-16:]) if caret.before is not None else None,
             "after_repr": repr(caret.after) if caret.after is not None else None,

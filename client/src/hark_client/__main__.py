@@ -77,12 +77,10 @@ def parse_args(argv: list[str] | None = None) -> Args:
     c.add_argument(
         "action",
         choices=[
-            "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
-            "profile", "reload",
+            "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "profile",
+            "reload",
         ],
         help="paste-last: paste the last dictated text again into the focused window; "
-        "undo: delete the last dictation's text if nothing was typed after it; "
-        "swap-raw: replace it with the uncleaned text (again: back); "
         "profile next|auto|set NAME: the profile for the next dictation; "
         "reload: re-read the config file (the next dictation uses it)",
     )  # fmt: skip
