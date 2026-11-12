@@ -20,6 +20,10 @@ proposal-a was never deployed, so removed fields are `reserved` only for hygiene
 | 8 | Audio defaults | `AudioFormat` documents defaults: unset encoding → PCM_S16LE, 0 Hz → 16000, 0 channels → 1, 40 ms chunks; Opus optional and unadvertised until measured. |
 | 9 | Security | Header comment only (mTLS default, bearer optional, plaintext on loopback only). |
 
+## v1.1 (additive)
+
+- **Added** `FinalResult.model_id` (12): the model that produced `n_best[0]`. A server hosting several models routes a session by `SessionStart.languages` (e.g. an English-only model for `["en"]`) and may re-decode with another model when the output is implausible for the requested languages; it then also sends `WARNING_CODE_LANGUAGE_FALLBACK`. `Capabilities.protocol.minor` = 1.
+
 ## Other deviations
 
 - `SessionStart.required_features` additionally accepts `result.word_confidence`; unknown feature names fail (cannot honour what is not understood). Required result fields are never shed for budget.

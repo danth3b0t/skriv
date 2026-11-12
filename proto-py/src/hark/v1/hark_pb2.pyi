@@ -2235,6 +2235,7 @@ class FinalResult(_message.Message):
     FLAGS_FIELD_NUMBER: _builtins.int
     PRIVACY_FIELD_NUMBER: _builtins.int
     REPLAYED_FIELD_NUMBER: _builtins.int
+    MODEL_ID_FIELD_NUMBER: _builtins.int
     utterance_id: _builtins.str
     detected_language: _builtins.str
     """BCP-47"""
@@ -2242,6 +2243,11 @@ class FinalResult(_message.Message):
     context_revision: _builtins.int
     """context revision actually used"""
     replayed: _builtins.bool
+    model_id: _builtins.str
+    """Model that produced n_best[0] (v1.1). Differs from SessionAccepted.model_id
+    after a language fallback (WARNING_CODE_LANGUAGE_FALLBACK). Empty: the
+    accepted model (servers before v1.1).
+    """
     @_builtins.property
     def n_best(self) -> _containers.RepeatedCompositeFieldContainer[Global___Hypothesis]:
         """n_best[0] is the primary result. Always present (empty text on silence)."""
@@ -2274,10 +2280,11 @@ class FinalResult(_message.Message):
         flags: Global___ResultFlags | None = ...,
         privacy: Global___PrivacyAck | None = ...,
         replayed: _builtins.bool = ...,
+        model_id: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence", "anchor", b"anchor", "flags", b"flags", "language_confidence", b"language_confidence", "privacy", b"privacy", "timings", b"timings"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence", "anchor", b"anchor", "bias_hits", b"bias_hits", "context_revision", b"context_revision", "detected_language", b"detected_language", "flags", b"flags", "language_confidence", b"language_confidence", "n_best", b"n_best", "privacy", b"privacy", "replayed", b"replayed", "timings", b"timings", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence", "anchor", b"anchor", "bias_hits", b"bias_hits", "context_revision", b"context_revision", "detected_language", b"detected_language", "flags", b"flags", "language_confidence", b"language_confidence", "model_id", b"model_id", "n_best", b"n_best", "privacy", b"privacy", "replayed", b"replayed", "timings", b"timings", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     _WhichOneofReturnType__language_confidence: _TypeAlias = _typing.Literal["language_confidence"]  # noqa: Y015
     _WhichOneofArgType__language_confidence: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence"]  # noqa: Y015

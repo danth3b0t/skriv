@@ -491,6 +491,10 @@ message FinalResult {
   ResultFlags flags = 9;
   PrivacyAck privacy = 10;
   bool replayed = 11;
+  // Model that produced n_best[0] (v1.1). Differs from SessionAccepted.model_id
+  // after a language fallback (WARNING_CODE_LANGUAGE_FALLBACK). Empty: the
+  // accepted model (servers before v1.1).
+  string model_id = 12;
 }
 
 message Hypothesis {
