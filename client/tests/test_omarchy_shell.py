@@ -55,7 +55,7 @@ def status(**over: object) -> dict[str, object]:
         "finishing": 0, "paused": False, "mic": {"status": "ok"},
         "server": {"name": "desktop", "state": "ok", "rtt_ms": 38.2, "fallback": False},
         "config": {"changed": False, "restart_needed": []}, "last": None,
-        "learning": {"enabled": False, "watching": False}, "profile_override": None,
+        "profile_override": None,
     }  # fmt: skip
     s.update(over)
     return s
@@ -66,7 +66,7 @@ def ctl_socket(controller: tuple[Controller, DryRunInjector]) -> Iterator[Path]:
     """The real control socket of ``controller`` (a short path: AF_UNIX limits its length)."""
     c, _ = controller
     path = Path(tempfile.mkdtemp(prefix="hark-", dir="/tmp")) / "ctl.sock"
-    server = ctl.CtlServer(path, c.handle, c.status_json, c.wait_change)
+    server = ctl.CtlServer(path, c.handle, c.report.json, c.report.wait_change)
     server.start()
     yield path
     server.close()
@@ -110,7 +110,7 @@ def test_the_shell_reads_the_real_daemons_lines_and_history(
         l=lines,
     )
     assert [o[0] for o in out] == ["idle", "recording", "idle"]
-    assert out[2][1] == cast("dict[str, object]", c.status_json()["last"])["utterance_id"]
+    assert out[2][1] == cast("dict[str, object]", c.report.json()["last"])["utterance_id"]
     assert out[2][2].startswith("hark · ready · ")
     last = model(
         "M.lastView(M.parseHistory(d.h), M.parseStatus(d.l), d.now)",

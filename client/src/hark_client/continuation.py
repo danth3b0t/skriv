@@ -20,7 +20,6 @@ from __future__ import annotations
 import re
 import threading
 import time
-import unicodedata
 from dataclasses import dataclass
 from enum import Enum, auto
 from typing import TYPE_CHECKING
@@ -30,7 +29,6 @@ if TYPE_CHECKING:
 
 # Key events this soon after hark pasted can be its own synthetic paste chord.
 PASTE_ECHO_S = 0.5
-ECHO_PER_KEY_S = 0.01  # ...and a little longer per Backspace hark sends (undo)
 SHADOW_CHARS = 64
 
 OPENING = frozenset("([{\"'`/-\u201c\u2018\u00ab")  # no space after these
@@ -138,30 +136,6 @@ def classify(press: KeyPress) -> tuple[Edit, str]:  # noqa: PLR0911 - one rule p
     return Edit.UNKNOWN, ""  # arrows, Home/End, PageUp/Down, Tab, Esc, F-keys, clicks, ...
 
 
-def _joins(ch: str) -> bool:
-    """``ch`` forms one user-perceived character with a neighbour."""
-    cp = ord(ch)
-    return (
-        unicodedata.category(ch) in {"Mn", "Mc", "Me", "Cf"}  # marks; ZWJ, tags and other format
-        or 0xFE00 <= cp <= 0xFE0F  # variation selectors
-        or 0xE0100 <= cp <= 0xE01EF
-        or 0x1F3FB <= cp <= 0x1F3FF  # emoji skin-tone modifiers
-        or 0x1F1E6 <= cp <= 0x1F1FF  # regional indicators (flags are pairs)
-        or 0x1160 <= cp <= 0x11FF  # Hangul medial/final jamo
-        or 0xD7B0 <= cp <= 0xD7FF
-    )
-
-
-def backspaces(text: str) -> int | None:
-    """Backspace presses that delete exactly ``text`` right before the caret: one per character.
-    None if some characters combine with a neighbour (accents as separate marks, emoji sequences,
-    flags, conjoining jamo, CR LF): apps delete those per cluster or per code point, so the count
-    would be a guess."""
-    if "\r\n" in text or any(_joins(ch) for ch in text):
-        return None
-    return len(text)
-
-
 def _drop_word(text: str) -> str:
     """Option/Ctrl+Backspace: trailing non-word characters, then the word before them."""
     i = len(text)
@@ -198,9 +172,6 @@ class ShadowBuffer:
         self._anchored = False  # _text starts at a line start
         self._at = 0.0  # last change
         self._pasted_at = float("-inf")
-        self._last = ""  # hark's last paste, while nothing has changed the text since
-        self._echo_backspaces = 0  # hark's own Backspaces (undo) still to be seen
-        self._echo_until = float("-inf")
 
     def forget(self) -> None:
         with self._lock:
@@ -218,31 +189,6 @@ class ShadowBuffer:
             else:
                 self._set(text, anchored=False)
             self._target, self._at, self._pasted_at = target, now, now
-            self._last = text
-
-    def last_insertion(self, target: str) -> str | None:
-        """hark's last paste into ``target`` if the caret is known to be right after it: no key,
-        click or focus change since (as far as the listener saw), else None."""
-        with self._lock:
-            if not target or target != self._target or self._clock() - self._at > self.window_s:
-                return None
-            return self._last or None
-
-    def retract(self, target: str, text: str) -> bool:
-        """Call right before hark deletes its last paste ``text`` with ``len(text)`` Backspaces;
-        those are then not taken for the user's. False: ``text`` is not the last insertion."""
-        now = self._clock()
-        with self._lock:
-            if not text or target != self._target or self._last != text:
-                return False
-            n = len(text)
-            # _text ends with the paste; shorter (truncated) means what is left is unknown
-            self._text = self._text[:-n] if n < len(self._text) else ""
-            self._last = ""
-            self._echo_backspaces = n
-            self._echo_until = now + self.echo_s + n * ECHO_PER_KEY_S
-            self._at = now
-            return True
 
     def before(self, target: str) -> str | None:
         """Known text before the caret in ``target`` ("" = line start), else None."""
@@ -265,9 +211,6 @@ class ShadowBuffer:
             # hark's Cmd+V is posted with flags only, so the listener may see a bare "v"
             if edit is Edit.IGNORE or (echo and press.char.lower() in {"v", "\x16"}):
                 return
-            if edit is Edit.BACKSPACE and self._echo_backspaces and now < self._echo_until:
-                self._echo_backspaces -= 1  # one of hark's own (undo)
-                return
             target = self._target
         if self._focus_token() != target:
             self.forget()
@@ -275,7 +218,6 @@ class ShadowBuffer:
         with self._lock:
             if self._target != target:
                 return
-            self._last = ""
             self._apply(edit, char)
             self._at = now
 

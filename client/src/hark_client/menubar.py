@@ -71,7 +71,7 @@ def menu_state(c: Controller, now: float) -> str:
     """A SYMBOLS key for the daemon's current state."""
     if c.paused:
         return "paused"
-    st = c.status_json()
+    st = c.report.json()
     if st["state"] == "recording":
         return "recording"
     if st["finishing"]:
@@ -294,8 +294,7 @@ class MenuBar:
         self.tick()
 
     def set_profile(self, name: str | None) -> None:
-        """Same override as `hark ctl profile set NAME|auto` (next dictation, or every one
-        with ``profile_switch.sticky``)."""
+        """Same override as `hark ctl profile set NAME|auto` (the next dictation)."""
         self.c.profile(["set", name] if name is not None else ["auto"])
 
     def open_history(self) -> None:

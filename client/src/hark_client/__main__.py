@@ -1,8 +1,7 @@
 """hark CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Hark.app runs it),
 `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
-(pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
-learned vocabulary), `service` (always-on services: systemd user units on Linux, launchd agents
-on macOS).
+(pipeline on a kept recording), `history`, `last`, `doctor`, `eval`, `service` (always-on
+services: systemd user units on Linux, launchd agents on macOS).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -45,8 +44,6 @@ class Args(argparse.Namespace):
     realtime: bool
     no_history: bool
     json: bool
-    learned_action: str
-    text: str | None
     id: str | None
     copy: bool
     history_action: str
@@ -67,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
     p = argparse.ArgumentParser(prog="hark", description="context-aware dictation (POC client)")
     p.add_argument("--config", help="config TOML (default: ~/.config/hark/config.toml)")
     p.add_argument(
-        "--server", help="use only this server (host:port or unix:/path), not [[providers]]"
+        "--server", help="one provider at this address (host:port or unix:/path), not [[providers]]"
     )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
@@ -80,16 +77,15 @@ def parse_args(argv: list[str] | None = None) -> Args:
     c.add_argument(
         "action",
         choices=[
-            "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
-            "profile", "reload",
+            "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "pause",
+            "resume", "profile", "reload",
         ],
         help="paste-last: paste the last dictated text again into the focused window; "
-        "undo: delete the last dictation's text if nothing was typed after it; "
-        "swap-raw: replace it with the uncleaned text (again: back); "
-        "profile next|auto|set NAME: the profile for the next dictation; "
+        "pause / resume: refuse dictations and release the mic, or not; "
+        "profile auto|set NAME: the profile for the next dictation; "
         "reload: re-read the config file (the next dictation uses it)",
     )  # fmt: skip
-    c.add_argument("args", nargs="*", help="profile: next | auto | set NAME")
+    c.add_argument("args", nargs="*", help="profile: auto | set NAME")
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
     )
@@ -98,7 +94,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "--wav", required=True, help="WAV file (any rate/channels; resampled to 16 kHz mono)"
     )
     o.add_argument("--dry-run", action="store_true", help="print instead of pasting")
-    o.add_argument("--profile", help="force a profile (e.g. terminal, chat, prose)")
+    o.add_argument("--profile", help="force a profile (e.g. terminal, prose)")
     o.add_argument(
         "--realtime",
         action="store_true",
@@ -124,11 +120,6 @@ def parse_args(argv: list[str] | None = None) -> Args:
     la = sub.add_parser("last", help="print the last dictated text")
     la.add_argument("--copy", action="store_true", help="copy it to the clipboard instead")
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
-    lp = sub.add_parser("learned", help="corrections learned from your edits (learn.enabled)")
-    lp.add_argument(
-        "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
-    )
-    lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
     ev = sub.add_parser("eval", help="regression set of real dictations (docs/eval.md)")
     ev.add_argument("eval_action", choices=["add", "run", "accept"])
     ev.add_argument(
@@ -252,8 +243,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"hark: config error: {e}", file=sys.stderr)
         return 2
     if args.server:
-        cfg.server.address = args.server
-        cfg.providers = []
+        cfg.providers = [config.ProviderConfig(address=args.server)]
     logging.basicConfig(
         level=logging.DEBUG
         if args.verbose
@@ -269,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
-    offline = {"learned": cmd_learned, "history": cmd_history, "last": cmd_last, "eval": cmd_eval}
+    offline = {"history": cmd_history, "last": cmd_last, "eval": cmd_eval}
     return offline.get(args.command, cmd_pipeline)(args, cfg)
 
 
@@ -311,7 +301,7 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
     cfg.retry.keep = 0
     # nothing is pasted: the window and caret of today are not the clip's
     cfg.paste.check_focus = cfg.paste.smart_spacing = False
-    router = Router(cfg.provider_configs())
+    router = Router(cfg.providers)
     try:
         router.refresh()
         svc = Services(
@@ -335,33 +325,6 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
     mean = f"{sum(wers) / len(wers):.1%}" if wers else "n/a"
     print(f"{len(scores)} clips: {failed} failed, {unreviewed} unreviewed, recognition WER {mean}")
     return 1 if failed else 0
-
-
-def cmd_learned(args: Args, cfg: Config) -> int:
-    from hark_client.config import expand  # noqa: PLC0415
-    from hark_client.learn import LearnedStore, store_path  # noqa: PLC0415
-
-    store = LearnedStore(store_path(expand(cfg.history.dir)), cfg.learn.promote_after)
-    if args.learned_action == "forget":
-        if not args.text:
-            print("hark learned forget: give the heard or written form", file=sys.stderr)
-            return 2
-        n = store.forget(args.text)
-        print(f"forgot {n} entr{'y' if n == 1 else 'ies'}")
-        return 0 if n else 1
-    if args.learned_action == "clear":
-        n = store.clear()
-        print(f"cleared {n} entr{'y' if n == 1 else 'ies'} from {store.path}")
-        return 0
-    entries = store.entries()
-    state = "on" if cfg.learn.enabled else "off (learn.enabled = false)"
-    print(f"{store.path}: {len(entries)} entries; learning {state}")
-    for e in entries:
-        mark = "*" if e.count >= store.promote_after else " "
-        print(f"{mark} {e.count:>3}  {e.heard!r} -> {e.written!r}  (last {e.last})")
-    if entries:
-        print(f"* = used for recognition (seen >= {store.promote_after} times)")
-    return 0
 
 
 def cmd_history(args: Args, cfg: Config) -> int:
@@ -419,23 +382,18 @@ def cmd_last(args: Args, cfg: Config) -> int:
 
 
 def cmd_pipeline(args: Args, cfg: Config) -> int:
-    from hark_client import ctl, daemon, fields  # noqa: PLC0415
+    from hark_client import ctl, daemon  # noqa: PLC0415
     from hark_client.config import (  # noqa: PLC0415
         ConfigError,
         FeedbackConfig,
         default_config_path,
-        expand,
     )
     from hark_client.feedback import Feedback  # noqa: PLC0415
     from hark_client.inject import make_injector  # noqa: PLC0415
-    from hark_client.learn import LearnedStore, Learner, store_path  # noqa: PLC0415
     from hark_client.pipeline import Services  # noqa: PLC0415
     from hark_client.providers import Router  # noqa: PLC0415
 
-    router = Router(cfg.provider_configs())
-    learned = LearnedStore(
-        store_path(expand(cfg.history.dir)), cfg.learn.promote_after, cfg.learn.max_terms
-    )
+    router = Router(cfg.providers)
     try:
         if args.command in ("once", "retry"):
             if args.command == "once":
@@ -450,7 +408,6 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 injector=make_injector(cfg.paste, dry_run=args.dry_run),
                 feedback=Feedback(FeedbackConfig(sounds=False, notify=False)),
                 out=print,
-                learned=learned if cfg.learn.enabled else None,
             )  # fmt: skip
             try:
                 return cmd_once(args, svc) if args.command == "once" else cmd_retry(args, svc)
@@ -458,23 +415,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 print(f"hark: {e}", file=sys.stderr)
                 return 2
         feedback = Feedback(cfg.feedback)
-        reader = fields.make_reader() if cfg.paste.verify or cfg.learn.enabled else None
-        learner = None
-        if cfg.learn.enabled:
-            learner = Learner(
-                learned, reader,
-                window_s=cfg.learn.window_ms / 1000, poll_s=cfg.learn.poll_ms / 1000,
-                on_promoted=lambda e: feedback.notify(f"Learned: {e.heard!r} -> {e.written!r}"),
-            )  # fmt: skip
-            if reader is None:
-                logging.getLogger("hark").warning(
-                    "learn.enabled, but this platform offers no field read-back (see `hark doctor`);"
-                    " learning only from key replay in terminals"
-                )
-        svc = Services(
-            cfg, router, injector=make_injector(cfg.paste), feedback=feedback,
-            field_reader=reader, learned=learned if cfg.learn.enabled else None, learner=learner,
-        )  # fmt: skip
+        svc = Services(cfg, router, injector=make_injector(cfg.paste), feedback=feedback)
         try:
             config_path = Path(args.config) if args.config else default_config_path()
             return daemon.run(

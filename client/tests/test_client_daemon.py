@@ -19,10 +19,8 @@ from hark_client.audio import speech_ms
 from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
 from hark_client.continuation import PASTE_ECHO_S, KeyPress
-from hark_client.fields import FieldText
 from hark_client.indicator import Indicator
 from hark_client.inject import DryRunInjector, PasteResult
-from hark_client.learn import LearnedStore, Learner
 from hark_client.providers import Router
 from hark_server.backends.mock import MockBackend
 
@@ -35,7 +33,6 @@ if TYPE_CHECKING:
 
     import numpy.typing as npt
 
-    from hark_client.context import FocusInfo
     from hark_client.daemon import Controller
     from hark_client.mic import Mic
 
@@ -198,15 +195,17 @@ def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
     c.on_recording = hotkey_told.append
     c.handle("start")
     c.on_pcm(pcm(0.4))
-    c.set_paused(True)
+    assert c.handle("pause") == "ok paused"
     assert c.status() == "ok idle finishing=0"  # the recording was cancelled
     assert c.handle("start") == "error paused"
     assert c.handle("toggle") == "error paused"
     # a refused hotkey press must not leave the listener in hold/hands-free (Esc swallowed)
     assert hotkey_told == [True, False, False, False]
-    c.set_paused(True)  # no-op
+    assert c.handle("pause") == "ok paused"  # idempotent
+    assert c.report.json()["paused"] is True
     assert mic.calls == ["stop"]  # keep_open: the always-open stream is released
-    c.set_paused(False)
+    assert c.handle("resume") == "ok resumed"
+    assert c.handle("resume") == "ok resumed"
     assert mic.calls == ["stop", "start"]
     dictate(c)
     assert injector.pasted == [("please run", True)]
@@ -307,128 +306,30 @@ def test_forks_do_not_run_grpc_fork_handlers():
     assert "fork" not in out.stderr, out.stderr
 
 
-class EditableField:
-    """The target app's focused field: shows whatever was pasted after `before`, then `edit()`s."""
-
-    def __init__(self, injector: DryRunInjector, before: str = "Dear Ann, ") -> None:
-        self.injector = injector
-        self.before = before
-        self.edited: str | None = None
-
-    def read(self, focus: FocusInfo) -> FieldText:
-        if self.edited is not None:
-            return FieldText("text", self.edited)
-        return FieldText("text", self.before + "".join(t for t, _ in self.injector.pasted))
-
-
-def test_paste_read_back_feeds_the_learner(
-    tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]
-    field = EditableField(injector)
-    c.svc.field_reader = field
-    c.svc.learner = Learner(LearnedStore(tmp_path / "learned.json"), field, window_s=5, poll_s=0.02)
-    c.handle("start")
-    c.on_pcm(pcm(1.0))  # no bias term: the mock says "please run cube control ..."
-    c.handle("stop")
-    wait_idle(c)
-    ((pasted, _),) = injector.pasted
-    assert "cube control" in pasted
-    assert c.svc.learner.watching
-    field.edited = "Dear Ann, " + pasted.replace("cube control", "kubectl")
-    time.sleep(0.1)
-    c.handle("start")  # the next dictation ends the watch
-    c.handle("cancel")
-    c.svc.learner.join(2)
-    assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
-        ("cube control", "kubectl")
-    ]
-    status = c.status_json()
-    assert cast("dict[str, object]", status["last"])["paste_verdict"] == "landed"
-    record = cast(
-        "dict[str, object]", json.loads((tmp_path / "history.jsonl").read_text().splitlines()[0])
-    )
-    assert record["paste_verdict"] == "landed"
-    assert "kubectl" not in json.dumps(record)  # the edit itself is never written to history
-
-
-def test_a_paste_missing_from_the_field_is_recorded_only(
-    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("com.apple.Notes")]
-    c.svc.field_reader = EditableField(DryRunInjector(out=lambda _: None))  # never shows the paste
-    c.handle("start")
-    c.on_pcm(pcm(0.4))
-    c.handle("stop")
-    wait_idle(c)
-    assert len(injector.pasted) == 1
-    assert injector.copied == []  # the restored clipboard is left alone
-    feedback = c.svc.feedback
-    assert isinstance(feedback, RecordingFeedback)
-    assert feedback.notifications == []
-    last = cast("dict[str, object]", c.status_json()["last"])
-    assert (last["status"], last["paste_verdict"]) == ("pasted", "missing")
-
-
-def test_keys_typed_after_a_terminal_paste_feed_the_learner(
-    tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("kitty", terms=())]
-    c.svc.learner = Learner(LearnedStore(tmp_path / "learned.json"), None, window_s=5)
-    c.handle("start")
-    c.on_pcm(pcm(1.0))
-    c.handle("stop")
-    wait_idle(c)
-    ((pasted, terminal),) = injector.pasted
-    assert terminal
-    assert c.svc.learner.watching
-    typed(c, "v", mods=frozenset({"ctrl", "shift"}))  # hark's own paste chord, right after
-    tail = pasted[pasted.index("cube control") + len("cube control") :]
-    typed(c, *["left"] * len(tail))
-    typed(c, "backspace", "backspace", mods=frozenset({"alt"}))
-    typed(c, *"kubectl", "enter")
-    c.svc.learner.join(2)
-    assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
-        ("cube control", "kubectl")
-    ]
-
-
 def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     controller: tuple[Controller, DryRunInjector],
 ):
     c, injector = controller
     c.indicator = ind = Indicator(FakeBackend())
     assert c.handle("profile") == "ok auto"
-    assert [c.handle("profile next") for _ in range(4)] == [
-        "ok terminal (next dictation)",
-        "ok chat (next dictation)",
-        "ok prose (next dictation)",
-        "ok auto",
-    ]
     assert c.handle("profile set nope").startswith("error unknown profile 'nope'")
-    assert c.handle("profile sideways") == "error usage: profile [next | auto | set NAME]"
+    assert c.handle("profile next") == "error usage: profile [auto | set NAME]"
     assert c.handle("start now") == "error start takes no arguments"
-    assert c.handle("profile set chat") == "ok chat (next dictation)"
+    assert c.handle("profile set prose") == "ok prose (next dictation)"
+    assert c.report.json()["profile_override"] == "prose"
     assert ind.view is not None
-    assert ind.view.label == "Profile: chat"
+    assert ind.view.label == "Profile: prose"
     c.handle("start")
     assert ind.view is not None
-    assert (ind.view.glyph, ind.view.pinned) == ("dot", "chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("dot", "prose")
     c.hands_free()
-    assert (ind.view.glyph, ind.view.pinned) == ("lock", "chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("lock", "prose")
     c.on_pcm(pcm(0.4))
     c.handle("stop")
     wait_idle(c)
+    assert c.report.json()["profile_override"] is None
     dictate(c)  # used up: kitty is a terminal again
-    c.svc.cfg.profile_switch.sticky = True
-    assert c.handle("profile set chat") == "ok chat"
-    dictate(c)
-    dictate(c)
-    assert [terminal for _, terminal in injector.pasted] == [False, True, False, False]
-    assert c.status_json()["profile_override"] == "chat"
+    assert [terminal for _, terminal in injector.pasted] == [False, True]
 
 
 def until(cond: Callable[[], bool]) -> None:
@@ -475,7 +376,7 @@ def test_one_dictation_at_a_time_cancellable_until_it_is_pasted(
     c.handle("start")
     c.on_pcm(pcm(0.6))
     c.handle("stop")
-    assert c.status_json()["phase"] == "finishing"
+    assert c.report.json()["phase"] == "finishing"
     assert c.handle("start") == "error busy"  # nothing records; the listener is told so
     assert hotkey_told == [True, False, False]
     # the audio is kept for `hark retry` before it is transcribed
@@ -537,7 +438,7 @@ def test_a_mic_that_stops_delivering_is_reopened_and_the_dictation_flagged(
     assert len(injector.pasted) == 1  # what was heard is still pasted
     mic.delivering, mic.reopen_fails = False, True
     assert c.handle("start").startswith("error mic unavailable")
-    assert c.status_json()["mic"] == {"status": "lost"}
+    assert c.report.json()["mic"] == {"status": "lost"}
     assert c.status() == "ok idle finishing=0"
 
 
@@ -548,15 +449,15 @@ def test_reload_applies_per_dictation_settings_and_names_the_rest(
     path = tmp_path / "config.toml"
     base = f'[history]\ndir = "{tmp_path}"\n[audio]\nmin_ms = 0\n[feedback]\nstart_cue = "never"\n'
     path.write_text(base)
-    c.watch_config(path)
+    c.report.watch_config(path)
     assert c.handle("reload") == "ok reloaded"
     path.write_text(base.replace("min_ms = 0", "min_ms = 5") + '[[words]]\nword = "Hyprland"\n')
     os.utime(path, (time.time() + 5, time.time() + 5))  # mtime resolution
-    assert c.status_json()["config"] == {"changed": True, "restart_needed": []}
+    assert c.report.json()["config"] == {"changed": True, "restart_needed": []}
     assert c.handle("reload") == "ok reloaded; restart for audio"
     assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # used by the next dictation
     assert c.svc.cfg.audio.min_ms == 0  # needs a restart
-    assert c.status_json()["config"] == {"changed": False, "restart_needed": ["audio"]}
+    assert c.report.json()["config"] == {"changed": False, "restart_needed": ["audio"]}
     path.write_text("[[words]]\n")
     assert c.handle("reload").startswith("error words[0].word is required")
     assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # the running config stays

@@ -86,10 +86,6 @@ class Injector(Protocol):
 
     def copy(self, text: str) -> bool: ...
 
-    def backspace(self, n: int) -> PasteResult:
-        """Press Backspace ``n`` times (no modifiers) in the focused window (undo)."""
-        ...
-
 
 class DryRunInjector:
     name = "dry-run"
@@ -98,7 +94,6 @@ class DryRunInjector:
         self.out = out
         self.pasted: list[tuple[str, bool]] = []
         self.copied: list[str] = []
-        self.backspaced: list[int] = []
 
     def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         self.pasted.append((text, terminal))
@@ -110,11 +105,6 @@ class DryRunInjector:
         self.copied.append(text)
         self.out(f"[dry-run] would copy: {text!r}")
         return True
-
-    def backspace(self, n: int) -> PasteResult:
-        self.backspaced.append(n)
-        self.out(f"[dry-run] would press Backspace x{n}")
-        return PasteResult(ok=True, method=self.name, detail="dry run")
 
 
 class ClipboardOnlyInjector:
@@ -133,9 +123,6 @@ class ClipboardOnlyInjector:
 
     def copy(self, text: str) -> bool:
         return self.inner.copy(text)
-
-    def backspace(self, n: int) -> PasteResult:
-        return PasteResult(ok=False, method=self.name, detail="clipboard mode types no keys")
 
 
 _HYPR_ADDRESS_RE = re.compile(r"0x([0-9a-fA-F]{1,16})")
@@ -297,28 +284,6 @@ class LinuxInjector:
         code, _ = self.run(argv, capture=False)
         return {0: "sent", TIMED_OUT: "unknown"}.get(code, "failed"), " ".join(argv)
 
-    def backspace(self, n: int) -> PasteResult:
-        # the focused window (the caller checked it is the one hark pasted into)
-        argv = (
-            ["wtype", *["-k", "BackSpace"] * n]
-            if self.wayland
-            else [
-                "xdotool",
-                "key",
-                "--clearmodifiers",
-                "--delay",
-                "0",
-                "--repeat",
-                str(n),
-                "BackSpace",
-            ]
-        )
-        code, _ = self.run(argv, capture=False)
-        how = f"{argv[0]} BackSpace x{n}"
-        return PasteResult(
-            ok=code == 0, method=self.name, detail=how if code == 0 else f"{how} failed"
-        )
-
     def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
         gen, previous = self._restorer.begin(self.read_clipboard if self.restore else lambda: None)
         if not self.copy(text):
@@ -385,18 +350,6 @@ class MacInjector:
                 gen, saved, lambda: macos.change_count() == change, macos.restore_pasteboard
             )
         return PasteResult(ok=True, method=self.name, detail="Cmd+V")
-
-    def backspace(self, n: int) -> PasteResult:
-        if sys.platform != "darwin":
-            return PasteResult(ok=False, method=self.name, detail="not macOS")
-        from hark_client import macos  # noqa: PLC0415
-
-        if not macos.can_post_events():
-            return PasteResult(
-                ok=False, method=self.name, detail="no Accessibility permission to post keys"
-            )
-        macos.send_backspaces(n)
-        return PasteResult(ok=True, method=self.name, detail=f"Backspace x{n}")
 
 
 def detect_method(env: Mapping[str, str] | None = None, platform: str = sys.platform) -> str:

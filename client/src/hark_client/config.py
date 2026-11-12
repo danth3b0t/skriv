@@ -37,14 +37,13 @@ def default_data_dir() -> str:
     return str(Path(base) / "hark")
 
 
+DEFAULT_ADDRESS = "127.0.0.1:50051"
+
+
 @dataclass
 class ServerConfig:
-    address: str = "127.0.0.1:50051"  # host:port or unix:/path
-    tls_ca: str = ""  # CA bundle; set => TLS
-    tls_cert: str = ""  # client cert (mTLS)
-    tls_key: str = ""
-    tls_server_name: str = ""  # override the expected server name
-    model_id: str = ""  # "" => server default
+    """Per-dictation settings for whichever provider serves it (servers: `[[providers]]`)."""
+
     language: str = ""  # BCP-47; "" => server detects
     finalize_budget_ms: int = 0  # 0 => server default
     final_timeout_ms: int = 5000  # key-up -> FinalResult, client-side give-up
@@ -65,10 +64,10 @@ class ProviderConfig:
     # A health check slower than this skips the provider for this dictation (and bounds the
     # time spent finding out).
     max_latency_ms: int = 300
-    tls_ca: str = ""
-    tls_cert: str = ""
+    tls_ca: str = ""  # CA bundle; set => TLS
+    tls_cert: str = ""  # client cert (mTLS)
     tls_key: str = ""
-    tls_server_name: str = ""
+    tls_server_name: str = ""  # override the expected server name
     model_id: str = ""  # "" => server default
 
     @property
@@ -136,11 +135,6 @@ class HotkeyConfig:
     # The Esc that cancels a recording does not reach the focused app (macOS: needs
     # Accessibility; X11: grabs Esc while recording). Nothing is suppressed when idle.
     swallow_esc: bool = True
-    # Extra keys the listener handles itself (pynput Key names, e.g. f14; "" = none). They are
-    # not seen as typing, unlike `hark ctl` bound to a key (which undo would take for an edit).
-    undo_key: str = ""  # = hark ctl undo
-    swap_key: str = ""  # = hark ctl swap-raw
-    profile_key: str = ""  # = hark ctl profile next
 
 
 @dataclass
@@ -158,20 +152,6 @@ class PasteConfig:
     # Without a readable caret: hark's last paste + the keys typed since, forgotten after
     # this long without a key or paste in that window.
     join_window_ms: int = 60_000
-    # Read the target field back after pasting (macOS AX, Linux AT-SPI): landed | missing |
-    # not_text | unknown in history (recorded only).
-    verify: bool = True
-
-
-@dataclass
-class LearnConfig:
-    """Correction learning from edits right after a paste (opt-in; see hark_client.learn)."""
-
-    enabled: bool = False
-    window_ms: int = 30_000  # watch the pasted span this long (clamped to 30 s)
-    poll_ms: int = 500
-    promote_after: int = 2  # occurrences before a correction becomes a shortlist term (min 2)
-    max_terms: int = 20  # learned terms added to every shortlist
 
 
 @dataclass
@@ -189,13 +169,12 @@ class FeedbackConfig:
 class HistoryConfig:
     dir: str = field(default_factory=default_data_dir)
     enabled: bool = True
-    save_recordings: bool = False  # opt-in: WAV + context snapshot + texts per utterance
 
 
 @dataclass
 class RetryConfig:
-    # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600),
-    # independent of save_recordings, so `hark retry` can re-run a failed one. 0 = off.
+    # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600), so
+    # `hark retry` can re-run a failed one and `hark eval add` can copy one. 0 = off.
     keep: int = 10
 
 
@@ -205,13 +184,6 @@ class IndicatorConfig:
 
     enabled: bool = True
     position: str = "bottom"  # bottom | top (centre of the screen with the pointer)
-
-
-@dataclass
-class ProfileSwitchConfig:
-    """`hark ctl profile` / hotkey.profile_key: a profile picked by hand instead of by app."""
-
-    sticky: bool = False  # false: for the next dictation only; true: until `profile auto`
 
 
 @dataclass
@@ -237,15 +209,6 @@ def default_profiles() -> dict[str, Profile]:
             cleanup=True,
             cleanup_profile="terminal",
         ),
-        "chat": Profile(
-            apps=[
-                "com.tinyspeck.slackmacgap", "Slack", "com.hnc.Discord", "discord",
-                "org.telegram.desktop", "ru.keepcoder.Telegram", "signal", "*Signal*",
-                "net.whatsapp.WhatsApp",
-            ],
-            cleanup=True,
-            cleanup_profile="chat",
-        ),
         "prose": Profile(cleanup=True),
     }  # fmt: skip
 
@@ -261,26 +224,15 @@ class Config:
     paste: PasteConfig = field(default_factory=PasteConfig)
     feedback: FeedbackConfig = field(default_factory=FeedbackConfig)
     history: HistoryConfig = field(default_factory=HistoryConfig)
-    learn: LearnConfig = field(default_factory=LearnConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
-    profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
-    providers: list[ProviderConfig] = field(default_factory=list[ProviderConfig])
+    # `[[providers]]` replaces this default: one local server
+    providers: list[ProviderConfig] = field(
+        default_factory=lambda: [ProviderConfig(address=DEFAULT_ADDRESS)]
+    )
     words: list[WordConfig] = field(default_factory=list[WordConfig])
     log_level: str = "INFO"
-
-    def provider_configs(self) -> list[ProviderConfig]:
-        """`[[providers]]`, else the single `[server]` (the configuration before providers)."""
-        if self.providers:
-            return list(self.providers)
-        s = self.server
-        return [
-            ProviderConfig(
-                address=s.address, tls_ca=s.tls_ca, tls_cert=s.tls_cert, tls_key=s.tls_key,
-                tls_server_name=s.tls_server_name, model_id=s.model_id,
-            )
-        ]  # fmt: skip
 
     def profile_for(self, focus: FocusInfo) -> str:
         """First profile (in table order) whose `apps` glob matches the focused app id or
@@ -336,7 +288,7 @@ def _apply(obj: DataclassInstance, data: Mapping[str, object], where: str) -> No
         if key == "profiles" and not where:
             _apply_profiles(cast("Config", obj), value)
         elif key == "providers" and not where:
-            cast("Config", obj).providers.extend(_tables(value, "providers", ProviderConfig))
+            cast("Config", obj).providers = _tables(value, "providers", ProviderConfig)
         elif key == "words" and not where:
             cast("Config", obj).words.extend(_tables(value, "words", WordConfig))
         elif dataclasses.is_dataclass(current):
@@ -388,6 +340,8 @@ def _validate_tls(where: str, ca: str, cert: str, key: str) -> None:
 
 
 def _validate_providers(providers: list[ProviderConfig]) -> None:
+    if not providers:
+        raise ConfigError("providers: at least one [[providers]] entry is required")
     labels: set[str] = set()
     for i, p in enumerate(providers):
         if not p.address:
@@ -436,25 +390,18 @@ def validate(cfg: Config) -> None:
         ("audio.preroll_ms", cfg.audio.preroll_ms),
         ("paste.join_window_ms", cfg.paste.join_window_ms),
         ("audio.min_speech_ms", cfg.audio.min_speech_ms),
-        ("learn.window_ms", cfg.learn.window_ms),
-        ("learn.max_terms", cfg.learn.max_terms),
         ("retry.keep", cfg.retry.keep),
         ("hotkey.tap_ms", cfg.hotkey.tap_ms),
         ("feedback.cue_mask_ms", cfg.feedback.cue_mask_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
-    _validate_tls("server.", cfg.server.tls_ca, cfg.server.tls_cert, cfg.server.tls_key)
     _validate_providers(cfg.providers)
     _validate_words(cfg.words, cfg.context.max_terms)
     if not 0 <= cfg.gate.max_distance <= 1:
         raise ConfigError("gate.max_distance must be in [0, 1]")
     if cfg.gate.confident_anchor < 0:
         raise ConfigError("gate.confident_anchor must be >= 0")
-    if cfg.learn.poll_ms < 100:
-        raise ConfigError("learn.poll_ms must be >= 100")
-    if cfg.learn.promote_after < 2:
-        raise ConfigError("learn.promote_after must be >= 2")
 
 
 def load(path: str | Path | None = None) -> Config:

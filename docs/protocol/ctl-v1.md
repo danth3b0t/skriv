@@ -6,9 +6,9 @@ the daemon closes the connection. Requests are at most 512 bytes.
 
 Two protocols share the socket, chosen by the first byte of the line:
 
-- **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last | undo |
-  swap-raw | profile [next | auto | set NAME] | reload` → `ok[ <detail>]` or `error <message>`; words after the command are
-  its arguments. Unchanged since the POC except the added `paste-last`, `undo`, `swap-raw` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
+- **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last | pause |
+  resume | profile [auto | set NAME] | reload` → `ok[ <detail>]` or `error <message>`; words after the command are
+  its arguments. Unchanged since the POC except the added `paste-last`, `pause`, `resume` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
 - **JSON v1** (status bars, panels, scripts): a line starting with `{`. `hark ctl --json <cmd>` sends one and prints
   the reply.
 
@@ -19,11 +19,11 @@ Two protocols share the socket, chosen by the first byte of the line:
 ```
 
 `version` must be `1`. `command` is one of the text commands. Optional `args`: a list of single words, the
-command's arguments (`{"version": 1, "command": "profile", "args": ["set", "chat"]}`). Unknown fields are ignored.
+command's arguments (`{"version": 1, "command": "profile", "args": ["set", "prose"]}`). Unknown fields are ignored.
 
 ## Replies
 
-Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `undo`, `swap-raw`, `profile`):
+Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `pause`, `resume`, `profile`):
 
 ```json
 {"version": 1, "ok": true, "command": "start", "result": "recording"}
@@ -32,12 +32,11 @@ Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `und
 `result` is the text protocol's detail: `start` → `recording | already recording`; `stop` → `stopped | idle`;
 `cancel` → `cancelled | idle`; `toggle` → one of those; `ping` → `pong`; `paste-last` → `pasted <n> chars` (pastes
 the newest dictated text again into the focused window; never echoes the text) or `failed` with `nothing to paste
-yet` / `paste failed: …`; `undo` → `removed <n> chars` (Backspace × n over hark's newest paste); `swap-raw` →
-`swapped <n> for <m> chars` (the paste replaced by its uncleaned text; again: back). Both refuse (`failed`, with the
-reason; a notification too) unless the caret is known to be right after that paste. `profile` → the override for
-the next dictation: `auto` (chosen by app again), `<name> (next dictation)`, or `<name>` with
-`[profile_switch] sticky = true` (kept until `profile auto`); `next` cycles auto → each profile in config order →
-auto; no arguments reports the current override.
+yet` / `paste failed: …`; `pause` → `paused` (a recording in progress is cancelled, an always-open mic is
+released, `start` is refused with `paused` until `resume`); `resume` → `resumed`. Both are idempotent: pausing
+while paused (or resuming while not) changes nothing and gives the same reply. `profile` → the override for
+the next dictation: `auto` (chosen by app again) or `<name> (next dictation)`; no arguments reports the current
+override.
 
 `status`:
 
@@ -45,19 +44,16 @@ auto; no arguments reports the current override.
 {"version": 1, "ok": true, "command": "status",
  "state": "idle", "finishing": 0,
  "last": {"at": 1762950000.123, "utterance_id": "0199…", "status": "pasted", "profile": "prose",
-          "paste_verdict": "landed", "keyup_to_paste_ms": 412.5},
- "learning": {"enabled": false, "watching": false},
+          "keyup_to_paste_ms": 412.5},
  "profile_override": null}
 ```
 
 - `state`: `idle | recording`. `finishing`: dictations still being transcribed/pasted.
 - `last`: the most recent finished dictation of this daemon, or `null`. `status` is the history status (`pasted`,
-  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `paste_verdict` is
-  `landed | missing | not_text | unknown`; `keyup_to_paste_ms` may be `null`. **Never** contains dictated text,
+  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `keyup_to_paste_ms` may be
+  `null`. **Never** contains dictated text,
   window titles or app content, so a bar module may log it.
-- `profile_override`: the profile picked with `profile` for the next dictation(s), or `null` (by app).
-- `learning.enabled`: correction learning is on (`[learn] enabled`) and the platform can read fields;
-  `learning.watching`: a post-paste watch window is open right now.
+- `profile_override`: the profile picked with `profile` for the next dictation, or `null` (by app).
 
 Additional `status` fields (facts only; labels, colours and which one wins on a three-word pill belong to
 the UI):
@@ -83,8 +79,8 @@ the UI):
 - `last.stop_reason`: `key_up` (release, tap, `stop`) or `limit` (`audio.max_ms`); `null` when the dictation
   never got that far. `last.provider` / `last.fallback`: which provider transcribed it and whether that was
   not the first one (a failover counts). `last.cleanup`: the cleanup outcome (`applied`, `skipped`,
-  `rejected`, `timeout`, `error`, ...; `null` before cleanup). `last.delivery`: `confirmed` (pasted and read
-  back), `sent` (paste shortcut sent, not confirmed: terminals and unreadable fields), `copied` (left in the
+  `rejected`, `timeout`, `error`, ...; `null` before cleanup). `last.delivery`: `sent` (paste shortcut sent;
+  hark does not read the field back), `copied` (left in the
   clipboard: focus moved, paste failed after the copy, or clipboard mode), `failed`, `none` (nothing to
   deliver). `last.retry_available`: its audio is kept for `hark retry`. `last.mic_interrupted`: the mic
   dropped out during the recording (words may be missing).
@@ -109,7 +105,7 @@ the UI):
 
 Re-reads the config file. On error the reply is `error <config error>` and the running config stays. Otherwise
 the tables that apply per dictation take effect for the next one (`words`, `context`, `gate`, `cleanup`,
-`paste` except `method`, `feedback`, `profiles`, `profile_switch`, `history`, `retry`) and the reply is `ok
+`paste` except `method`, `feedback`, `profiles`, `history`, `retry`) and the reply is `ok
 reloaded`, or `ok reloaded; restart for audio, hotkey` naming the tables that need `hark` restarted.
 
 ## `subscribe` (JSON only)
@@ -132,6 +128,9 @@ e.g. a text `error …` reply), `internal` (exception in the daemon).
 
 ## Compatibility
 
-New fields may be added to replies within v1; clients must ignore unknown fields. Removing or retyping a field,
-or changing a `code`, needs `version: 2`. The shapes above are pinned by `client/tests/test_client_ctl.py`
-(`test_json_v1_contract`), which runs against the real daemon controller.
+New fields may be added to replies within v1; clients must ignore unknown fields. Retyping a field or changing a
+`code` needs `version: 2`. hark is a personal tool with clients in this repository only, so fields of features
+that were removed are dropped within v1 (removed so far: the `learning` field; the `undo` and `swap-raw`
+commands; `last.paste_verdict` and the `confirmed` value of `last.delivery`; `profile next`). The shapes above
+are pinned by `client/tests/test_client_ctl.py` (`test_json_v1_contract`), which runs against the real daemon
+controller.

@@ -26,7 +26,7 @@ from hark_client.context import TermKind, TermSource
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    from hark_client.config import ProviderConfig, ServerConfig
+    from hark_client.config import ProviderConfig
     from hark_client.context import Term
 
 log = logging.getLogger("hark.asr")
@@ -46,7 +46,6 @@ _TERM_KINDS = {
 _SOURCES = {
     TermSource.DICTIONARY: pb.CONTEXT_SOURCE_USER_DICTIONARY,
     TermSource.VOCABULARY: pb.CONTEXT_SOURCE_USER_DICTIONARY,
-    TermSource.LEARNED: pb.CONTEXT_SOURCE_HISTORY,
     TermSource.SELECTION: pb.CONTEXT_SOURCE_SELECTION,
     TermSource.FOCUSED_TEXT: pb.CONTEXT_SOURCE_FOCUSED_TEXT,
     TermSource.WINDOW_TITLE: pb.CONTEXT_SOURCE_WINDOW_TITLE,
@@ -87,7 +86,7 @@ CHANNEL_OPTIONS: list[tuple[str, int | str]] = [
 ]
 
 
-def open_channel(cfg: ServerConfig | ProviderConfig) -> grpc.Channel:
+def open_channel(cfg: ProviderConfig) -> grpc.Channel:
     if not cfg.tls_ca:
         return grpc.insecure_channel(cfg.address, options=CHANNEL_OPTIONS)
 

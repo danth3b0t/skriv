@@ -1,10 +1,5 @@
-"""Local history (JSONL, one line per utterance) and opt-in recordings for dataset seeding.
-
-Layout under `history.dir` (default ~/.local/share/hark):
-    history.jsonl
-    recordings/YYYY/MM/<utterance_id>/{audio.wav, context.json, result.json}
-`audio.wav` is exactly the 16 kHz mono PCM16 stream sent to the server (pre-roll included).
-"""
+"""Local history: ``<history.dir>/history.jsonl`` (default ~/.local/share/hark), one line per
+utterance. Audio is kept only by the retry ring (hark_client.retry)."""
 
 from __future__ import annotations
 
@@ -13,10 +8,7 @@ import dataclasses
 import json
 import os
 import threading
-import time
 from typing import TYPE_CHECKING, cast
-
-from hark_client.audio import write_wav
 
 if TYPE_CHECKING:
     from collections.abc import Mapping
@@ -89,22 +81,3 @@ def last_text(dir_: Path, scan: int = 200) -> str:
 
 def snapshot_json(snapshot: ContextSnapshot) -> dict[str, object]:
     return dataclasses.asdict(snapshot)
-
-
-def save_recording(
-    dir_: Path,
-    utterance_id: str,
-    pcm16: bytes,
-    snapshot: ContextSnapshot,
-    result: Mapping[str, object],
-) -> Path:
-    month = time.strftime("%Y/%m", time.gmtime())
-    out = _private_dir(dir_ / "recordings" / month / utterance_id)
-    write_wav(out / "audio.wav", pcm16)
-    (out / "context.json").write_text(
-        json.dumps(snapshot_json(snapshot), ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    )
-    (out / "result.json").write_text(
-        json.dumps(result, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
-    )
-    return out

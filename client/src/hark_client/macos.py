@@ -26,7 +26,6 @@ ApplicationServices: Any = importlib.import_module("ApplicationServices")
 objc: Any = importlib.import_module("objc")
 
 V_KEYCODE = 9  # kVK_ANSI_V
-BACKSPACE_KEYCODE = 51  # kVK_Delete (the Backspace key)
 
 type PasteboardSnapshot = list[dict[str, bytes]]
 
@@ -81,17 +80,6 @@ def send_cmd_v() -> None:
         event = Quartz.CGEventCreateKeyboardEvent(source, V_KEYCODE, down)
         Quartz.CGEventSetFlags(event, Quartz.kCGEventFlagMaskCommand)
         Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
-
-
-def send_backspaces(n: int) -> None:
-    """Backspace ``n`` times from a private event source with no modifier flags, so a held
-    Option/Cmd cannot turn it into a word or line delete."""
-    source = Quartz.CGEventSourceCreate(Quartz.kCGEventSourceStatePrivate)
-    for _ in range(n):
-        for down in (True, False):
-            event = Quartz.CGEventCreateKeyboardEvent(source, BACKSPACE_KEYCODE, down)
-            Quartz.CGEventSetFlags(event, 0)
-            Quartz.CGEventPost(Quartz.kCGHIDEventTap, event)
 
 
 def can_post_events() -> bool:

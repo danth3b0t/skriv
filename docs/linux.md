@@ -30,7 +30,7 @@ It installs `/usr/bin/hark`, `/usr/bin/hark-server`, `/usr/bin/hark-certs`, the 
 | Machine | Packages |
 |---|---|
 | both | `libnotify` (notifications), `pipewire` (`pw-play` sounds), `tailscale` |
-| laptop / any client | `gtk4-layer-shell` (recording indicator), `at-spi2-core` (caret + paste verification), `wtype` (paste fallback outside Hyprland) |
+| laptop / any client | `gtk4-layer-shell` (recording indicator), `at-spi2-core` (caret), `wtype` (paste fallback outside Hyprland) |
 | desktop (cleanup on the GPU) | `llama-cpp` + `ggml-cuda` (NVIDIA) or `ggml-vulkan` |
 
 From a checkout instead of the package: `uv tool install --editable ./client` (and `uv sync --extra gi` for the
@@ -96,7 +96,7 @@ disables and deletes the plugin (only if its manifest says `hark.shell`) and rem
 
 **Pill** (the daemon's own GTK layer-shell overlay, bottom centre): red dot and level meter while recording (a
 lock when hands-free, `1:12` after a minute, the pinned profile), three dots while working, then ✓ for a moment
-(*sent*, never *confirmed*; one tag at most: mic dropped, Stopped at 2:00, cleanup skipped, via laptop),
+(*sent*; one tag at most: mic dropped, Stopped at 2:00, cleanup skipped, via laptop),
 Copied, Copied · focus moved, Paste failed · copied, Failed · server timeout, Mic lost, Paused, Cancelled / No
 speech. Failures name **Super Alt D**, because the pill is click-through. Colours and text size follow the theme
 (re-read on change); glyphs come from the Nerd Font Omarchy sets as `monospace`.
@@ -233,7 +233,8 @@ rm ~/.config/hark/pki/laptop.key      # the laptop's key now lives only on the l
 On the laptop, `~/.config/hark/config.toml`:
 
 ```toml
-[server]
+[[providers]]
+name = "desktop"
 address = "desktop.tail1234.ts.net:50051"     # or "desktop:50051" with MagicDNS
 tls_ca = "~/.config/hark/pki/ca.crt"
 tls_cert = "~/.config/hark/pki/laptop.crt"

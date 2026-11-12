@@ -37,7 +37,6 @@ def make(
     *,
     tap_s: float = 0.25,
     swallow_esc: bool = False,
-    keys: dict[str, Callable[[], object]] | None = None,
 ) -> PushToTalk:
     def note(name: str) -> Callable[[], None]:
         return lambda: events.append(name)
@@ -45,7 +44,7 @@ def make(
     return hotkey.PushToTalk(
         "alt_r", note("down"), note("up"), note("cancel"), events.append,
         on_tap=note("tap"), tap_s=tap_s, swallow_esc=swallow_esc, clock=clock or Clock(),
-        keys=keys, dispatch=run_now,
+        dispatch=run_now,
     )  # fmt: skip
 
 
@@ -178,12 +177,3 @@ def test_esc_reaches_the_app_when_swallowing_is_off():
     assert delivered(ptt, K.esc)
     assert delivered(ptt, K.esc, down=False)
     assert events == ["down", "cancel"]
-
-
-def test_extra_keys_run_their_action_and_are_not_typing():
-    events: list[object] = []
-    ptt = make(events, keys={"f14": lambda: events.append("undo")})
-    ptt._press(K.f14)
-    ptt._release(K.f14)
-    ptt._press(K.f15)
-    assert events == ["undo", KeyPress("f15")]

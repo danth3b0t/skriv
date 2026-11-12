@@ -37,7 +37,6 @@ from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
 from hark_client.context import WordInfo
-from hark_client.learn import letters, phonetic_key
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
@@ -95,6 +94,25 @@ class _Region:
     b0: int
     b1: int
     hits: list[tuple[int, int, pb.BiasHit]]  # (b0, b1, hit): the hit's own biased words
+
+
+_TOKEN_RE = re.compile(r"[^\W_]+")
+_PHONETIC = (("ph", "f"), ("ck", "k"), ("c", "k"), ("q", "k"), ("x", "ks"), ("z", "s"))
+
+
+def letters(s: str) -> str:
+    return "".join(_TOKEN_RE.findall(s.lower()))
+
+
+def phonetic_key(s: str) -> str:
+    """Crude sound key: c/k/q merge, vowels after the first letter dropped, repeats collapsed."""
+    s = letters(s)
+    for a, b in _PHONETIC:
+        s = s.replace(a, b)
+    if not s:
+        return ""
+    key = s[0] + "".join(c for c in s[1:] if c not in "aeiouy")
+    return re.sub(r"(.)\1+", r"\1", key)
 
 
 def _norm(token: str) -> str:

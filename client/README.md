@@ -108,22 +108,19 @@ worked is remembered. Unknown target: an untargeted shortcut; neither syntax wor
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
 `HARK_CTL_SOCKET` overrides the socket path (e.g. a second, test daemon). Control protocol: one line in
-(`start|stop|toggle|cancel|status|ping|paste-last|undo|swap-raw|profile …`), one line out (`ok …` or `error …`).
+(`start|stop|toggle|cancel|status|ping|paste-last|pause|resume|profile …|reload`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
-the last dictation's status/paste verdict/latency (never its text), whether learning is watching and the profile
-override.
+the last dictation's status/delivery/latency (never its text) and the profile override.
 
 ## Configuration
 
-`~/.config/hark/config.toml` (or `--config FILE`; `--server ADDRESS` uses only that server). All keys are optional;
+`~/.config/hark/config.toml` (or `--config FILE`; `--server ADDRESS` = one provider at that address instead of
+`[[providers]]`). All keys are optional;
 unknown keys and wrong types are errors.
 
 ```toml
-[server]                      # one server; [[providers]] (below) replaces address/tls_*/model_id
-address = "127.0.0.1:50051"   # or "desktop.tailnet:50051", "unix:/run/hark.sock"
-tls_ca = ""                   # set => TLS; tls_cert + tls_key => mTLS
-model_id = ""                 # "" => server default
+[server]                      # per dictation, whichever provider serves it; servers: [[providers]] (below)
 language = ""                 # BCP-47; "" => detect
 finalize_budget_ms = 0        # 0 => server default
 final_timeout_ms = 5000
@@ -154,9 +151,6 @@ key = "alt_r"                 # pynput Key name (alt_r = Right Option, cmd_r, f1
 listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
 tap_ms = 250                  # released sooner: a tap, recording goes on hands-free until the next press (0 = hold only)
 swallow_esc = true            # the Esc that cancels a recording does not reach the app (never when idle)
-undo_key = ""                 # e.g. "f14": hark ctl undo; handled by the listener (see below)
-swap_key = ""                 # hark ctl swap-raw
-profile_key = ""              # hark ctl profile next
 
 [paste]
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
@@ -166,19 +160,11 @@ check_focus = true            # focus changed since key-down => copy + notify in
 smart_spacing = true          # leading/trailing space + mid-sentence lower case from the caret (see below)
 join_space = true             # older name; false also turns smart spacing off
 join_window_ms = 60000        # shadow buffer (no readable caret) forgets after this long without input
-verify = true                 # read the field back after pasting: landed | missing | not_text | unknown (recorded)
 
 [[words]]                     # spellings the recognizer needs help with; in every shortlist, first
                               # (at most context.max_terms / 3 entries)
 word = "Hyprland"
 spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
-
-[learn]                       # correction learning, see below; off: nothing learned or used
-enabled = false
-window_ms = 30000             # watch the pasted text this long after a paste (max 30 s)
-poll_ms = 500
-promote_after = 2             # a correction is used after this many occurrences (min 2)
-max_terms = 20                # learned terms added to every shortlist
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
@@ -188,7 +174,6 @@ cue_mask_ms = 250             # with a start sound: this much audio after key-do
 
 [history]
 dir = "~/.local/share/hark"
-save_recordings = false       # opt-in dataset seeding, see below
 
 [retry]
 keep = 10                     # audio of the last N dictations for `hark retry` (0 = off), see below
@@ -197,10 +182,7 @@ keep = 10                     # audio of the last N dictations for `hark retry` 
 enabled = true                # small passive overlay: recording/level, transcribing, cleaning, done/error
 position = "bottom"           # bottom | top, centred on the screen with the pointer (macOS)
 
-[profile_switch]
-sticky = false                # `hark ctl profile set NAME` lasts one dictation; true: until `profile auto`
-
-[profiles.terminal]           # built-ins: terminal, chat, prose (fallback); table order = match order
+[profiles.terminal]           # built-ins: terminal, prose (fallback); table order = match order
 apps = ["com.mitchellh.ghostty", "kitty", "*terminal*"]   # globs on app id / name, case-insensitive
 terminal = true               # single line, Ctrl+Shift+V on Linux, never Enter
 cleanup = true
@@ -210,7 +192,7 @@ cleanup_profile = "terminal"  # server CleanupProfile.id
 A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`,
 unless one was picked by hand (below).
 
-## Hands-free, cancel, undo and profiles
+## Hands-free, cancel and profiles
 
 - **Tap or hold** (listener: macOS/X11): a press released within `tap_ms` (250 ms) keeps recording hands-free (the
   indicator says **Hands-free**); the next press stops at once. Held longer it is push-to-talk. A press while a
@@ -228,32 +210,23 @@ unless one was picked by hand (below).
   pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`
   of audio after key-down is sent as silence and left out of the speech gate (silence would lower its noise
   floor). Speech in those 250 ms is lost; the pre-roll before key-down is kept.
-- **Undo**: `hark ctl undo` (or `undo_key`) deletes the newest dictation's paste with Backspace × its length;
-  `hark ctl swap-raw` (or `swap_key`) replaces it with the text before cleanup (vocabulary fixes and spoken
-  symbols kept), spaced the same way; again swaps back. Both act only when hark knows the caret is right after
-  that paste: the listener's key stream (shadow buffer) saw no key, click or focus change since, the same window
-  has focus, a readable caret (AX/AT-SPI/tmux) shows the paste before it, no dictation is running, the paste
-  was not read back as `missing`, and the text has no characters that apps delete differently (combining
-  accents, emoji sequences, flags, CR LF). Otherwise nothing is typed and a notification says why. hark's own
-  Backspaces and paste chord are not taken for typing. Needs the key listener (macOS/X11); on Wayland it always
-  refuses. `hark ctl undo` bound to a key in another tool (skhd, a WM) arrives as a key press the listener sees
-  as an edit, so undo refuses: use `undo_key` (an unused key like F14), which the listener handles itself.
-- **Profile**: `hark ctl profile next|auto|set NAME` (or `profile_key` = next) picks the profile of the next
-  dictation (`next`: auto → terminal → chat → prose → auto, config order); `[profile_switch] sticky = true` keeps
-  it until `profile auto`. The indicator shows **Profile: chat** briefly (never over a recording) and the
-  recording as **Listening · chat**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
+- **Profile**: `hark ctl profile set NAME` picks the profile of the next dictation only; `hark ctl profile auto`
+  goes back to choosing by app. The indicator shows **Profile: prose** briefly (never over a recording) and the
+  recording as **Listening · prose**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
   it. Hark.app's menu-bar Profile menu sets the same override (Automatic = `profile auto`).
 
 ## Providers and the offline fallback
 
-With `[[providers]]`, every dictation goes to the first healthy server in `priority` order (lower first, then file
-order), e.g. the desktop GPU over Tailscale, then the laptop's own CPU server:
+Without `[[providers]]` there is one provider, `127.0.0.1:50051` (`address` also takes `unix:/path`). With them,
+every dictation goes to the first healthy server in `priority` order (lower first, then file order), e.g. the desktop GPU over Tailscale, then the laptop's own CPU server:
 
 ```toml
 [[providers]]
 name = "desktop"
 address = "desktop.tailnet:50051"
-tls_ca = "~/.config/hark/ca.pem"     # tls_cert/tls_key/tls_server_name/model_id as in [server]
+tls_ca = "~/.config/hark/ca.pem"     # set => TLS; tls_cert + tls_key => mTLS
+tls_server_name = ""                 # override the expected server name
+model_id = ""                        # "" => server default
 priority = 0
 max_latency_ms = 300                 # health check slower than this: skipped for this dictation
 send_context = true                  # send the context shortlist (bias terms)
@@ -314,8 +287,8 @@ It never takes focus or clicks, so the paste still goes to the window you dictat
 
 ## Recovery, history and re-insertion
 
-The daemon keeps the audio of the last `retry.keep` (10) dictations in `<history.dir>/retry/<id>/` (0700/0600; also
-with `save_recordings = false`; older ones are deleted after each dictation, all of them with `keep = 0`): the WAV,
+The daemon keeps the audio of the last `retry.keep` (10) dictations in `<history.dir>/retry/<id>/` (0700/0600; the
+only audio hark keeps; older ones are deleted after each dictation, all of them with `keep = 0`): the WAV,
 the key-down context without selection, window title or agent reply, and the outcome. After a server error or
 timeout the notification says `hark retry`:
 
@@ -402,38 +375,11 @@ shadow buffer). The shadow buffer cannot see autocomplete, IME composition, mous
 app itself; the AX caret in a terminal is the terminal cursor, which a TUI may park elsewhere. Wide/combined
 characters in tmux rows are mapped to columns approximately.
 
-## Paste verification and correction learning
-
-After a paste into a non-terminal app, hark reads the focused field of the target app back (macOS: Accessibility;
-Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). History gets `paste_verdict`: `landed`
-(the text is there), `missing` (readable, non-empty, absent twice), `not_text`, or `unknown` (could not look: no
-permission, terminal, secure field, empty read-back, > 64 KiB). The verdict is only recorded for now (web/Electron
-fields can expose stale values); acting on `missing` waits until its false-positive rate is measured. Secure and
-password fields are never read.
+## Dictionary
 
 For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
-instead: every dictation gets them, ahead of the context terms, through the same gate and canonicalization rules.
-
-With `[learn] enabled = true`, the same read-back watches the pasted text for up to `window_ms` (≤ 30 s), only while
-the same window stays focused, until the next dictation, or until the text around it changes (e.g. the message was
-sent). If you fix a misheard word in it (`cube control` → `kubectl`, `Kerry` → `Carrie`, `github` → `GitHub`),
-the pair is counted in `<history.dir>/learned.json` (0600). Field contents are never stored, only the pairs. Style
-rewrites, negation changes, corrections into ordinary English words and edits touching more than 3 places or half
-the words are ignored. A pair seen `promote_after` (≥ 2) times becomes a shortlist term with the misheard words as
-its spoken alias, so the recognizer is biased towards it and canonicalization rewrites it. Turning learning off
-again stops using the learned pairs too (they stay in `learned.json`).
-
-```sh
-hark learned                  # list (* = in use)
-hark learned forget kubectl   # delete by heard or written form
-hark learned clear
-```
-
-Terminals expose no field to read, so after a paste into a terminal the learner replays the keys the hotkey
-listener sees (the same stream as the shadow buffer; macOS and X11, not Wayland) on the pasted line
-(`hark_client/keyedits.py`) until Enter, the next dictation, a key reaching another window or `window_ms`. Anything
-it cannot model exactly (history, completion, Home then an edit, mouse clicks, other shortcuts) drops the watch.
-Key events stay in memory; only the derived pairs are stored.
+(`hark_client/context/words.py`): every dictation gets them, ahead of the context terms, through the same gate and
+canonicalization rules.
 
 ## Anchor gate
 
@@ -445,21 +391,16 @@ including any change outside a hit, goes back to the anchor's words. `history.js
 `gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`. Measurements:
 [docs/bench/2026-11-12-acoustic-gate.md](../docs/bench/2026-11-12-acoustic-gate.md).
 
-## History and recordings
+## History
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome, guard events, paste result and `paste_verdict`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
-`keyup_to_paste_ms`, `verify_ms`), the smart-spacing decision (`spacing`, see above),
+`keyup_to_paste_ms`), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
 (each provider tried: state, rtt_ms, cached, detail). Files are created 0600 in a 0700 directory.
-
-With `save_recordings = true`, each dictation also writes `recordings/YYYY/MM/<utterance_id>/`:
-`audio.wav` (exactly the 16 kHz stream sent, pre-roll included), `context.json` (the context snapshot) and
-`result.json` (history record + SessionStart + FinalResult). These are raw, unscrubbed inputs for the dataset
-pipeline in [docs/dataset/spec.md](../docs/dataset/spec.md).
 
 ## Tests
 
@@ -472,25 +413,21 @@ fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine
 cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the protected-span
 fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocols (text + JSON v1
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
-`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, correction learning
-(diff rules, store, watch window, learned terms reaching the server), the AT-SPI search and the terminal key replay
-(fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
+`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), dictionary terms reaching the server, the
+AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
-events, the start-cue mask on a synthetic tone, undo/swap-raw and every refusal (fake injector), Backspace
-counting, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
+events, the start-cue mask on a synthetic tone, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
 (launchd plists, install/status/restart/uninstall against a fake launchctl, the login-item LaunchAgent fallback).
 
 ## Limitations
 
 - Context: without Accessibility permission macOS gives no window title/selection; the terminal/repo/agent context still works. `hark once --cwd DIR` pins the repo for testing; with no focused terminal and no `--cwd` there are no repo bias terms.
 - Untested on real hardware: Hyprland/wtype/X11 paste incl. the `hyprctl repl` re-check (commands are unit-tested
-  only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
+  only), the Omarchy adapter/installer, the macOS Cmd+V path and the
   pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
 - No VAD, no `EagerEnd`, no partials, no automatic retry of a failed dictation on the next provider (the next
   dictation moves on; `hark retry` re-runs the failed one), no `ContextUpdate`.
-- Untested on real hardware: Esc swallowing (macOS tap filter, X11 grab), Backspaces posted for undo (CGEvent,
-  xdotool, wtype), the Hyprland submap. Undo trusts the key listener: autocomplete or an app editing its own
-  text after the paste goes unseen unless a readable caret disagrees.
+- Untested on real hardware: Esc swallowing (macOS tap filter, X11 grab), the Hyprland submap.
 - Clipboard restore on Linux restores text only.

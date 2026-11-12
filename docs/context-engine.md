@@ -82,8 +82,8 @@ At key-down `collect()` uses a warm entry validated within 6 s and only reads fo
 one run on this Mac: 38 ms warm vs 375 ms cold.
 
 The daemon starts it (`daemon.py`) with `cfg.history.dir`; `ContextConfig.max_terms` is 30 and history records
-carry `snap.provenance`. Hand-written `[[words]]` from the config and promoted corrections (`[learn]`) are merged in
-front of the ranked terms by the client (`pipeline.py`), not by the engine.
+carry `snap.provenance`. Hand-written `[[words]]` from the config are merged in front of the ranked
+terms by the client (`context/words.py`, called from `pipeline.py`), not by the engine.
 
 ## Offline replay (the experiment harness, same cutoff and splits)
 
@@ -108,9 +108,7 @@ paths 92 → 102 of 130, identifiers 191 → 192 of 204; first alias fully spoke
 
 ## Open
 
-- The two AT-SPI modules stay separate: `hark_client/atspi.py` (paste read-back, breadth-first node walk used by
-  `fields.py`) and `context/_atspi.py` (Collection API focused-text match used for caret and screen text). Merging
-  them changes `fields.py`, outside this package; both are untested on hardware.
+- `context/_atspi.py` (Collection API focused-text match used for caret and screen text) is untested on hardware.
 - macOS focus uses polling, not `NSWorkspace`/`AXObserver` notifications (they need an AppKit run loop thread).
 - hark's own dictations are user prompts, so they teach the vocabulary (architecture §7.4 self-contamination).
 - Alias collisions are not tracked per list; `canon.py`'s ambiguity guard still applies.

@@ -85,7 +85,6 @@ V1_LAST = {
     "utterance_id": "str",
     "status": "str",
     "profile": "str",
-    "paste_verdict": "str",
     "keyup_to_paste_ms": "float",
     "stop_reason": "str",
     "provider": "str",
@@ -110,7 +109,6 @@ def v1_status(last: object, rtt: str = "float") -> dict[str, object]:
         "server": {"name": "str", "state": "str", "rtt_ms": rtt, "fallback": "bool"},
         "config": {"changed": "bool", "restart_needed": "list"},
         "last": last,
-        "learning": {"enabled": "bool", "watching": "bool"},
         "profile_override": "NoneType",
     }
 
@@ -118,7 +116,7 @@ def v1_status(last: object, rtt: str = "float") -> dict[str, object]:
 def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunInjector]):
     """docs/protocol/ctl-v1.md: shapes are pinned; text and JSON share the socket."""
     c, _ = controller
-    server = ctl.CtlServer(sock_path, c.handle, c.status_json)
+    server = ctl.CtlServer(sock_path, c.handle, c.report.json)
     server.start()
     try:
         idle = _json(sock_path, {"version": 1, "command": "status"})
@@ -139,11 +137,7 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
         done = _json(sock_path, {"version": 1, "command": "status"})
         assert _shape(done) == v1_status(V1_LAST)
         last = cast("dict[str, object]", done["last"])
-        assert (last["status"], last["paste_verdict"], last["delivery"]) == (
-            "pasted",
-            "unknown",
-            "sent",
-        )
+        assert (last["status"], last["delivery"]) == ("pasted", "sent")
         assert (done["phase"], last["stop_reason"], last["fallback"]) == ("idle", "key_up", False)
         assert "text" not in json.dumps(last)  # never the dictated text
         again = _json(sock_path, {"version": 1, "command": "paste-last"})
@@ -152,10 +146,14 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
             "pasted 15 chars",
         )  # "please run cube": the count only
 
-        picked = _json(sock_path, {"version": 1, "command": "profile", "args": ["set", "chat"]})
-        assert (picked["ok"], picked["result"]) == (True, "chat (next dictation)")
-        assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "chat"
+        picked = _json(sock_path, {"version": 1, "command": "profile", "args": ["set", "prose"]})
+        assert (picked["ok"], picked["result"]) == (True, "prose (next dictation)")
+        assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "prose"
         assert ctl.send("profile   auto", sock_path) == "ok auto"  # text: words are arguments
+        paused = _json(sock_path, {"version": 1, "command": "pause"})
+        assert (paused["ok"], paused["result"]) == (True, "paused")
+        assert _json(sock_path, {"version": 1, "command": "status"})["paused"] is True
+        assert ctl.send("resume", sock_path) == "ok resumed"
 
         for request, code in [
             ({"version": 1, "command": "profile", "args": "next"}, "bad_args"),
@@ -178,7 +176,7 @@ def test_subscribe_sends_the_status_now_and_on_every_change(
     sock_path: Path, controller: tuple[Controller, DryRunInjector]
 ):
     c, _ = controller
-    server = ctl.CtlServer(sock_path, c.handle, c.status_json, c.wait_change)
+    server = ctl.CtlServer(sock_path, c.handle, c.report.json, c.report.wait_change)
     server.start()
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:

@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 FULL = """
 log_level = "DEBUG"
-[server]
+[[providers]]
 address = "desktop.tailnet:50051"
 tls_ca = "~/ca.pem"
 tls_cert = "~/me.pem"
@@ -25,8 +25,6 @@ preroll_ms = 0
 keep_open = false
 [paste]
 method = "wtype"
-[history]
-save_recordings = true
 [gate]
 max_distance = 0
 confident_anchor = 0.9
@@ -44,10 +42,9 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     p = tmp_path / "c.toml"
     p.write_text(FULL)
     cfg = load(p)
-    assert cfg.server.address == "desktop.tailnet:50051"
+    assert [p.address for p in cfg.providers] == ["desktop.tailnet:50051"]  # replaces the default
     assert (cfg.cleanup.enabled, cfg.cleanup.deadline_ms) == (False, 300)
     assert (cfg.audio.preroll_ms, cfg.audio.keep_open, cfg.paste.method) == (0, False, "wtype")
-    assert cfg.history.save_recordings
     # floats accept TOML integers
     assert (cfg.gate.max_distance, cfg.gate.confident_anchor) == (0.0, 0.9)
     assert isinstance(cfg.gate.max_distance, float)
@@ -55,7 +52,7 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     # Fields not given keep the built-in profile's values; new profiles are appended.
     assert cfg.profiles["terminal"].apps == ["my-term"]
     assert cfg.profiles["terminal"].terminal
-    assert list(cfg.profiles) == ["terminal", "chat", "prose", "agent"]
+    assert list(cfg.profiles) == ["terminal", "prose", "agent"]
     assert cfg.profiles["agent"].cleanup_profile == "commit_message"
 
 
@@ -63,8 +60,8 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     ("focus", "profile"),
     [
         (FocusInfo(app_id="com.mitchellh.ghostty"), "terminal"),
-        (FocusInfo(app="Slack", app_id=""), "chat"),
-        (FocusInfo(app_id="org.Telegram.Desktop"), "chat"),  # globs are case-insensitive
+        (FocusInfo(app_id="NET.KovidGoyal.Kitty"), "terminal"),  # globs are case-insensitive
+        (FocusInfo(app="Slack", app_id=""), "prose"),  # no built-in chat profile
         (FocusInfo(app_id="org.example.unknown", is_terminal=True), "terminal"),
         (FocusInfo(app_id="com.apple.Notes"), "prose"),
         (FocusInfo(), "prose"),
@@ -83,7 +80,9 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[paste]\nmethod = 'xdotool'\n", "paste.method must be one of"),
         ("[gate]\nmax_distance = 'near'\n", "gate.max_distance: expected float, got str"),
         ("[gate]\nmax_distance = 1.5\n", "gate.max_distance must be in"),
-        ("[server]\ntls_cert = 'a'\n", "tls_cert and server.tls_key"),
+        ("[server]\naddress = 'a:1'\n", "unknown config key 'server.address'"),
+        ("[[providers]]\naddress = 'a:1'\ntls_cert = 'a'\n", "].tls_key must be set together"),
+        ("providers = []\n", "providers: at least one"),
         ("server = 1\n", "server: expected a table"),
         ("words = 'Hyprland'\n", "words: expected an array of tables"),
         ("[[words]]\nspoken = ['hyper land']\n", "word is required"),
