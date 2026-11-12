@@ -1,0 +1,124 @@
+new  real-001  pasted   wer 12%  "Primary school, it wasn't even 7 feet. So it was very fun to go back there and then mess about there after I did some coaching."
+new  real-002  pasted   wer 26%  'So it was quite brutal. You could it was quickly banned as a game or something.'
+new  real-003  pasted   wer 12%  'No, and you worked hard and you graduated and you know. So yeah, no, do it, do it, do it. Highly recommend.'
+new  real-004  pasted   wer 4%   "Oh god, I know it's so hot, especially in Edinburgh. Like most of the winter, it was just easier to sit at home."
+new  real-005  pasted   wer 12%  "Wait, wait, hold on. You might feel tall. Okay, it's a feeling, I understand. So, don't let me give you that impression. But you might feel tall."
+new  real-006  pasted   wer 25%  "It was more like a great gift. He told me, if you can do well in your grades, I'm going to buy a bicycle. And I had to strive hard."
+new  real-007  pasted   wer 11%  "Thank you. I think that we are done for today. Thank you very much for this discussion, and we'll see you very soon. With each other."
+new  real-008  pasted   wer 30%  'Matthew, Cavasta. So why the younger brother asked him to lead the negative activities? Is there any specific reason?'
+new  real-009  pasted   wer 22%  "I didn't even realize the ghost one left. No, the only character I remember was Humonguso. Humonguso!"
+new  real-010  pasted   wer 15%  "The last Airbender. You've mentioned Avatar. And I remember there was a similar show, but not exactly similar. Samurai Jack. You remember Samurai Jack?"
+new  real-011  pasted   wer 31%  "Oh Jack. No. It's almost like an indie film."
+new  real-012  pasted   wer 32%  "I had a guy sing. So men sing amongst yourselves. When you're with your boys, you can sing together. But when you're outside, yeah, it's really cool."
+new  real-013  pasted   wer 18%  "Chlorine or chlorine. I don't know his pronunciation. Chlorine or chlorine. Okay, I want to say chlorine."
+new  real-014  pasted   wer 7%   'Well, I I guess this video was not planified as it should be.'
+new  real-015  pasted   wer 18%  "No, not yet. After we're done speaking with each other, I think I'm going to get me a pizza."
+ok   real-016  pasted   wer 0%   "Yeah, you mentioned that drama recently, right? You said you've finished almost five, six seasons out of it already. What's that called?"
+new  real-017  pasted   wer 55%  'Never watch it, I first met you about it.'
+new  real-018  pasted   wer 0%   "So yeah, you can watch that also. It's fun. I can't believe you never watch it before, 'cause it's been like a long time anime."
+new  real-019  pasted   wer 11%  "But but uh finally but finally we are lu luckily because we don't get it with COVID nineteen."
+new  real-020  pasted   wer 23%  "By the way, I don't like to ride a motorbike. I have one"
+ok   real-021  pasted   wer 0%   "I hope he doesn't work too hard, said Shaggy."
+new  real-022  pasted   wer 0%   'Only his heart and lungs worked on at a strong, measured rate.'
+ok   real-023  pasted   wer 0%   'Only, unfortunately, his own work never does get good.'
+new  real-024  pasted   wer 7%   'I begged Roggedo long ago to send him away, but he would not do so.'
+ok   real-025  pasted   wer 0%   'I also offered to help your brother escape, but he would not go.'
+new  real-026  pasted   wer 10%  "In fact, there's nothing he can do in these dominions as well as our Gnomes, whose numbers are so great that it worries us to keep them all busy."
+ok   syn-001  pasted   wer 0%   'Run the tests again.'
+ok   syn-002  pasted   wer 0%   'Yes, do it.'
+new  syn-003  pasted   wer 0%   'Looks good, ship it.'
+new  syn-004  pasted   wer 0%   'No-stop, revert that.'
+FAIL syn-005  pasted   wer 50%  "missing 'git status' (recognition)"
+ok   syn-006  pasted   wer 0%   'Run pnpm install and then pnpm dev.'
+new  syn-007  pasted   wer 17%  'uv run pytest -k gate.'
+ok   syn-008  pasted   wer 0%   'Commit this with the message fix: handle empty transcripts.'
+ok   syn-009  pasted   wer 12%  'Show me the diff for pipeline.py.'
+FAIL syn-010  pasted   wer 14%  "missing '-n staging' (recognition)"
+ok   syn-011  pasted   wer 0%   'Continue, please.'
+new  syn-012  pasted   wer 0%   'Never push directly to main.'
+new  syn-013  pasted   wer 0%   'Rename useSessionStore to useWorkspaceStore Everywhere.'
+ok   syn-014  pasted   wer 14%  'In the useEffect hook, add a cleanup function that clears the interval.'
+ok   syn-015  pasted   wer 0%   'The bug is in snapshot_json. It drops the provenance when the focus is a terminal.'
+new  syn-016  pasted   wer 9%   'Big load_snapshot return an empty ContextSnapshot instead of raising.'
+new  syn-017  pasted   wer 36%  'At a field called confident_anchor to GateConfig, default 0.97.'
+FAIL syn-018  pasted   wer 0%   "missing 'wait_final' (recognition)"
+new  syn-019  pasted   wer 25%  'Renamed the is_terminal flag on FocusInfo to a terminal light.'
+ok   syn-020  pasted   wer 0%   'So the DryRunInjector should record what it would paste, not print it.'
+new  syn-021  pasted   wer 0%   'Check whether smart_spacing is off when check_focus is false.'
+FAIL syn-022  pasted   wer 62%  "missing 'min_speech_ms' (recognition); missing 'preroll_ms' (recognition)"
+ok   syn-023  pasted   wer 0%   'The TranscribeStream class leaks a thread when cancel is called twice.'
+FAIL syn-024  pasted   wer 0%   "missing 'competition_key' (recognition)"
+new  syn-025  pasted   wer 0%   "is_interesting_identifier returns true for single letters that's wrong?"
+ok   syn-026  pasted   wer 42%  'Bump the parakeet-mlx package to version 0.7.1.'
+ok   syn-027  pasted   wer 44%  'Use the llama-server on port 8080, not the one on 8081.'
+ok   syn-028  pasted   wer 0%   'hark-server should log the boost_min and boost_max it actually uses.'
+FAIL syn-029  pasted   wer 29%  "missing 'write_wav' (recognition); missing 'basedpyright' (recognition)"
+ok   syn-030  pasted   wer 17%  'Explain what retry.save does with the context.json file.'
+ok   syn-031  pasted   wer 0%   'Add an index on user_id in the sessions table.'
+FAIL syn-032  pasted   wer 44%  "missing 'httpx.AsyncClient' (recognition)"
+FAIL syn-033  pasted   wer 31%  "missing 'useEffect' (recognition)"
+new  syn-034  pasted   wer 8%   'Open client/src/hark_client/pipeline.py.'
+ok   syn-035  pasted   wer 0%   'Run hark eval run --set eval/dev-v1.'
+ok   syn-036  pasted   wer 0%   'Add a --json flag to hark history list.'
+FAIL syn-037  pasted   wer 40%  "missing 'basedpyright' (recognition)"
+FAIL syn-038  pasted   wer 10%  "missing '.venv' (recognition)"
+new  syn-039  pasted   wer 6%   'Look at docs/protocol/ctl-v1.md before you change a reply format.'
+ok   syn-040  pasted   wer 0%   'Pass --no-history to hark once.'
+FAIL syn-041  pasted   wer 17%  "missing '--force-with-lease' (recognition)"
+FAIL syn-042  pasted   wer 78%  "missing 'zod' (recognition)"
+FAIL syn-043  pasted   wer 7%   "missing 'HARK_MODELS_DIR' (recognition)"
+FAIL syn-044  pasted   wer 36%  "missing 'journalctl --user -u hark' (recognition)"
+ok   syn-045  pasted   wer 0%   'chmod +x scripts/make-eval-set.'
+FAIL syn-046  pasted   wer 18%  "missing '~/.kube/config' (recognition)"
+FAIL syn-047  pasted   wer 31%  "missing 'localhost:8000/health' (recognition)"
+ok   syn-048  pasted   wer 0%   'Switch the branch to feat/eval-set and rebase on main.'
+FAIL syn-049  pasted   wer 46%  "missing 'tauri.conf.json' (recognition)"
+ok   syn-050  pasted   wer 0%   "The error says Module not found, can't resolve @/lib/utils."
+new  syn-051  pasted   wer 55%  'We need Python 3.12, 3.13 breaks gRPC.'
+ok   syn-052  pasted   wer 29%  'Set final_timeout_ms to 1500.'
+ok   syn-053  pasted   wer 46%  'Close issue 421 and link it from PR 437.'
+FAIL syn-054  pasted   wer 55%  "missing 'parakeet-tdt-0.6b-v3' (recognition)"
+ok   syn-055  pasted   wer 22%  'Bump the Docker image to node:22-alpine.'
+FAIL syn-056  pasted   wer 64%  "missing 'torch' (recognition)"
+new  syn-057  pasted   wer 0%   "Don't touch the server code, only change the client."
+ok   syn-058  pasted   wer 0%   'This should not retry when the user cancels.'
+ok   syn-059  pasted   wer 0%   'Never paste into a window that lost focus. Copy it to the clipboard instead.'
+ok   syn-060  pasted   wer 0%   "I don't think we need the anchor gate for short clips, but don't remove it yet."
+ok   syn-061  pasted   wer 0%   "The cleanup must not drop negations, ever, and it shouldn't add anything either."
+new  syn-062  pasted   wer 9%   "No, that's wrong. The gate isn't the problem. The canonicaliser is."
+FAIL syn-063  pasted   wer 33%  "missing 'QuickShell' (recognition)"
+ok   syn-064  pasted   wer 0%   "Explain why useMemo doesn't help here. The component still re-renders on every keystroke."
+ok   syn-065  pasted   wer 0%   'Use SQLite for the cache.'
+ok   syn-066  pasted   wer 0%   'Set the timeout to 5 seconds.'
+ok   syn-067  pasted   wer 0%   'Put it in server/src.'
+ok   syn-068  pasted   wer 0%   'Call it fetch_row_batch.'
+new  syn-069  pasted   wer 9%   'Run it on the CPU fileback.'
+FAIL syn-070  pasted   wer 12%  "forbidden 'TypeScript'"
+ok   syn-071  pasted   wer 0%   'Add it to docs/eval.md.'
+new  syn-072  pasted   wer 38%  'Make the limit 20 MB.'
+FAIL syn-073  pasted   wer 10%  "missing 'hark doctor' (recognition)"
+FAIL syn-074  pasted   wer 15%  "missing '--force' (recognition); missing '--verbose' (recognition)"
+new  syn-075  pasted   wer 7%   "On Hyprland, the paste goes to the wrong window if I switch workspaces while it's transcribing. We should check the window_id from hyprctl Active Window right before we paste. And if it changed, just copy to the clipboard and notify."
+ok   syn-076  pasted   wer 3%   "In the PyTorch training loop, move the optimizer zero_grad call before the backward pass, and don't forget to call model.train at the start of each epoch."
+FAIL syn-077  pasted   wer 5%   "missing 'hark ctl paste-last' (recognition)"
+FAIL syn-078  pasted   wer 23%  "missing 'hark ctl toggle' (recognition)"
+FAIL syn-079  pasted   wer 21%  "missing '$XDG_RUNTIME_DIR' (recognition); missing '/tmp' (recognition)"
+FAIL syn-080  pasted   wer 39%  "missing 'pnpm add -D vitest' (recognition); missing 'vitest.config.ts' (recognition)"
+new  syn-081  pasted   wer 31%  "In the redisk config set maxmemory-policy to allkeys-lru and don't enable persistence."
+new  syn-082  pasted   wer 14%  'Set CUDA_VISIBLE_DEVICES to zero, one before you start the training.'
+ok   syn-083  pasted   wer 3%   'Okay, so the eval set should have about 100 clips, mostly terminal prompts, and it should never include anything from my real history without asking first.'
+ok   syn-084  pasted   wer 0%   'I think the canonicalizer is too eager. When the shortlist has wait for and the user says wait for the build, we must not write it with an underscore.'
+ok   syn-085  pasted   wer 0%   'Refactor the router so the health probe for each provider runs in parallel. Keep max_latency_ms as the per provider budget.'
+ok   syn-086  pasted   wer 0%   "Hey, I pushed the fix for the paste bug. Can you test it on your Mac before we merge? I don't have one here."
+new  syn-087  pasted   wer 29%  'Meeting notes, we decided to keep S1-mini as the default clean-up model and not switch to Qwen3 for now.'
+new  syn-088  pasted   wer 5%   'Write a short summary of what changed on this branch for the PR description. Keep it under 5 bullet points.'
+ok   syn-089  pasted   wer 0%   "The build is rough around the edges, but it works, so let's merge it."
+new  syn-090  pasted   wer 8%   "Highland Park is where the outside is, so don't book anything downtown."
+ok   syn-091  pasted   wer 0%   'Write a quick shell script that waits for the server to come up.'
+new  syn-092  pasted   wer 0%   'Show me the last text you generated, and keep it to one line.'
+ok   syn-093  pasted   wer 0%   'We need a session start and end time in the report.'
+ok   syn-094  pasted   wer 0%   'The hard part is the timing, not the model.'
+new  syn-095  pasted   wer 0%   'Mark down the time when the user cancels, so we can compare it later.'
+ok   syn-096  pasted   wer 0%   'It should read the text field first, and only then fall back to the screen text.'
+122 clips: 27 failed, 74 unreviewed, recognition WER 14.0%
+release->paste median 235 ms, max 770 ms (122 clips)
