@@ -3,7 +3,7 @@
 Status: accepted (2026-11-11). Inputs: proposal-a (gRPC), proposal-b (WebSocket), proposal-c (Riva standards-first).
 
 ## Decision
-**hark.v1 = a typed gRPC/protobuf protocol based on proposal-a**, amended with ideas from B and C below.
+**skriv.v1 = a typed gRPC/protobuf protocol based on proposal-a**, amended with ideas from B and C below.
 Third-party and stock servers (Riva / NeMo-Speech.cpp `riva_server`, OpenAI-compatible, vendor APIs) are reached through
 **client-side adapters**, not by making them the native protocol.
 
@@ -26,7 +26,7 @@ Third-party and stock servers (Riva / NeMo-Speech.cpp `riva_server`, OpenAI-comp
 4. **Exactly one terminal message per session (B):** `FinalResult` or `SessionEnded{reason}`.
 5. **`quality` / `omitted` (B) merge into A's `ResultFlags`:** every optional field reports present / skipped-for-budget /
    unsupported.
-6. **Cleanup:** keep A's `TextCleanup` service for hark servers, **and** the client must support calling any
+6. **Cleanup:** keep A's `TextCleanup` service for skriv servers, **and** the client must support calling any
    OpenAI-compatible `/v1/chat/completions` with the same JSON edit schema (B, C). Edits are quoted-text anchored
    (`find` unique) → server/client resolve to byte ranges; the **client validator is authoritative**.
 7. **Privacy (A, C):** server must reject (not silently ignore) unsupported retention flags; client policy is the real gate.
@@ -36,7 +36,7 @@ Third-party and stock servers (Riva / NeMo-Speech.cpp `riva_server`, OpenAI-comp
    Optional small gateway adds TLS in front of plaintext servers (NeMo-Speech.cpp).
 
 ## Consequences
-- Native hark servers: Python (NeMo GPU-PB, Qwen3-ASR), later Swift (FluidAudio) if worth it.
+- Native skriv servers: Python (NeMo GPU-PB, Qwen3-ASR), later Swift (FluidAudio) if worth it.
 - Client adapters: `riva` (NeMo-Speech.cpp, stock Riva — anchor via parallel unbiased request), `openai` (batch/transcription
   + chat cleanup), vendor adapters later.
 - A conformance tool replays recorded sessions (dataset format) against every server/adapter.

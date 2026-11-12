@@ -61,7 +61,7 @@ COMMANDS = frozenset({
     "fd", "sed", "awk", "head", "tail", "chmod", "chown", "curl", "wget", "ssh", "scp", "rsync",
     "tar", "zip", "unzip", "docker", "kubectl", "npm", "npx", "pnpm", "yarn", "node", "bun",
     "deno", "python", "python3", "pip", "uv", "uvx", "cargo", "rustc", "go", "make", "just",
-    "pytest", "ruff", "hark", "brew", "sudo", "echo", "touch", "open", "vim", "nvim", "code",
+    "pytest", "ruff", "skriv", "brew", "sudo", "echo", "touch", "open", "vim", "nvim", "code",
     "man", "which", "kill", "pkill", "ps", "top", "du", "df", "ln", "systemctl", "journalctl",
     "sort", "uniq", "wc", "xargs", "export", "source", "tmux",
 })  # fmt: skip
@@ -80,8 +80,9 @@ SUBCOMMANDS: dict[str, frozenset[str]] = {
     "cargo": frozenset({"build", "run", "test", "check", "add", "clippy", "fmt", "install"}),
     "systemctl": frozenset({"start", "stop", "restart", "status", "enable", "disable"}),
     "brew": frozenset({"install", "upgrade", "uninstall", "services"}),
-    "hark": frozenset({
+    "skriv": frozenset({
         "run", "app", "ctl", "once", "retry", "history", "last", "doctor", "eval", "service",
+        "words",
     }),
 }  # fmt: skip
 # Never the first part of a path or of an underscore identifier.

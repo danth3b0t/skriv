@@ -1,15 +1,15 @@
-# hark control socket, JSON v1
+# skriv control socket, JSON v1
 
-The daemon (`hark run`) listens on `$HARK_CTL_SOCKET` if set, else `$XDG_RUNTIME_DIR/hark/ctl.sock` (Linux), `~/Library/Caches/hark/ctl.sock`
-(macOS), else `$TMPDIR/hark-<uid>/ctl.sock`; directory 0700, socket 0600. One request line, one reply line, then
+The daemon (`skriv run`) listens on `$SKRIV_CTL_SOCKET` if set, else `$XDG_RUNTIME_DIR/skriv/ctl.sock` (Linux), `~/Library/Caches/skriv/ctl.sock`
+(macOS), else `$TMPDIR/skriv-<uid>/ctl.sock`; directory 0700, socket 0600. One request line, one reply line, then
 the daemon closes the connection. Requests are at most 512 bytes.
 
 Two protocols share the socket, chosen by the first byte of the line:
 
 - **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last | pause |
   resume | profile [auto | set NAME] | reload` → `ok[ <detail>]` or `error <message>`; words after the command are
-  its arguments. Unchanged since the POC except the added `paste-last`, `pause`, `resume` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
-- **JSON v1** (status bars, panels, scripts): a line starting with `{`. `hark ctl --json <cmd>` sends one and prints
+  its arguments. Unchanged since the POC except the added `paste-last`, `pause`, `resume` and `profile`; `skriv ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
+- **JSON v1** (status bars, panels, scripts): a line starting with `{`. `skriv ctl --json <cmd>` sends one and prints
   the reply.
 
 ## Request
@@ -72,7 +72,7 @@ the UI):
 
 - `phase`: `idle | recording | finishing` (`state` keeps its two values).
 - `paused`: dictation paused (start refused, mic released).
-- `mic.status`: `ok`, `lost` (the stream stopped delivering audio or could not be reopened; hark keeps
+- `mic.status`: `ok`, `lost` (the stream stopped delivering audio or could not be reopened; skriv keeps
   trying), or `off` (paused, or released between dictations with `audio.keep_open = false`).
 - `server`: the provider the next dictation would use, from the cached health (never probes): its `name`,
   `state` (`ok | slow | down | unknown`; `down` when none is healthy, then `name` is the first one), `rtt_ms`
@@ -85,13 +85,13 @@ the UI):
   `applied` (the rewrite passed the fidelity check and replaced the text), `no_edits` (the server returned
   the text unchanged), `rejected` (the rewrite failed the fidelity check; the text stayed), `skipped` (off
   for the profile, empty or non-English text, or the server gave no rewrite), `timeout`, `error`.
-  `last.delivery`: `sent` (paste shortcut sent; hark does not read the field back), `copied` (left in the
+  `last.delivery`: `sent` (paste shortcut sent; skriv does not read the field back), `copied` (left in the
   clipboard: focus moved, paste failed after the copy, or clipboard mode), `failed`, `none` (nothing to
-  deliver). `last.retry_available`: its audio is kept for `hark retry`. `last.mic_interrupted`: the mic
+  deliver). `last.retry_available`: its audio is kept for `skriv retry`. `last.mic_interrupted`: the mic
   dropped out during the recording (words may be missing).
 - `last.failure`: why a `status: error` dictation failed, `null` otherwise: `server_timeout` (no result within
   `server.final_timeout_ms`), `server_down` (connection refused, stream closed), `degenerate_output` (the
-  recognizer's output is not text, e.g. a run of `<unk>` tokens; never pasted, `hark retry` re-runs it), `other`.
+  recognizer's output is not text, e.g. a run of `<unk>` tokens; never pasted, `skriv retry` re-runs it), `other`.
 - `last.input_device`: the name of the microphone it was recorded from, or `null` (not a live recording, or
   unknown). A device name, not content. `last.flat_signal`: with `status: no_speech`, the input sent no signal
   at all (muted, or the wrong input): a mic problem. `no_speech` without it is silence or quiet speech, which is
@@ -103,7 +103,7 @@ the UI):
   the indicator flashes *Working*; nothing is recorded). Results therefore never paste out of order.
 - **Cancel** (`cancel`, Esc while recording or finishing): a recording is dropped; a finishing dictation is
   dropped unless it has passed the point of no return, just before the clipboard write / paste, then the reply
-  is `error too late: already pasting`. A dictation cancelled while finishing stays available to `hark retry`
+  is `error too late: already pasting`. A dictation cancelled while finishing stays available to `skriv retry`
   (its audio is kept before it is transcribed).
 - **Length limit**: reaching `audio.max_ms` (pre-roll included) stops that dictation only (`stop_reason:
   limit`), never a later one. `status` carries no recording clock; the daemon's own indicator counts down the
@@ -120,7 +120,7 @@ the UI):
 Re-reads the config file. On error the reply is `error <config error>` and the running config stays. Otherwise
 the tables that apply per dictation take effect for the next one (`words`, `context`, `gate`, `cleanup`,
 `paste` except `method`, `feedback`, `profiles`, `history`, `retry`) and the reply is `ok
-reloaded`, or `ok reloaded; restart for audio, hotkey` naming the tables that need `hark` restarted.
+reloaded`, or `ok reloaded; restart for audio, hotkey` naming the tables that need `skriv` restarted.
 
 ## `subscribe` (JSON only)
 
@@ -143,7 +143,7 @@ e.g. a text `error …` reply), `internal` (exception in the daemon).
 ## Compatibility
 
 New fields may be added to replies within v1; clients must ignore unknown fields. Retyping a field or changing a
-`code` needs `version: 2`. hark is a personal tool with clients in this repository only, so fields of features
+`code` needs `version: 2`. skriv is a personal tool with clients in this repository only, so fields of features
 that were removed are dropped within v1 (removed so far: the `learning` field; the `undo` and `swap-raw`
 commands; `last.paste_verdict` and the `confirmed` value of `last.delivery`; the `partial` value of
 `last.cleanup`; `profile next`). The shapes above

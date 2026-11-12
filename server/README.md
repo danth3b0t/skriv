@@ -1,13 +1,13 @@
-# hark-server
+# skriv-server
 
-Python (`grpc.aio`) server for the **hark.v1** protocol: [`proto/hark/v1/hark.proto`](../proto/hark/v1/hark.proto).
+Python (`grpc.aio`) server for the **skriv.v1** protocol: [`proto/skriv/v1/skriv.proto`](../proto/skriv/v1/skriv.proto).
 The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a](../docs/archive/protocol/proposal-a.md);
 differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.md).
 
 Services:
-- `hark.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance).
-- `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` where "S1-mini" by "Superwhisper" rewrites the text; the response carries the rewrite (`text`) and the client decides whether to keep it. Only registered when `[cleanup] base_url` is set.
-- `grpc.health.v1.Health`: services `""` and `hark.v1.Asr` are SERVING once the model is READY; `hark.v1.TextCleanup` is SERVING when cleanup is configured.
+- `skriv.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance).
+- `skriv.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` where "S1-mini" by "Superwhisper" rewrites the text; the response carries the rewrite (`text`) and the client decides whether to keep it. Only registered when `[cleanup] base_url` is set.
+- `grpc.health.v1.Health`: services `""` and `skriv.v1.Asr` are SERVING once the model is READY; `skriv.v1.TextCleanup` is SERVING when cleanup is configured.
 
 ## Run
 
@@ -16,12 +16,12 @@ cd server
 uv sync                      # Python 3.12 + deps (+ dev group: grpcio-tools, pytest)
 uv sync --extra mlx          # + parakeet-mlx (macOS, Apple Silicon)
 
-uv run hark-server --backend mock                       # deterministic fake ASR on 127.0.0.1:50051
-uv run hark-server --backend parakeet_mlx               # downloads mlx-community/parakeet-tdt-0.6b-v3 on first run
-uv run hark-server --config hark-server.example.toml    # TOML config; CLI flags override it
+uv run skriv-server --backend mock                       # deterministic fake ASR on 127.0.0.1:50051
+uv run skriv-server --backend parakeet_mlx               # downloads mlx-community/parakeet-tdt-0.6b-v3 on first run
+uv run skriv-server --config skriv-server.example.toml    # TOML config; CLI flags override it
 
-../tools/hark-probe/hark-probe some.wav --words --bias bias.json   # stream a 16 kHz mono WAV, print FinalResult + latency
-../tools/hark-probe/hark-probe some.wav --caps                     # print Capabilities
+../tools/skriv-probe/skriv-probe some.wav --words --bias bias.json   # stream a 16 kHz mono WAV, print FinalResult + latency
+../tools/skriv-probe/skriv-probe some.wav --caps                     # print Capabilities
 ```
 
 Text cleanup with a local LLM (from the repo root; everything lands in the gitignored `models/`):
@@ -30,15 +30,15 @@ Text cleanup with a local LLM (from the repo root; everything lands in the gitig
 scripts/fetch-llama                 # pinned llama.cpp release (macOS arm64 Metal; linux-x64: cpu | vulkan | cuda)
 scripts/fetch-models                # default cleanup model (s1-mini-q4_k_m) + its LICENSE/NOTICE; `all` for every model
 scripts/llama-up &                  # llama-server on 127.0.0.1:8080
-(cd server && uv run hark-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model s1-mini-q4_k_m)
+(cd server && uv run skriv-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model s1-mini-q4_k_m)
 scripts/eval-cleanup --model s1-mini-q4_k_m -v     # 44-case eval through the real Cleanup RPC + client check
 scripts/eval-cleanup --model s1-mini-q4_k_m --data server/tests/data/cleanup_eval_real.jsonl   # 29 real dictations
 ```
 
-On macOS, `uv run hark service install` runs both (llama-server via `scripts/llama-up`, hark-server with the
+On macOS, `uv run skriv service install` runs both (llama-server via `scripts/llama-up`, skriv-server with the
 same flags as `scripts/poc-up`) as launchd user agents that start at login and restart on crashes; logs in
-`~/Library/Logs/hark/`. `hark service status|restart|uninstall`; see [packaging/macos](../packaging/macos/README.md).
-Known issue: both still pass the removed `--cleanup-engine`, so hark-server exits with a usage error when cleanup is
+`~/Library/Logs/skriv/`. `skriv service status|restart|uninstall`; see [packaging/macos](../packaging/macos/README.md).
+Known issue: both still pass the removed `--cleanup-engine`, so skriv-server exits with a usage error when cleanup is
 on; run the commands above by hand until that is fixed.
 
 The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://huggingface.co/superwhisper/s1-mini),
@@ -46,12 +46,12 @@ Apache 2.0 plus a term that it keep that name). Current measurements:
 [cleanup fidelity](../docs/bench/2026-11-13-cleanup-fidelity.md); why S1-mini over Qwen3:
 [archived bench](../docs/archive/bench/2026-11-11-cleanup-s1.md).
 
-`hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
+`skriv-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
 
 ## Configuration
 
-See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are errors.
+See [`skriv-server.example.toml`](skriv-server.example.toml). Unknown keys are errors.
 
 | TOML | CLI | Default | Meaning |
 |---|---|---|---|
@@ -96,9 +96,9 @@ Tailscale use.
 
 - **mock**: every `word_ms` (200) window of non-silent audio emits the next word of a fixed script. Latency is configurable (`decode_ms`, `decode_ms_per_s`, `load_ms`). The tests use it.
 - **parakeet_mlx**: `from_pretrained` + `get_logmel` → `encoder` → `decode`, all on one worker thread (MLX streams are thread-affine): greedy without bias terms; with them beam search and parakeet-mlx's word booster, the greedy anchor from the same encoder pass. `english_model` (option) serves the English-only `parakeet-tdt-0.6b-v2` beside v3: sessions that allow only English go to it, and a v3 result implausible for the requested languages is decoded again with it (`language.py`).
-- **transcribe_cpp**: Parakeet TDT 0.6B v3 GGUF (Q4_K_M by default) on [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) 0.4.2 / ggml, the offline fallback for machines without a GPU server in reach. The model runs in a worker child process (`hark_server.backends.transcribe_worker`, JSON lines): a native crash fails one decode and the next decode restarts the worker; a decode longer than `decode_timeout_s` kills it. `scripts/fetch-transcribe` builds the pinned library into `build/` and downloads the model; `scripts/cpu-server-up` runs it. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
+- **transcribe_cpp**: Parakeet TDT 0.6B v3 GGUF (Q4_K_M by default) on [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) 0.4.2 / ggml, the offline fallback for machines without a GPU server in reach. The model runs in a worker child process (`skriv_server.backends.transcribe_worker`, JSON lines): a native crash fails one decode and the next decode restarts the worker; a decode longer than `decode_timeout_s` kills it. `scripts/fetch-transcribe` builds the pinned library into `build/` and downloads the model; `scripts/cpu-server-up` runs it. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
 
-Adding a backend: subclass `hark_server.backends.Backend`, then implement `capabilities()`, `_load_sync`, `_warmup_sync` and
+Adding a backend: subclass `skriv_server.backends.Backend`, then implement `capabilities()`, `_load_sync`, `_warmup_sync` and
 `_decode_sync`, plus optionally `plan_bias` and `_n_best_sync`. Validation, budgets, anchors, hits, gaps and
 eager finalize are handled by the server (`session.py`), not by backends.
 
@@ -113,7 +113,7 @@ eager finalize are handled by the server (`session.py`), not by backends.
 - Cleanup profiles: `terminal` (terminal or coding-agent prompt, single line, no final period added), `chat` (single line, the writer's final punctuation kept) and `prose` (email/documents; the default).
 - Language guard: text that looks non-English (more foreign than English stopwords, or over a quarter of the words with non-ASCII letters), or a `language` other than `en*`, gets no LLM call and no rewrite (`skipped = "not_english"`).
 - Cleanup is "S1-mini" by "Superwhisper": its exact system prompt and the control line `[Styling: semi-formal] [Structure: prose] [Context: general]` for every profile (ASR output arrives cased and punctuated, and `casual`/`semi-casual` lowercase sentence starts and drop final periods), with `chat_template_kwargs.enable_thinking = false`, temperature 0. The model card warns that any other prompt can make it hallucinate, so the tuning happens around it: single-line profiles turn line breaks into spaces; hesitations it keeps (`eh`, an occasional `um`) and a `you know` set off by commas or opening a sentence are removed; a final period the input did not have is dropped in `terminal` and `chat`; a final `!` it flattened to `.` is restored. The response carries the rewrite in `text`. A rewrite cut off by `max_tokens` is not returned (`skipped = "max_tokens"`); if the budget runs out, the response is `truncated`.
-- The server does not judge the rewrite. The client checks it (`hark_client.fidelity`) and keeps its input when the rewrite changes a protected identifier, a negation, a number, or more than a few content words.
+- The server does not judge the rewrite. The client checks it (`skriv_client.fidelity`) and keeps its input when the rewrite changes a protected identifier, a negation, a number, or more than a few content words.
 
 ## Tests
 

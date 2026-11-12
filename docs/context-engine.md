@@ -1,6 +1,6 @@
 # Context engine: sources, ranking, learned vocabulary, prefetch
 
-The "with context" of *recognize with context* ([architecture.md](architecture.md)): `client/src/hark_client/context/`
+The "with context" of *recognize with context* ([architecture.md](architecture.md)): `client/src/skriv_client/context/`
 builds the shortlist sent with `SessionStart` and canonicalizes the result against it. The ranking follows
 [archive/research/context-ranking/REPORT.md](archive/research/context-ranking/REPORT.md) and the context-package parts of
 [archive/research/context-architecture.md](archive/research/context-architecture.md).
@@ -55,7 +55,7 @@ and the dropped competitors. `ContextSnapshot.prefetched` says whether the slow 
 - With the platform word list (`/usr/share/dict/words`): Capitalized non-words anywhere (`Ghostty` at a sentence
   start), acronyms that are no word (`UX`), kebab-case with a non-word part (`ctx-rank`), backticked non-words
   (`kubectl`); inflections stay out (`Configures`, `Running`). Without a word list the old conservative rules apply.
-- Directory paths (`~/projects/hark`, `/usr/share/dict`, `client/src/hark_client`).
+- Directory paths (`~/projects/skriv`, `/usr/share/dict`, `client/src/skriv_client`).
 - Never terms: tool-call/opaque ids, hashes, UUIDs, XML tags, contraction fragments, glob/template spans.
 - Spoken forms also come from a pronunciation lexicon (`hyprctl` → "hyper control", `SQLite` → "sequel light",
   `ctl` → "control"), versions said with "point", and spoken path prefixes ("tilde slash").
@@ -77,9 +77,9 @@ session is excluded), pi / Claude Code / Codex. Terms only; prompts > 6,000 char
 5,000 file marks). Files are read incrementally, ≤ 8 MiB per file and 40 files per pass.
 
 ```sh
-uv run python -m hark_client.context vocab list   # what is learned, terms served for the current repo
-uv run python -m hark_client.context vocab update # read ended sessions now
-uv run python -m hark_client.context vocab clear  # delete the store
+uv run python -m skriv_client.context vocab list   # what is learned, terms served for the current repo
+uv run python -m skriv_client.context vocab update # read ended sessions now
+uv run python -m skriv_client.context vocab clear  # delete the store
 ```
 
 ## Prefetch daemon (`prefetch.py`)
@@ -93,14 +93,14 @@ At key-down `collect()` uses a warm entry validated within 6 s and only reads fo
 one run on this Mac: 38 ms warm vs 375 ms cold.
 
 The daemon starts it (`daemon.py`) with `cfg.history.dir`; `ContextConfig.max_terms` is 30 and history records
-carry `snap.provenance`. Hand-written `[[words]]` (the config's, then `<repo>/.hark/words.toml`) are merged in
+carry `snap.provenance`. Hand-written `[[words]]` (the config's, then `<repo>/.skriv/words.toml`) are merged in
 front of the ranked terms by the client (`context/words.py`, called from `pipeline.py`), not by the engine; the
 terminal profile also gets base shell commands (`git`, `uv`, `kubectl`, …) in the free slots, at most a quarter
 of a full list.
 
 ## Offline replay (the experiment harness, same cutoff and splits)
 
-Measured when this ranking landed (2026-11-12); recognition with these lists is measured by `hark eval`
+Measured when this ranking landed (2026-11-12); recognition with these lists is measured by `skriv eval`
 ([eval.md](eval.md)).
 
 Primary short prompts, exact-match gold, macro recall (micro in parentheses). `old` = task-start engine
@@ -126,5 +126,5 @@ paths 92 → 102 of 130, identifiers 191 → 192 of 204; first alias fully spoke
 
 - `context/_atspi.py` (Collection API focused-text match used for caret and screen text) is untested on hardware.
 - macOS focus uses polling, not `NSWorkspace`/`AXObserver` notifications (they need an AppKit run loop thread).
-- hark's own dictations are user prompts, so they teach the vocabulary (architecture §7.4 self-contamination).
+- skriv's own dictations are user prompts, so they teach the vocabulary (architecture §7.4 self-contamination).
 - Alias collisions are not tracked per list; `canon.py`'s ambiguity guard still applies.

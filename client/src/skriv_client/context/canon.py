@@ -28,13 +28,13 @@ Rules (each guards against false substitutions):
   ``the X function``, ``X is false``), a flag right after a command (``journal control
   dash ...``, ``journal control-user``), or a bias hit the recognizer applied to those words
   for that term (``hits``: the unbiased anchor did not have them, the bias put them there).
-- An alias said with at least two spoken separators (``hark underscore models underscore
+- An alias said with at least two spoken separators (``skriv underscore models underscore
   dir``) still matches when exactly one other word is a close mishearing (``diar``).
 - A match right after a spoken separator (``tilde slash dot`` + ``kube slash config``) is
   part of a longer spoken path that did not match as a whole, and is left alone.
 - Only aliases present in the transcript are rewritten, so no term is ever introduced.
-- A rewrite that would only lower-case the text (``Hark doctor`` -> ``hark doctor``) is
-  skipped, except for a command mid-sentence (``run Hark doctor`` -> ``run hark doctor``)
+- A rewrite that would only lower-case the text (``Skriv doctor`` -> ``skriv doctor``) is
+  skipped, except for a command mid-sentence (``run Skriv doctor`` -> ``run skriv doctor``)
   and a capital the recognizer wrote inside a word.
 - A single written token equal to a shortlist term but for inner capitals is spelled like
   the term (``pyTest`` -> ``pytest``, ``model.Train`` -> ``model.train`` for
@@ -494,7 +494,7 @@ def canonicalize(
         start, end = toks[i].start, toks[j].end
         before = text[start:end]
         conf = _min_conf(spans, start, end)
-        # "Hark doctor" -> "hark doctor" would only lose a capital (a command mid-sentence
+        # "Skriv doctor" -> "skriv doctor" would only lose a capital (a command mid-sentence
         # has no reason to have one); "pyTest" -> "pytest" fixes the recognizer's capital
         case_only = (
             before.lower() == term.canonical
@@ -544,7 +544,7 @@ def _case_fix(
 def _spelled_match(
     tx: _Text, i: int, spelled: list[tuple[tuple[str, ...], Term]]
 ) -> tuple[int, Term] | None:
-    """An alias said with its separators (``hark underscore models underscore diar``) whose
+    """An alias said with its separators (``skriv underscore models underscore diar``) whose
     words all match but one close mishearing (``diar`` ~ ``dir``); one term only."""
     toks = tx.toks
     found: dict[str, tuple[int, Term]] = {}

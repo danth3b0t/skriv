@@ -10,7 +10,7 @@ expected to transcribe someone *saying* the term:
 - ``HTTPServer`` -> ``http server``, ``h t t p server``
 - names: ``Qwen3-ASR`` -> ``qwen three asr``; ``RTX 3060`` -> ``rtx thirty sixty``,
   ``rtx three zero six zero``; ``Terminal.app`` -> ``terminal dot app``; ``NeMo`` -> ``nemo``
-- commands: ``hark doctor`` -> ``hark doctor``, ``harkdoctor`` (ASR sometimes glues words)
+- commands: ``skriv doctor`` -> ``skriv doctor``, ``skrivdoctor`` (ASR sometimes glues words)
 - names not said as spelled (:data:`LEXICON`): ``hyprctl`` -> ``hyper control``,
   ``SQLite`` -> ``sequel light``, ``read_wav`` -> ``read wave``
 - versions with "point": ``0.6b`` -> ``zero point six b``; a leading prefix is said too:
@@ -61,8 +61,9 @@ _SEPARATORS: dict[str, tuple[str, ...]] = {
 }
 # Developer names that are not said as spelled: written word (lower case) -> spoken forms,
 # as a recognizer writes them. Looked up for a whole alphanumeric run (``SQLite``) and for
-# each word of it (``ctl`` in ``hark ctl``).
+# each word of it (``ctl`` in ``skriv ctl``).
 LEXICON: dict[str, tuple[str, ...]] = {
+    "skriv": ("skreev", "scriv"),  # this tool, said "skreev"
     "hyprland": ("hyper land", "hyperland"),
     "hyprctl": ("hyper control", "hyper c t l", "hyper cuttle"),
     "ctl": ("control", "cuttle"),
@@ -258,7 +259,7 @@ def _separator_options(sep: str) -> tuple[str, ...]:
 
 
 def _joined(canonical: str, kind: TermKind) -> str | None:
-    """All words glued (``harkdoctor``, ``nemo``), the way ASR sometimes writes a name.
+    """All words glued (``skrivdoctor``, ``nemo``), the way ASR sometimes writes a name.
 
     Only for names/commands and identifiers that start upper-case: gluing ``setUp`` or
     ``set_up`` would give the plain word ``setup``.
@@ -278,14 +279,16 @@ def _natural(options: tuple[str, ...]) -> int:
 
 
 def _combos(pieces: list[tuple[str, ...]]) -> Iterator[tuple[str, ...]]:
-    """The natural reading, then each single-piece variant of it, then the Cartesian
+    """The natural reading, then each single-piece variant of it (round-robin over the pieces,
+    so one piece with many spoken forms cannot use up the alias budget), then the Cartesian
     product (bounded), so long or number-bearing terms still get diverse aliases."""
     natural = tuple(p[_natural(p)] for p in pieces)
     yield natural
-    for i, options in enumerate(pieces):
-        for option in options:
-            if option != natural[i]:
-                yield (*natural[:i], option, *natural[i + 1 :])
+    variants = [[o for o in options if o != natural[i]] for i, options in enumerate(pieces)]
+    for k in range(max(map(len, variants), default=0)):
+        for i, options in enumerate(variants):
+            if k < len(options):
+                yield (*natural[:i], options[k], *natural[i + 1 :])
     yield from itertools.islice(itertools.product(*pieces), 64)
 
 
@@ -639,7 +642,7 @@ def _backtick_kind(span: str, *, prose: bool) -> TermKind | None:
 
 
 def _directories(text: str, words: frozenset[str] | None) -> list[str]:
-    """``~/projects/hark``, ``./build``, ``/usr/share/dict``, ``client/src/skriv_client``;
+    """``~/projects/skriv``, ``./build``, ``/usr/share/dict``, ``client/src/skriv_client``;
     not ``and/or``-style prose or dates."""
     out: list[str] = []
     for m in _DIR_RE.finditer(_mask(text, _URL_RE)):
@@ -661,7 +664,7 @@ def extract_terms(text: str, *, prose: bool = False) -> list[tuple[str, TermKind
     With ``prose=True`` (agent replies, selections of prose) kebab-case words are only taken
     from backticked spans or when a part is no English word (``ctx-rank``, not
     ``well-known``); instead names (see :func:`_names`), backticked commands
-    (``hark doctor``) and backticked non-words (``kubectl``) are added. The word-list rules
+    (``skriv doctor``) and backticked non-words (``kubectl``) are added. The word-list rules
     need :func:`english_words`.
     """
     found: dict[str, TermKind] = {}

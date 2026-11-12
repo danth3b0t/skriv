@@ -1,6 +1,6 @@
-# hark.v1 — changes from proposal-a
+# skriv.v1 — changes from proposal-a
 
-Canonical schema: [`proto/hark/v1/hark.proto`](../../proto/hark/v1/hark.proto) (v1.0, final).
+Canonical schema: [`proto/skriv/v1/skriv.proto`](../../proto/skriv/v1/skriv.proto) (v1.0, final).
 Base: [`proposal-a.proto`](proposal-a.proto). Decision: [ADR-001](ADR-001-protocol.md).
 Everything not listed here is unchanged from proposal-a.
 
@@ -12,7 +12,7 @@ proposal-a was never deployed, so removed fields are `reserved` only for hygiene
 |---|---|---|
 | 1 | Riva-aligned bias terms | `BiasTerm` documented as one Riva `SpeechContext` group (`phrases=[canonical, aliases…]`, one `boost`). `weight` range is now **[0,1]** (was (0,1]); weight 0 = lowest native boost, not "off" (use `BiasList.strength=0`). Default mapping `boost_min + w·(boost_max−boost_min)`. **Added** `BiasCapabilities.boost_min/boost_max` (12, 13) and `AppliedConfig.term_boosts` (10, id → applied native boost). **Removed** `SpokenAlias.weight` (3, reserved): a Riva group has a single boost, so per-alias weights cannot map 1:1. |
 | 2 | `AudioChunk.start_sample` | Field already existed in proposal-a; its rules are now normative: placement is by `start_sample`; forward jump = gap (zero-fill + `WARNING_CODE_AUDIO_GAP` + `flags.audio_gap`); backward jump = `PROTOCOL_VIOLATION`; `seq` strictly increasing; PCM `num_samples == len(data)/2`. `EndOfAudio.last_seq/total_samples` must match what was received. **Added** `StreamStatus.samples_received` (4) as the ack. |
-| 3 | Eager finalize | **Added** `TranscribeRequest.eager_end` (6) with `EagerEnd{total_samples, speech_end_sample}`, feature string `hark.eager_end`, `Timings.eager_hit` (16). Any later chunk or context update invalidates the speculative result. |
+| 3 | Eager finalize | **Added** `TranscribeRequest.eager_end` (6) with `EagerEnd{total_samples, speech_end_sample}`, feature string `skriv.eager_end`, `Timings.eager_hit` (16). Any later chunk or context update invalidates the speculative result. |
 | 4 | Exactly one terminal message | **Added** `TranscribeResponse.session_ended` (6), `SessionEnded{reason, error, utterance_id}`, `enum SessionEndReason {CANCELLED, REJECTED, FAILED}`. Every Transcribe call the server can still write to ends with exactly one `final_result` (then OK) or `session_ended` (then the mirrored non-OK status, ErrorDetail also in `grpc-status-details-bin`), including rejection before `accepted` and explicit `Cancel`. **Added** `ERROR_CODE_CANCELLED` (13). |
 | 5 | `quality`/`omitted` → `ResultFlags` | **Removed** `n_best_skipped/anchor_skipped/timestamps_skipped` (2–4, reserved). **Added** `enum FieldStatus {PRESENT, NOT_REQUESTED, SKIPPED_BUDGET, UNSUPPORTED, FAILED}` and `ResultFlags.n_best/anchor/word_timestamps/word_confidence/bias_hits` (9–13). B's per-field *trust* levels are not repeated per result: they are static per model (`timestamps.source`, `confidence_calibrated`, `anchor_cost`, `bias_with_n_best`) plus `Hypothesis.origin` and `AppliedConfig`. |
 | 6 | Quoted-text anchored cleanup edits | LLM edit schema is `{find, replace, kind, reason}`; **no `occurrence` field**: `find` must be unique in the text (overlapping occurrences count). The server resolves to byte ranges and validates. **Added** `CleanupResponse.rejections` (7) with `EditRejection{find, replace, reason}` and `enum EditRejectionReason`. |
@@ -27,7 +27,7 @@ proposal-a was never deployed, so removed fields are `reserved` only for hygiene
 ## Pruned (nothing read or wrote them)
 
 Removed, numbers and names `reserved`: the `Recognize` and `Warmup` RPCs with their messages (and the
-`hark.recognize` feature), `PartialResult` / `TranscribeResponse.partial`, `PrivacyAck` / `FinalResult.privacy`,
+`skriv.recognize` feature), `PartialResult` / `TranscribeResponse.partial`, `PrivacyAck` / `FinalResult.privacy`,
 `GetCapabilitiesRequest.client_protocol_minor`, `BiasCapabilities.max_total_tokens/hit_scores`,
 `FreeTextCapabilities.echo_risk`, `PerfEstimate.bias_compile_ms`, `SessionStart.attempt`,
 `PrivacyFlags.minimal_metadata`, `ResultOptions.partial_interval_ms/bias_diagnostics`, `ClientInfo.device_id`,

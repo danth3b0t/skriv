@@ -10,14 +10,14 @@
 # committed uv.lock with --frozen (every wheel and sdist hash-checked against the lock).
 #
 # Before the repository is public, build from a local clone:
-#   SKRIV_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
+#   SKRIV_REPO="file://$HOME/projects/skriv#branch=main" makepkg -si
 
 pkgname=skriv-git
 pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc='Context-aware, local-first push-to-talk dictation (daemon, inference server, systemd user units)'
 arch=('x86_64' 'aarch64')
-url='https://github.com/danth3b0t/hark'
+url='https://github.com/danth3b0t/skriv'
 license=('LicenseRef-TODO') # TODO: the repository has no LICENSE yet
 depends=(
   'bash'         # scripts, Omarchy adapter

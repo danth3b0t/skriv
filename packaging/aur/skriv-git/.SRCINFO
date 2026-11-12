@@ -2,7 +2,7 @@ pkgbase = skriv-git
 	pkgdesc = Context-aware, local-first push-to-talk dictation (daemon, inference server, systemd user units)
 	pkgver = 0.1.0.r0.g0000000
 	pkgrel = 1
-	url = https://github.com/danth3b0t/hark
+	url = https://github.com/danth3b0t/skriv
 	arch = x86_64
 	arch = aarch64
 	license = LicenseRef-TODO
@@ -41,7 +41,7 @@ pkgbase = skriv-git
 	conflicts = skriv-server
 	options = !strip
 	options = !debug
-	source = skriv::git+https://github.com/danth3b0t/hark.git
+	source = skriv::git+https://github.com/danth3b0t/skriv.git
 	sha256sums = SKIP
 
 pkgname = skriv-git

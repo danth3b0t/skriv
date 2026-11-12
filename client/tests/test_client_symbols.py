@@ -57,7 +57,7 @@ from skriv_client import symbols
         ("set it to 0, comma one", "set it to 0,1"),
         # a command line starts in lower case
         ("Git status.", "git status."),
-        ("Hark history", "hark history"),
+        ("Skriv history", "skriv history"),
         # the recognizer's "Get" for git, at the start of a command line
         ("Get status.", "git status."),
         ("Get push dash dash force, but not main.", "git push --force, but not main."),

@@ -133,6 +133,7 @@ def test_names_are_not_taken_from_plain_text_extraction():
         # not said as spelled (LEXICON), versions, optional ":", leading prefixes
         ("Hyprland", TermKind.NAME, {"hyper land", "hyperland"}),
         ("hark ctl toggle", TermKind.COMMAND, {"hark control toggle", "hark c t l toggle"}),
+        ("skriv run", TermKind.COMMAND, {"skreev run", "scriv run"}),
         ("SQLite", TermKind.NAME, {"sequel light"}),
         ("read_wav", TermKind.IDENTIFIER, {"read wave"}),
         ("tdt-0.6b-v3", TermKind.NAME, {"tdt zero point six b v three"}),
