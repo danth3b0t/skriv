@@ -113,7 +113,9 @@ def test_spoken_symbols_are_written_in_the_terminal_profile_only(
     profile: str,
     pasted: str,
 ):
-    def canonicalize(text: str, words: object, terms: object) -> tuple[str, list[object]]:
+    def canonicalize(
+        text: str, words: object, terms: object, hits: object
+    ) -> tuple[str, list[object]]:
         return "open canon dot py", []
 
     monkeypatch.setattr(context, "canonicalize", canonicalize)
