@@ -36,6 +36,10 @@ scripts/eval-cleanup --model s1-mini-q4_k_m --data server/tests/data/cleanup_eva
 # the Qwen3 edit-list engine: scripts/llama-up qwen3-1.7b-q4_k_m, then --cleanup-engine edits / --engine edits
 ```
 
+On macOS, `uv run hark service install` runs both (llama-server via `scripts/llama-up`, hark-server with the
+same flags as `scripts/poc-up`) as launchd user agents that start at login and restart on crashes; logs in
+`~/Library/Logs/hark/`. `hark service status|restart|uninstall`; see [packaging/macos](../packaging/macos/README.md).
+
 The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://huggingface.co/superwhisper/s1-mini),
 Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/bench/2026-11-11-cleanup-s1.md)
 and [the Qwen3 bench](../docs/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
