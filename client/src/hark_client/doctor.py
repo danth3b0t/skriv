@@ -25,7 +25,7 @@ TOOLS = {
 
 class Report:
     def __init__(self) -> None:
-        self.failures = 0
+        self.failures: int = 0
 
     def ok(self, what: str, detail: str = "") -> None:
         print(f"  ok    {what}{': ' + detail if detail else ''}")
@@ -113,7 +113,7 @@ def check_mic(r: Report, cfg: Config) -> None:
         return
     if level < -80:
         hint = (
-            "grant Microphone access to your terminal (System Settings > Privacy & Security)"
+            "grant Microphone access to Hark.app or your terminal (System Settings > Privacy & Security)"
             if sys.platform == "darwin"
             else "check the input source/mute (pavucontrol, wpctl)"
         )
@@ -125,9 +125,16 @@ def check_mic(r: Report, cfg: Config) -> None:
 def check_permissions(r: Report) -> None:
     if sys.platform != "darwin":
         return
-    print("macOS permissions (for the app that runs hark, e.g. your terminal)")
+    print("macOS permissions (of Hark.app, or of the terminal that runs `hark run`)")
     from hark_client import macos  # noqa: PLC0415
 
+    mic = macos.mic_authorization()
+    if mic == "authorized":
+        r.ok("Microphone", "allowed")
+    elif mic == "not_determined":
+        r.warn("Microphone", "not asked yet (Hark.app: Setup & Permissions)")
+    else:
+        r.fail("Microphone", f"{mic}: System Settings > Privacy & Security > Microphone")
     if macos.can_listen_events():
         r.ok("Input Monitoring", "push-to-talk hotkey can see keys")
     else:

@@ -1,6 +1,7 @@
-"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
+"""hark CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Hark.app runs it),
+`ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
 (pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
-learned vocabulary).
+learned vocabulary), `service` (macOS launchd agents for the servers).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -17,9 +18,14 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import threading
+    from collections.abc import Callable
+
     from hark_client.config import Config
     from hark_client.context import ContextSnapshot
+    from hark_client.daemon import AppUi, Controller
     from hark_client.pipeline import Services
+    from hark_client.service import Layout
 
 
 class Args(argparse.Namespace):
@@ -43,6 +49,11 @@ class Args(argparse.Namespace):
     copy: bool
     history_action: str
     n: int
+    service_action: str
+    backend: str | None
+    cleanup_model: str | None
+    no_cleanup: bool
+    no_onboarding: bool
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -54,6 +65,10 @@ def parse_args(argv: list[str] | None = None) -> Args:
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
+    ap = sub.add_parser("app", help="macOS: `run` plus a menu-bar item (what Hark.app runs)")
+    ap.add_argument(
+        "--no-onboarding", action="store_true", help="no setup window, even if permissions miss"
+    )
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
     c.add_argument(
         "action",
@@ -106,6 +121,17 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
     )
     lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
+    sv = sub.add_parser(
+        "service", help="macOS: llama-server + hark-server as launchd agents (start at login)"
+    )
+    sv.add_argument("service_action", choices=["install", "uninstall", "status", "restart"])
+    sv.add_argument(
+        "--backend", help="install: ASR backend (default parakeet_mlx on Apple Silicon)"
+    )
+    sv.add_argument(
+        "--cleanup-model", help="install: a scripts/fetch-models key (default: its DEFAULT)"
+    )
+    sv.add_argument("--no-cleanup", action="store_true", help="install: no llama-server")
     return p.parse_args(argv, namespace=Args())
 
 
@@ -131,6 +157,50 @@ def cmd_ctl(args: Args) -> int:
         return 2
     print(reply)
     return 0 if reply.startswith("ok") else 1
+
+
+def cmd_service(args: Args) -> int:
+    from hark_client import service  # noqa: PLC0415
+
+    if sys.platform != "darwin":
+        print("hark service: macOS only (Linux: packaging/systemd/hark.service)", file=sys.stderr)
+        return 2
+    try:
+        lay = service.layout()
+        if args.service_action == "install":
+            model = None if args.no_cleanup else (
+                args.cleanup_model or service.default_cleanup_model(lay.root)
+            )  # fmt: skip
+            backend = args.backend or service.default_backend()
+            service.install(lay, backend=backend, cleanup_model=model)
+            print("check with `hark service status` and `hark doctor`")
+            return 0
+        if args.service_action == "uninstall":
+            if not service.uninstall(lay):
+                print("no hark services installed")
+            return 0
+        if args.service_action == "restart":
+            labels = service.restart(lay)
+            print(f"restarted {', '.join(labels)}" if labels else "no hark services installed")
+            return 0 if labels else 1
+    except service.ServiceError as e:
+        print(f"hark service: {e}", file=sys.stderr)
+        return 1
+    return _service_status(lay)
+
+
+def _service_status(lay: Layout) -> int:
+    from hark_client import service  # noqa: PLC0415
+
+    states = service.status(lay)
+    if not states:
+        print("no hark services installed (`hark service install`)")
+        return 1
+    for st in states:
+        detail = f"pid {st.pid}" if st.pid else f"last exit {st.last_exit or '-'}"
+        log = lay.logs_dir / ("llama.log" if st.label == service.LLAMA else "server.log")
+        print(f"{st.label:<16} {st.state:<12} {detail:<14} {log}")
+    return 0 if all(st.state == "running" for st in states) else 1
 
 
 def run_pcm(
@@ -201,6 +271,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "ctl":
         return cmd_ctl(args)
+    if args.command == "service":
+        return cmd_service(args)
+    if args.command == "app" and sys.platform != "darwin":
+        print("hark app: macOS only; use `hark run`", file=sys.stderr)
+        return 2
 
     from hark_client import config  # noqa: PLC0415
 
@@ -365,12 +440,31 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
             field_reader=reader, learned=learned, learner=learner,
         )  # fmt: skip
         try:
-            return daemon.run(svc)
+            return daemon.run(svc, _menu_bar(args) if args.command == "app" else None)
         except ctl.DaemonRunningError as e:
             print(f"hark: {e}", file=sys.stderr)
             return 1
     finally:
         router.close()
+
+
+def _menu_bar(args: Args) -> Callable[[Controller, threading.Event], AppUi]:
+    """`hark app`: builds the menu-bar item on the main thread once the daemon is up."""
+    from hark_client.config import default_config_path  # noqa: PLC0415
+
+    cli = [*(["--config", args.config] if args.config else [])]
+    cli += ["--server", args.server] if args.server else []
+
+    def make(controller: Controller, stop: threading.Event) -> AppUi:
+        from hark_client.menubar import MenuBar  # noqa: PLC0415 - AppKit
+
+        return MenuBar(
+            controller, stop,
+            config_path=Path(args.config) if args.config else default_config_path(),
+            cli=cli, onboarding=not args.no_onboarding,
+        )  # fmt: skip
+
+    return make
 
 
 if __name__ == "__main__":

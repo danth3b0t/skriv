@@ -31,6 +31,7 @@ if TYPE_CHECKING:
 
     from hark_client.context import FocusInfo
     from hark_client.daemon import Controller
+    from hark_client.mic import Mic
 
     from .conftest import FakeContext
 
@@ -155,6 +156,41 @@ def test_paste_last_reinserts_the_last_text_guarded_for_the_focused_window(
     fake_context.snapshots = [snapshot("com.apple.Notes", "w2")]
     c.handle("paste-last")
     assert injector.pasted[-1] == ("please run", False)
+
+
+class FakeMic:
+    def __init__(self) -> None:
+        self.calls: list[str] = []
+
+    def start(self) -> None:
+        self.calls.append("start")
+
+    def stop(self) -> None:
+        self.calls.append("stop")
+
+
+def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+    mic = FakeMic()
+    c.mic = cast("Mic", mic)
+    hotkey_told: list[bool] = []
+    c.on_recording = hotkey_told.append
+    c.handle("start")
+    c.on_pcm(pcm(0.4))
+    c.set_paused(True)
+    assert c.status() == "ok idle finishing=0"  # the recording was cancelled
+    assert c.handle("start") == "error paused"
+    assert c.handle("toggle") == "error paused"
+    # a refused hotkey press must not leave the listener in hold/hands-free (Esc swallowed)
+    assert hotkey_told == [True, False, False, False]
+    c.set_paused(True)  # no-op
+    assert mic.calls == ["stop"]  # keep_open: the always-open stream is released
+    c.set_paused(False)
+    assert mic.calls == ["stop", "start"]
+    dictate(c)
+    assert injector.pasted == [("please run", True)]
 
 
 def tone(ms: int, dbfs: float) -> npt.NDArray[np.float64]:

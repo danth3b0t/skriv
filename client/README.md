@@ -34,7 +34,9 @@ uv run hark run          # hold Right Option to dictate, release to paste; or ta
 
 The app that runs hark (your terminal) needs, in System Settings → Privacy & Security:
 **Microphone**, **Input Monitoring** (global hotkey via pynput) and **Accessibility** (posting Cmd+V).
-`hark doctor` checks the latter two. Paste = NSPasteboard (saved and restored afterwards, including non-text items)
+`hark doctor` checks all three. Or use **Hark.app** (`scripts/build-macos-app`, see
+[packaging/macos](../packaging/macos/README.md)): it runs `hark app` = `hark run` plus a menu-bar item and a setup
+window, and the permissions belong to Hark instead of the terminal. Paste = NSPasteboard (saved and restored afterwards, including non-text items)
 + a CGEvent Cmd+V from a private event source (key code 9), so the held hotkey's modifiers do not leak into it.
 
 ### Linux / Hyprland (Wayland)
@@ -102,8 +104,8 @@ the clipboard, notification); with hyprlang (≤ 0.54) `dispatch sendshortcut CT
 worked is remembered. Unknown target: an untargeted shortcut; neither syntax works: `wtype`.
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
-Control protocol: one line in (`start|stop|toggle|cancel|status|ping|paste-last|undo|swap-raw|profile …`), one line
-out (`ok …` or `error …`).
+`HARK_CTL_SOCKET` overrides the socket path (e.g. a second, test daemon). Control protocol: one line in
+(`start|stop|toggle|cancel|status|ping|paste-last|undo|swap-raw|profile …`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
 the last dictation's status/paste verdict/latency (never its text), whether learning is watching and the profile
@@ -228,7 +230,7 @@ unless one was picked by hand (below).
   dictation (`next`: auto → terminal → chat → prose → auto, config order); `[profile_switch] sticky = true` keeps
   it until `profile auto`. The indicator shows **Profile: chat** briefly (never over a recording) and the
   recording as **Listening · chat**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
-  it. There is no menu-bar menu.
+  it. Hark.app's menu-bar Profile menu sets the same override (Automatic = `profile auto`).
 
 ## Providers and the offline fallback
 
@@ -451,7 +453,8 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
 events, the start-cue mask on a synthetic tone, undo/swap-raw and every refusal (fake injector), Backspace
-counting, and the profile override.
+counting, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
+(launchd plists, install/status/restart/uninstall against a fake launchctl, the login-item LaunchAgent fallback).
 
 ## Limitations
 

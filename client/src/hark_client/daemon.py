@@ -14,7 +14,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Protocol
 
 from hark.v1 import hark_pb2 as pb
 from hark_client import context, guardrails, history, indicator, retry
@@ -88,8 +88,11 @@ class Controller:
         # the hotkey listener reports every key and click (shadow buffer): undo can trust it
         self.keys_observed = False
         self.insertion: Insertion | None = None  # the newest dictation's paste, if any
-        self.profile_override: str | None = None  # `hark ctl profile`; None = by app
+        # `hark ctl profile` and the menu bar's Profile menu; None = by app
+        self.profile_override: str | None = None
         self._undo_lock = threading.Lock()
+        self.paused = False  # menu bar: hotkey/ctl start refused, mic released
+        self.started = 0  # dictations started (onboarding's hotkey test watches it)
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -110,6 +113,11 @@ class Controller:
 
     def start(self) -> str:
         with self._lock:
+            if self.paused:
+                if self.on_recording is not None:
+                    # nothing records: the hotkey must not wait for a release, a tap or an Esc
+                    self.on_recording(False)  # noqa: FBT003 - Callable[[bool], None]
+                return "error paused"
             if self.current is not None:
                 return "ok already recording"
             cue = self._start_cue()
@@ -124,6 +132,7 @@ class Controller:
             self.insertion = None  # undo is for the newest dictation only
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
+            self.started += 1
         if self.indicator is not None:
             self.indicator.recording(utt.id, _label("Listening", utt))
         if self.svc.learner is not None:
@@ -215,6 +224,21 @@ class Controller:
         self.svc.feedback.sound("error")
         log.info("cancelled")
         return "ok cancelled"
+
+    def set_paused(self, paused: bool) -> None:  # noqa: FBT001 - a menu toggle
+        """Pause: a recording in progress is cancelled and an always-open mic is released."""
+        with self._lock:
+            if paused == self.paused:
+                return
+            self.paused = paused
+        if paused:
+            self.cancel()
+        if self.mic is not None and self.keep_open:
+            if paused:
+                self.mic.stop()
+            else:
+                self.mic.start()
+        log.info("dictation %s", "paused" if paused else "resumed")
 
     def _keep(self, utt: Utterance, res: Result) -> None:
         """Recovery ring for `hark retry` (not for presses under min_ms)."""
@@ -420,6 +444,18 @@ class StartupError(RuntimeError):
     pass
 
 
+class AppUi(Protocol):
+    """Main-thread UI beside the indicator (Hark.app's menu-bar item)."""
+
+    def tick(self) -> None:
+        """Called from the UI loop at least every 0.5 s."""
+        ...
+
+    def run(self, stop: threading.Event) -> None:
+        """Run the UI loop itself until ``stop`` (when there is no indicator to run it)."""
+        ...
+
+
 def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
     cfg = svc.cfg.hotkey
     listener = cfg.listener
@@ -469,9 +505,7 @@ def _make_mic(svc: Services, controller: Controller) -> Mic:
     return mic
 
 
-def run(svc: Services) -> int:
-    from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
-
+def _log_providers(svc: Services) -> None:
     svc.router.refresh()
     for p in svc.router.providers:
         caps, h = p.caps.get(), p.health
@@ -483,6 +517,14 @@ def run(svc: Services) -> int:
             "provider %s (%s): %s, %s; features: %s",
             p.name, p.cfg.address, h.state, models, ", ".join(caps.features),
         )  # fmt: skip
+
+
+def run(svc: Services, app_ui: Callable[[Controller, threading.Event], AppUi] | None = None) -> int:
+    """``app_ui(controller, stop)`` builds a main-thread UI (``hark app``); setting ``stop``
+    quits."""
+    from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
+
+    _log_providers(svc)
     svc.router.start_background()
 
     controller = Controller(svc, None)
@@ -517,8 +559,12 @@ def run(svc: Services) -> int:
     signal.signal(signal.SIGTERM, on_signal)
     log.info("hark ready (paste: %s)", svc.injector.name)
     try:
+        extra = app_ui(controller, stop) if app_ui is not None else None
         if ui is not None:
-            ui.run(stop)  # the toolkit's loop on this (main) thread until a signal
+            # the toolkit's loop on this (main) thread until a signal (or Quit)
+            ui.run(stop, extra.tick if extra is not None else None)
+        elif extra is not None:
+            extra.run(stop)
         else:
             while not stop.wait(0.5):
                 pass

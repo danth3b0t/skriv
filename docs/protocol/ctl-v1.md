@@ -1,6 +1,6 @@
 # hark control socket, JSON v1
 
-The daemon (`hark run`) listens on `$XDG_RUNTIME_DIR/hark/ctl.sock` (Linux), `~/Library/Caches/hark/ctl.sock`
+The daemon (`hark run`) listens on `$HARK_CTL_SOCKET` if set, else `$XDG_RUNTIME_DIR/hark/ctl.sock` (Linux), `~/Library/Caches/hark/ctl.sock`
 (macOS), else `$TMPDIR/hark-<uid>/ctl.sock`; directory 0700, socket 0600. One request line, one reply line, then
 the daemon closes the connection. Requests are at most 512 bytes.
 
