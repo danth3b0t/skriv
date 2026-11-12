@@ -71,7 +71,7 @@ def menu_state(c: Controller, now: float) -> str:
     """A SYMBOLS key for the daemon's current state."""
     if c.paused:
         return "paused"
-    st = c.status_json()
+    st = c.report.json()
     if st["state"] == "recording":
         return "recording"
     if st["finishing"]:

@@ -3,6 +3,7 @@
 Threads: the main thread runs the recording indicator's UI loop (AppKit / GTK; they want the
 main thread) or just waits for a signal; the mic callback, the hotkey listener, the ctl socket
 and each dictation's finish run on their own threads and drive the indicator from there.
+What `status` and `subscribe` report is hark_client.status.
 """
 
 from __future__ import annotations
@@ -23,6 +24,7 @@ from hark_client.audio import PreRoll
 from hark_client.config import ConfigError, expand
 from hark_client.continuation import ShadowBuffer
 from hark_client.pipeline import Utterance
+from hark_client.status import Report, State
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
@@ -87,12 +89,7 @@ class Controller:
         self.on_finishing: Callable[[bool], None] | None = None
         self.mic_status = "off"  # ok | lost | off
         self._mic_retry_at = 0.0  # time.monotonic() of the next reopen attempt
-        self.config_path: Path | None = None  # what `reload` re-reads (None: not reloadable)
-        self._config_mtime: float | None = None
-        self.restart_needed: list[str] = []
-        self._server_seen: dict[str, object] = {}
-        self._changed = threading.Condition()
-        self._version = 0  # bumped on every status change (`subscribe`)
+        self.report = Report(self)  # `status` / `subscribe`
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -112,20 +109,6 @@ class Controller:
             threading.Thread(
                 target=lambda: self.stop(reason="limit", only=utt), daemon=True
             ).start()
-
-    # -- status changes (`subscribe`) ------------------------------------------------
-
-    def touch(self) -> None:
-        """Something `status` reports has changed."""
-        with self._changed:
-            self._version += 1
-            self._changed.notify_all()
-
-    def wait_change(self, seen: int, timeout_s: float) -> int:
-        """The status version, once it differs from ``seen`` (or after ``timeout_s``)."""
-        with self._changed:
-            self._changed.wait_for(lambda: self._version != seen, timeout_s)
-            return self._version
 
     # -- dictation ---------------------------------------------------------------------
 
@@ -169,7 +152,7 @@ class Controller:
         if cue:
             self.svc.feedback.sound("start")
         log.info("recording...")
-        self.touch()
+        self.report.touch()
         return "ok recording"
 
     def _mic_ready(self) -> str:
@@ -211,7 +194,7 @@ class Controller:
             if self.indicator is not None:
                 self.indicator.mic_lost()
             self.svc.feedback.notify("Microphone lost; hark keeps trying to reopen it")
-        self.touch()
+        self.report.touch()
 
     def check_mic(self) -> None:
         """Watchdog (every TICK_S): a stream that should run but stopped calling back is lost:
@@ -267,7 +250,7 @@ class Controller:
             if utt is not None and finishing and self.on_finishing is not None:
                 self.on_finishing(True)  # noqa: FBT003
         if utt is not None:
-            self.touch()
+            self.report.touch()
         return utt
 
     def hands_free(self) -> None:
@@ -322,7 +305,7 @@ class Controller:
                     self.finishing = None
                     if self.on_finishing is not None:
                         self.on_finishing(False)  # noqa: FBT003
-                self.touch()
+                self.report.touch()
 
         threading.Thread(target=work, daemon=True, name="hark-finish").start()
         return "ok stopped"
@@ -366,7 +349,7 @@ class Controller:
             else:
                 self.mic.start()
         self._set_mic("off" if paused or not self.keep_open else "ok")
-        self.touch()
+        self.report.touch()
         log.info("dictation %s", "paused" if paused else "resumed")
 
     def _pause(self, *, paused: bool) -> str:
@@ -447,7 +430,7 @@ class Controller:
                 case _:
                     return "error usage: profile [auto | set NAME]"
             self.profile_override = new
-        self.touch()
+        self.report.touch()
         label = new or "auto"
         if args and self.indicator is not None:
             self.indicator.notice(f"Profile: {label}")
@@ -459,55 +442,30 @@ class Controller:
         """A key press or click from the hotkey listener: keeps the shadow buffer current."""
         self.shadow.key(press)
 
+    def state(self) -> State:
+        with self._lock:
+            return State(
+                recording=self.current is not None, finishing=self.finishing is not None,
+                busy=self.busy, paused=self.paused, last=self.last_result,
+            )  # fmt: skip
+
     def status(self) -> str:
         with self._lock:
             state = "recording" if self.current is not None else "idle"
             return f"ok {state} finishing={self.busy}"
 
-    def server_status(self) -> dict[str, object]:
-        """The provider the next dictation would use, from cached health (never probes)."""
-        providers = self.svc.router.providers
-        for i, p in enumerate(providers):
-            h = p.health
-            if h.state == "ok":
-                return {"name": p.name, "state": "ok", "rtt_ms": h.rtt_ms, "fallback": i > 0}
-        first = providers[0].health
-        state = "unknown" if all(p.health.state == "unknown" for p in providers) else "down"
-        if first.state == "slow":
-            state = "slow"
-        return {"name": providers[0].name, "state": state, "rtt_ms": None, "fallback": False}
-
-    def config_changed(self) -> bool:
-        path, seen = self.config_path, self._config_mtime
-        if path is None or seen is None:
-            return False
-        try:
-            return path.stat().st_mtime != seen
-        except OSError:
-            return False
-
-    def watch_config(self, path: Path | None) -> None:
-        """`reload` re-reads ``path``; `status` reports when it changes."""
-        self.config_path = path
-        try:
-            self._config_mtime = path.stat().st_mtime if path is not None else None
-        except OSError:
-            self._config_mtime = None
-
     def tick(self) -> None:
         """Every TICK_S: mic watchdog; config and server changes reach `subscribe`."""
         self.check_mic()
-        seen: dict[str, object] = {"server": self.server_status(), "config": self.config_changed()}
-        if seen != self._server_seen:
-            self._server_seen = seen
-            self.touch()
+        self.report.check()
 
     def reload(self) -> str:
         """Re-read the config: per-dictation tables now, the rest named for a restart."""
-        if self.config_path is None:
+        path = self.report.config_path
+        if path is None:
             return "error no config file to reload"
         try:
-            new = config.load(self.config_path)
+            new = config.load(path)
         except ConfigError as e:
             return f"error {e}"
         cfg = self.svc.cfg
@@ -528,36 +486,11 @@ class Controller:
         for f in dataclasses.fields(cfg.paste):
             if f.name not in PASTE_RESTART_KEYS:
                 setattr(cfg.paste, f.name, getattr(new.paste, f.name))
-        self.restart_needed = restart
-        self.watch_config(self.config_path)
-        self.touch()
+        self.report.restart_needed = restart
+        self.report.watch_config(path)
+        self.report.touch()
         log.info("config reloaded%s", f"; restart for {', '.join(restart)}" if restart else "")
         return f"ok reloaded; restart for {', '.join(restart)}" if restart else "ok reloaded"
-
-    def status_json(self) -> dict[str, object]:
-        """JSON v1 ``status`` fields (docs/protocol/ctl-v1.md). Never includes dictated text."""
-        with self._lock:
-            state = "recording" if self.current is not None else "idle"
-            phase = state if self.current is not None or self.finishing is None else "finishing"
-            busy = self.busy
-            last = self.last_result
-            paused = self.paused
-        return {
-            "state": state,
-            "phase": phase,
-            "finishing": busy,
-            "paused": paused,
-            "mic": {"status": self.mic_status},
-            "server": self.server_status(),
-            "config": {"changed": self.config_changed(), "restart_needed": self.restart_needed},
-            "last": None if last is None else _last_json(*last, self._retry_available(last[1])),
-            "profile_override": self.profile_override,
-        }
-
-    def _retry_available(self, res: Result) -> bool:
-        if self.svc.cfg.retry.keep <= 0 or res.status == "too_short":
-            return False
-        return (expand(self.svc.cfg.history.dir) / retry.RING / res.utterance_id).is_dir()
 
     def handle(self, command: str) -> str:
         verb, *args = command.split() or [""]
@@ -579,23 +512,6 @@ class Controller:
         }
         action = actions.get(verb)
         return action() if action else f"error unknown command {command!r}"
-
-
-def _last_json(at: float, res: Result, retry_available: bool) -> dict[str, object]:  # noqa: FBT001
-    return {
-        "at": round(at, 3),
-        "utterance_id": res.utterance_id,
-        "status": res.status,
-        "profile": res.profile,
-        "keyup_to_paste_ms": res.timings.get("keyup_to_paste_ms"),
-        "stop_reason": res.stop_reason or None,
-        "provider": res.provider or None,
-        "fallback": res.fallback,
-        "cleanup": res.cleanup.status if res.cleanup is not None else None,
-        "delivery": res.delivery,
-        "retry_available": retry_available,
-        "mic_interrupted": res.mic_interrupted,
-    }
 
 
 class StartupError(RuntimeError):
@@ -696,7 +612,7 @@ def run(
     svc.router.start_background()
 
     controller = Controller(svc, None)
-    controller.watch_config(config_path)
+    controller.report.watch_config(config_path)
     try:
         hotkey = _make_hotkey(svc, controller)
         mic = _make_mic(svc, controller)
@@ -711,7 +627,7 @@ def run(
         controller.indicator = ui
         svc.on_stage = ui.stage
     server = ctl.CtlServer(
-        ctl.socket_path(), controller.handle, controller.status_json, controller.wait_change
+        ctl.socket_path(), controller.handle, controller.report.json, controller.report.wait_change
     )
     controller.open_mic()
     server.start()

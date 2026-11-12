@@ -116,7 +116,7 @@ def v1_status(last: object, rtt: str = "float") -> dict[str, object]:
 def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunInjector]):
     """docs/protocol/ctl-v1.md: shapes are pinned; text and JSON share the socket."""
     c, _ = controller
-    server = ctl.CtlServer(sock_path, c.handle, c.status_json)
+    server = ctl.CtlServer(sock_path, c.handle, c.report.json)
     server.start()
     try:
         idle = _json(sock_path, {"version": 1, "command": "status"})
@@ -176,7 +176,7 @@ def test_subscribe_sends_the_status_now_and_on_every_change(
     sock_path: Path, controller: tuple[Controller, DryRunInjector]
 ):
     c, _ = controller
-    server = ctl.CtlServer(sock_path, c.handle, c.status_json, c.wait_change)
+    server = ctl.CtlServer(sock_path, c.handle, c.report.json, c.report.wait_change)
     server.start()
     try:
         with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as s:

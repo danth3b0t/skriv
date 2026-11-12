@@ -202,7 +202,7 @@ def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
     # a refused hotkey press must not leave the listener in hold/hands-free (Esc swallowed)
     assert hotkey_told == [True, False, False, False]
     assert c.handle("pause") == "ok paused"  # idempotent
-    assert c.status_json()["paused"] is True
+    assert c.report.json()["paused"] is True
     assert mic.calls == ["stop"]  # keep_open: the always-open stream is released
     assert c.handle("resume") == "ok resumed"
     assert c.handle("resume") == "ok resumed"
@@ -316,7 +316,7 @@ def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     assert c.handle("profile next") == "error usage: profile [auto | set NAME]"
     assert c.handle("start now") == "error start takes no arguments"
     assert c.handle("profile set prose") == "ok prose (next dictation)"
-    assert c.status_json()["profile_override"] == "prose"
+    assert c.report.json()["profile_override"] == "prose"
     assert ind.view is not None
     assert ind.view.label == "Profile: prose"
     c.handle("start")
@@ -327,7 +327,7 @@ def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     c.on_pcm(pcm(0.4))
     c.handle("stop")
     wait_idle(c)
-    assert c.status_json()["profile_override"] is None
+    assert c.report.json()["profile_override"] is None
     dictate(c)  # used up: kitty is a terminal again
     assert [terminal for _, terminal in injector.pasted] == [False, True]
 
@@ -376,7 +376,7 @@ def test_one_dictation_at_a_time_cancellable_until_it_is_pasted(
     c.handle("start")
     c.on_pcm(pcm(0.6))
     c.handle("stop")
-    assert c.status_json()["phase"] == "finishing"
+    assert c.report.json()["phase"] == "finishing"
     assert c.handle("start") == "error busy"  # nothing records; the listener is told so
     assert hotkey_told == [True, False, False]
     # the audio is kept for `hark retry` before it is transcribed
@@ -438,7 +438,7 @@ def test_a_mic_that_stops_delivering_is_reopened_and_the_dictation_flagged(
     assert len(injector.pasted) == 1  # what was heard is still pasted
     mic.delivering, mic.reopen_fails = False, True
     assert c.handle("start").startswith("error mic unavailable")
-    assert c.status_json()["mic"] == {"status": "lost"}
+    assert c.report.json()["mic"] == {"status": "lost"}
     assert c.status() == "ok idle finishing=0"
 
 
@@ -449,15 +449,15 @@ def test_reload_applies_per_dictation_settings_and_names_the_rest(
     path = tmp_path / "config.toml"
     base = f'[history]\ndir = "{tmp_path}"\n[audio]\nmin_ms = 0\n[feedback]\nstart_cue = "never"\n'
     path.write_text(base)
-    c.watch_config(path)
+    c.report.watch_config(path)
     assert c.handle("reload") == "ok reloaded"
     path.write_text(base.replace("min_ms = 0", "min_ms = 5") + '[[words]]\nword = "Hyprland"\n')
     os.utime(path, (time.time() + 5, time.time() + 5))  # mtime resolution
-    assert c.status_json()["config"] == {"changed": True, "restart_needed": []}
+    assert c.report.json()["config"] == {"changed": True, "restart_needed": []}
     assert c.handle("reload") == "ok reloaded; restart for audio"
     assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # used by the next dictation
     assert c.svc.cfg.audio.min_ms == 0  # needs a restart
-    assert c.status_json()["config"] == {"changed": False, "restart_needed": ["audio"]}
+    assert c.report.json()["config"] == {"changed": False, "restart_needed": ["audio"]}
     path.write_text("[[words]]\n")
     assert c.handle("reload").startswith("error words[0].word is required")
     assert [w.word for w in c.svc.cfg.words] == ["Hyprland"]  # the running config stays
