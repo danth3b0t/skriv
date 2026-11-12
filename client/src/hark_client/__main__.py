@@ -370,7 +370,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 injector=make_injector(cfg.paste, dry_run=args.dry_run),
                 feedback=Feedback(FeedbackConfig(sounds=False, notify=False)),
                 out=print,
-                learned=learned,
+                learned=learned if cfg.learn.enabled else None,
             )  # fmt: skip
             try:
                 return cmd_once(args, svc) if args.command == "once" else cmd_retry(args, svc)
@@ -393,7 +393,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 )
         svc = Services(
             cfg, router, injector=make_injector(cfg.paste), feedback=feedback,
-            field_reader=reader, learned=learned, learner=learner,
+            field_reader=reader, learned=learned if cfg.learn.enabled else None, learner=learner,
         )  # fmt: skip
         try:
             return daemon.run(svc, _menu_bar(args) if args.command == "app" else None)

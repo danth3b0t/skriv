@@ -194,19 +194,24 @@ def test_unreachable_server_fails_without_pasting(
     assert "[dry-run]" not in capsys.readouterr().out
 
 
-def test_promoted_corrections_bias_the_recognizer(
+def test_promoted_corrections_bias_the_recognizer_only_while_learning_is_on(
     tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]  # no context terms at all
     store = LearnedStore(tmp_path / "data" / "learned.json")
+    learn_on = "[learn]\nenabled = true\n"
+
+    def bias_sent(config: str) -> tuple[object, object]:
+        (tmp_path / "data" / "history.jsonl").unlink(missing_ok=True)
+        _, rec = run_once(tmp_path, hark_server.target, config=config)
+        return rec["raw_text"], rec["bias_terms_sent"]
+
     store.record([("cube control", "kubectl")])
-    _, rec = run_once(tmp_path, hark_server.target)
-    assert rec["bias_terms_sent"] == 0  # seen once: not used yet
+    assert bias_sent(learn_on)[1] == 0  # seen once: not used yet
     store.record([("cube control", "kubectl")])
-    (tmp_path / "data" / "history.jsonl").unlink()
-    _, rec = run_once(tmp_path, hark_server.target)
+    assert bias_sent("")[1] == 0  # promoted, but learning is off: not used either
     # The mock server only rewrites "cube control" when the bias term reached it.
-    assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
+    assert bias_sent(learn_on) == ("please run kubectl get", 1)
 
 
 def test_dictionary_words_bias_the_recognizer_without_any_context(

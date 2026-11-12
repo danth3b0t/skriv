@@ -80,7 +80,8 @@ class ProviderConfig:
 class WordConfig:
     """One `[[words]]` entry: a spelling the recognizer gets wrong without help (`Hyprland`),
     with how it is said (`hyper land`). Every entry joins every dictation's shortlist, ahead of
-    the context terms, so keep the list short."""
+    the context terms; at most a third of `context.max_terms` entries, so live context keeps
+    room."""
 
     word: str = ""
     # extra spoken forms, besides the derived ones
@@ -399,7 +400,13 @@ def _validate_providers(providers: list[ProviderConfig]) -> None:
         labels.add(p.label)
 
 
-def _validate_words(words: list[WordConfig]) -> None:
+def _validate_words(words: list[WordConfig], max_terms: int) -> None:
+    limit = max(1, max_terms // 3)
+    if len(words) > limit:
+        raise ConfigError(
+            f"words: {len(words)} entries, at most {limit} (a third of context.max_terms, so the"
+            " repository and agent context keep room); keep only what context cannot supply"
+        )
     seen: set[str] = set()
     for i, w in enumerate(words):
         if not w.word.strip():
@@ -439,7 +446,7 @@ def validate(cfg: Config) -> None:
             raise ConfigError(f"{key} must be >= 0")
     _validate_tls("server.", cfg.server.tls_ca, cfg.server.tls_cert, cfg.server.tls_key)
     _validate_providers(cfg.providers)
-    _validate_words(cfg.words)
+    _validate_words(cfg.words, cfg.context.max_terms)
     if not 0 <= cfg.gate.max_distance <= 1:
         raise ConfigError("gate.max_distance must be in [0, 1]")
     if cfg.gate.confident_anchor < 0:

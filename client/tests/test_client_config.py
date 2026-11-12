@@ -90,6 +90,11 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[[words]]\nword = 'Hyprland'\nspoken = [' ']\n", "empty spoken form"),
         ("[[words]]\nword = 'kubectl'\n[[words]]\nword = 'kubectl'\n", "'kubectl' is listed twice"),
         ("[[words]]\nword = 'Hyprland'\nsaid = ['x']\n", "0].said'"),
+        (
+            "[context]\nmax_terms = 6\n"
+            + "[[words]]\nword = 'a1'\n[[words]]\nword = 'b2'\n[[words]]\nword = 'c3'\n",
+            "3 entries, at most 2",
+        ),
         ("[server\n", "c.toml"),
     ],
 )

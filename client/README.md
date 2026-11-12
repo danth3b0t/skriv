@@ -169,10 +169,11 @@ join_window_ms = 60000        # shadow buffer (no readable caret) forgets after 
 verify = true                 # read the field back after pasting: landed | missing | not_text | unknown (recorded)
 
 [[words]]                     # spellings the recognizer needs help with; in every shortlist, first
+                              # (at most context.max_terms / 3 entries)
 word = "Hyprland"
 spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
 
-[learn]                       # correction learning, see below; off unless enabled
+[learn]                       # correction learning, see below; off: nothing learned or used
 enabled = false
 window_ms = 30000             # watch the pasted text this long after a paste (max 30 s)
 poll_ms = 500
@@ -407,7 +408,8 @@ sent). If you fix a misheard word in it (`cube control` → `kubectl`, `Kerry` �
 the pair is counted in `<history.dir>/learned.json` (0600). Field contents are never stored, only the pairs. Style
 rewrites, negation changes, corrections into ordinary English words and edits touching more than 3 places or half
 the words are ignored. A pair seen `promote_after` (≥ 2) times becomes a shortlist term with the misheard words as
-its spoken alias, so the recognizer is biased towards it and canonicalization rewrites it.
+its spoken alias, so the recognizer is biased towards it and canonicalization rewrites it. Turning learning off
+again stops using the learned pairs too (they stay in `learned.json`).
 
 ```sh
 hark learned                  # list (* = in use)
