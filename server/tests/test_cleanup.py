@@ -66,6 +66,7 @@ class CleanupFields(TypedDict, total=False):
     privacy: pb.PrivacyFlags
     context: pb.CleanupContext
     language: str
+    known_terms: list[str]
 
 
 def span(text: str, part: str) -> tuple[int, int]:
@@ -528,6 +529,70 @@ async def test_s1_rewrite_guard(
     assert resp is not None
     assert apply_edits(text, list(resp.edits)) == result
     assert [r.reason for r in resp.rejections] == reasons
+
+
+@pytest.mark.parametrize(
+    ("text", "protected", "terms", "rewrite", "result"),
+    [
+        (  # real: a bare "no" (with a filler) is a cue; the retracted "C" goes with it
+            "I want it written in C, uh no, in Rust.", ["C", "no"], [],
+            "I want it written in Rust.", "I want it written in Rust.",
+        ),
+        (  # real: the correction restarts the sentence the cue follows
+            "Um my name is David. Uh no, uh my name is Dan.", ["no"], [],
+            "My name is Dan.", "My name is Dan.",
+        ),
+        ("Send it to Bob, sorry, to Alice.", [], [], "Send it to Alice.", "Send it to Alice."),
+        ("Give me two tickets, make that three tickets.", [], [], "Give me three tickets.",
+         "Give me three tickets."),
+        # a "no" that retracts nothing, answers a question or is not set off is a negation
+        ("No, I don't want C.", ["No", "don't"], [], "I don't want C.", "No, I don't want C."),
+        ("Is it done? No, it is not.", ["No", "not"], [], "It is not.",
+         "Is it done? No, it is not."),
+        ("Ship it, no tests needed.", ["no"], [], "Ship tests needed.", "Ship it, no tests needed."),
+        ("Use C not Rust.", ["not"], [], "Use Rust.", "Use C not Rust."),
+        ("Do not delete it.", ["not"], [], "Do delete it.", "Do not delete it."),
+        (  # bare cue without a correction of the same kind
+            "It is, actually, fine.", [], [], "Fine.", "It is, actually, fine.",
+        ),
+        (  # real: a merge into a known term may change protected words
+            "It works like Super Whisper.", ["Super", "Whisper"], ["Superwhisper"],
+            "It works like Superwhisper.", "It works like Superwhisper.",
+        ),
+        (  # ... a protected span's text is a known term too
+            "Try open pencil. OpenPencil is fast.", ["OpenPencil"], [],
+            "Try OpenPencil. OpenPencil is fast.", "Try OpenPencil. OpenPencil is fast.",
+        ),
+        # not a known term: protected or not, the merge stays out
+        ("It works like Super Whisper.", ["Super", "Whisper"], [], "It works like Superwhisper.",
+         "It works like Super Whisper."),
+        ("It works like Super Whisper.", [], ["Super Whisper"], "It works like Superwhisper.",
+         "It works like Super Whisper."),
+        (  # a known term, but the merge also changes a letter
+            "It works like Super Whisperer.", [], ["Superwhisper"], "It works like Superwhisper.",
+            "It works like Super Whisperer.",
+        ),
+    ],
+)  # fmt: skip
+async def test_s1_self_corrections_and_term_merges(
+    s1_client: Client,
+    fake_llm: FakeLLM,
+    text: str,
+    protected: list[str],
+    terms: list[str],
+    rewrite: str,
+    result: str,
+):
+    fake_llm.respond_text(rewrite)
+    spans = [
+        pb.ProtectedSpan(byte_start=s, byte_end=e) for s, e in (span(text, p) for p in protected)
+    ]
+    resp, code, _ = await call(
+        s1_client, text=text, profile_id="terminal", protected_spans=spans, known_terms=terms
+    )
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    assert apply_edits(text, list(resp.edits)) == result
 
 
 REAL = {

@@ -25,7 +25,7 @@ from hark_client.asr import rpc_error_text
 from hark_client.context import TermKind
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Sequence
+    from collections.abc import Callable, Collection, Sequence
 
     from hark_client.context import Term
 
@@ -43,8 +43,12 @@ FILLER_PHRASES = {("you", "know"), ("kind", "of"), ("sort", "of")}
 CORRECTION_CUES = (
     ("no", "wait"), ("wait", "no"), ("no", "sorry"), ("sorry", "no"), ("i", "mean"),
     ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),
+    ("make", "that"),
 )  # fmt: skip
-MAX_RETRACTED_WORDS = 8
+BARE_CUES = (("no",), ("sorry",), ("actually",))  # stricter: see self_correction_cut
+MAX_RETRACTED_WORDS = 6  # not counting fillers
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+_TERM_EDGE = "\"'()[]{}.,;:!?\u2019-"  # may change around a merged term
 MAX_REMOVED_SHARE = 0.5  # of the words, by filler removal
 GROUP_GAP_WORDS = 1  # edits at most this many words apart are kept or dropped together
 PUNCTUATION = set(".,;:?!'\u2019-")  # marks a punctuation edit may add or remove
@@ -127,30 +131,92 @@ def _words(s: str) -> list[str]:
     return _WORDS.findall(s.lower())
 
 
+def _set_off(gap: str) -> bool:
+    """The text between two words holds punctuation, not just spaces and fillers."""
+    return bool(_WORDS.sub("", gap).strip())
+
+
 def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
-    """find = kept words + 1..MAX_RETRACTED_WORDS retracted words + a cue set off
-    by punctuation + correction; replace = kept words + correction. Returns the
-    character range of `find` that is dropped (retracted words + cue)."""
+    """find = kept words + retracted words + cue (fillers around it allowed) +
+    correction; replace = kept words + correction. Returns the character range
+    of `find` that is dropped (retracted words + cue + fillers). Same rules as
+    the server: 1..MAX_RETRACTED_WORDS retracted words (fillers not counted), a
+    correction right after the cue; a phrase cue set off by punctuation on one
+    side, a bare cue ("no", "sorry", "actually") on both and followed by a
+    correction that repeats the first retracted word or replaces a single word
+    after a kept one; no sentence end inside the retracted words, no "?"/"!"
+    next to the cue, a "." next to it only when the correction repeats the
+    first retracted word."""
     tokens = [(m.group().lower(), m.start(), m.end()) for m in _WORDS.finditer(find)]
     before, after = [t[0] for t in tokens], _words(replace)
     for i in range(1, len(before)):
-        for cue in CORRECTION_CUES:
+        for cue in (*CORRECTION_CUES, *BARE_CUES):
             n = len(cue)
-            tail = before[i + n :]
+            if tuple(before[i : i + n]) != cue:
+                continue
+            c = i + n  # the correction's first word
+            while c < len(before) and before[c] in FILLERS:
+                c += 1
+            tail = before[c:]
             j = len(after) - len(tail)  # kept words before the retracted ones
-            if (
-                tuple(before[i : i + n]) == cue
-                and tail
+            retracted = [k for k in range(max(j, 0), i) if before[k] not in FILLERS]
+            if not (
+                tail
                 and 0 <= j < i
-                and i - j <= MAX_RETRACTED_WORDS
                 and after == before[:j] + tail
-                and not (
-                    find[tokens[i - 1][2] : tokens[i][1]].isspace()
-                    and find[tokens[i + n - 1][2] : tokens[i + n][1]].isspace()
-                )
+                and 1 <= len(retracted) <= MAX_RETRACTED_WORDS
             ):
-                return tokens[j][1], tokens[i + n][1]
+                continue
+            first, last = tokens[retracted[0]], tokens[retracted[-1]]
+            gaps = find[last[2] : tokens[i][1]], find[tokens[i + n - 1][2] : tokens[c][1]]
+            restart = before[c] == first[0]
+            if (
+                _SENTENCE_END.search(find, first[1], last[2])
+                or any("?" in g or "!" in g for g in gaps)
+                or (any("." in g for g in gaps) and not restart)
+            ):
+                continue
+            if n > 1:
+                ok = _set_off(gaps[0]) or _set_off(gaps[1])
+            else:
+                slot = (
+                    len(retracted) == 1
+                    and j > 0
+                    and not _SENTENCE_END.search(find, tokens[j - 1][2], first[1])
+                )
+                ok = _set_off(gaps[0]) and _set_off(gaps[1]) and (restart or slot)
+            if ok:
+                return tokens[j][1], tokens[c][1]
     return None
+
+
+def respaced_term(find: str, replace: str, terms: Collection[str]) -> tuple[int, int] | None:
+    """`find` -> `replace` only merges or splits words and changes their case,
+    into a known term ("Super Whisper." -> "Superwhisper."); edge punctuation
+    may change like a punctuation edit. Returns the character range of the
+    changed words in `find`, or None. Mirrors the server."""
+    a, b = list(_TOKEN.finditer(find)), list(_TOKEN.finditer(replace))
+    p = 0
+    while p < min(len(a), len(b)) and a[p].group() == b[p].group():
+        p += 1
+    s = 0
+    while s < min(len(a), len(b)) - p and a[-1 - s].group() == b[-1 - s].group():
+        s += 1
+    old, new = a[p : len(a) - s], b[p : len(b) - s]
+    if not old or not new or len(old) == len(new):
+        return None  # not a merge or split
+    f, r = find[old[0].start() : old[-1].end()], replace[new[0].start() : new[-1].end()]
+    f_core, r_core = f.strip(_TERM_EDGE), r.strip(_TERM_EDGE)
+    f_lead, r_lead = len(f) - len(f.lstrip(_TERM_EDGE)), len(r) - len(r.lstrip(_TERM_EDGE))
+    f_trail, r_trail = f[f_lead + len(f_core) :], r[r_lead + len(r_core) :]
+    if (
+        not f_core
+        or r_core not in terms
+        or "".join(f_core.split()).casefold() != "".join(r_core.split()).casefold()
+        or not _punctuation_ok(f[:f_lead] + "x" + f_trail, r[:r_lead] + "x" + r_trail)
+    ):
+        return None
+    return old[0].start() + f_lead, old[0].start() + f_lead + len(f_core)
 
 
 def _only_fillers_removed(before: list[str], after: list[str]) -> bool:
@@ -314,18 +380,22 @@ def _span_kept(find: str, replace: str, s: int, e: int, prefix: str) -> bool:
     return before and after
 
 
-def _touches_protected(e: pb.Edit, spans: Sequence[Span], raw: bytes) -> bool:
+def _touches_protected(
+    e: pb.Edit, spans: Sequence[Span], raw: bytes, terms: Collection[str]
+) -> bool:
     """Protected spans inside the edit must survive it (_span_kept). A
     self-correction may instead drop them with the words it retracts (the "no"
-    of "no wait", "port 8080, sorry, I mean ..."); the others must reappear in
-    `replace`."""
+    of "in C, no, in Rust", "port 8080, sorry, I mean ..."); the others must
+    reappear in `replace`. Spans inside words merged into a known term may
+    change too ("Super Whisper" -> "Superwhisper")."""
     cut = self_correction_cut(e.find, e.replace) if e.kind == K.EDIT_KIND_SELF_CORRECTION else None
+    free = cut or respaced_term(e.find, e.replace, terms)
     lo, hi = (
         (
-            e.byte_start + len(e.find[: cut[0]].encode()),
-            e.byte_start + len(e.find[: cut[1]].encode()),
+            e.byte_start + len(e.find[: free[0]].encode()),
+            e.byte_start + len(e.find[: free[1]].encode()),
         )
-        if cut is not None
+        if free
         else (-1, -1)
     )
     for sp in spans:
@@ -354,7 +424,9 @@ def _count(text: str, find: str) -> int:
     return n
 
 
-def _edit_error(text: str, raw: bytes, e: pb.Edit, spans: Sequence[Span]) -> str:
+def _edit_error(
+    text: str, raw: bytes, e: pb.Edit, spans: Sequence[Span], terms: Collection[str]
+) -> str:
     """Why a single in-range edit fails, or ""."""
     try:
         quoted = raw[e.byte_start : e.byte_end].decode()
@@ -362,9 +434,10 @@ def _edit_error(text: str, raw: bytes, e: pb.Edit, spans: Sequence[Span]) -> str
         return "not on a character boundary"
     if quoted != e.find or _count(text, e.find) != 1:
         return "does not quote a unique substring"
-    if _touches_protected(e, spans, raw):
+    if _touches_protected(e, spans, raw, terms):
         return "touches a protected span"
-    if e.find == e.replace or not _invariant_ok(e.kind, e.find, e.replace):
+    respaced = e.kind == K.EDIT_KIND_SPACING and respaced_term(e.find, e.replace, terms)
+    if e.find == e.replace or not (_invariant_ok(e.kind, e.find, e.replace) or respaced):
         return f"breaks its {K.Name(e.kind)} invariant"
     return ""
 
@@ -431,8 +504,14 @@ class Validated:
     dropped: list[tuple[pb.Edit, str]]  # (edit, reason)
 
 
-def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -> Validated:
+def validate_edits(
+    text: str, edits: Sequence[pb.Edit], spans: Sequence[Span], terms: Collection[str] = ()
+) -> Validated:
     """Apply the edits that pass every check, group by group.
+
+    `terms`: known terms (vocabulary canonicals) a spacing edit may merge or
+    split words into; the text of protected spans other than numbers and
+    negations counts too.
 
     An edit that fails a per-edit check (quote, protected span, kind invariant)
     takes the edits of its group with it (_edit_groups): "step, uh," ->
@@ -441,6 +520,10 @@ def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -
     on the result: a failure pinned on some edits drops their groups and the
     rules run again; any other failure drops every edit."""
     raw = text.encode()
+    known = {
+        *terms,
+        *(raw[s.start : s.end].decode() for s in spans if s.kind not in _NOT_TERMS),
+    }
     accepted: list[pb.Edit] = []
     dropped: list[tuple[pb.Edit, str]] = []
     failed: list[pb.Edit] = []  # dropped with their group
@@ -450,7 +533,7 @@ def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -
             dropped.append((e, "out of range"))
         elif e.byte_start < last:
             dropped.append((e, "overlaps an earlier edit"))
-        elif error := _edit_error(text, raw, e, spans):
+        elif error := _edit_error(text, raw, e, spans, known):
             dropped.append((e, error))
             failed.append(e)
         else:
@@ -473,6 +556,7 @@ def validate_edits(text: str, edits: Sequence[pb.Edit], spans: Sequence[Span]) -
 
 
 _MEANING = (K.EDIT_KIND_SELF_CORRECTION, K.EDIT_KIND_NUMBER_FORMAT)
+_NOT_TERMS = (S.PROTECTED_SPAN_KIND_NUMBER, S.PROTECTED_SPAN_KIND_NEGATION)
 
 
 def _apply(text: str, edits: Sequence[pb.Edit]) -> str:
@@ -550,6 +634,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     if (language and not language.lower().startswith("en")) or likely_non_english(text):
         return done("skipped", "non_english")
     spans = protected_spans(text, terms)
+    known_terms = [t.canonical for t in terms]
     request = pb.CleanupRequest(
         request_id=utterance_id + "/cleanup",
         utterance_id=utterance_id,
@@ -561,6 +646,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
         language=language,
         context=pb.CleanupContext(app_category=app_category),
         budget_ms=max(1, deadline_ms * 4 // 5),  # leave room for the round trip
+        known_terms=known_terms,
     )
     try:
         resp = pb_grpc.TextCleanupStub(channel).Cleanup(request, timeout=deadline_ms / 1000)
@@ -578,7 +664,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     ]  # fmt: skip
     if not resp.edits and not dropped:
         return done("no_edits")
-    checked = validate_edits(text, resp.edits, spans)
+    checked = validate_edits(text, resp.edits, spans, known_terms)
     dropped += [
         {"find": e.find, "replace": e.replace, "by": "client", "reason": why}
         for e, why in checked.dropped

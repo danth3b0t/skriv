@@ -2823,6 +2823,7 @@ class CleanupRequest(_message.Message):
     MAX_EDITS_FIELD_NUMBER: _builtins.int
     BUDGET_MS_FIELD_NUMBER: _builtins.int
     PRIVACY_FIELD_NUMBER: _builtins.int
+    KNOWN_TERMS_FIELD_NUMBER: _builtins.int
     request_id: _builtins.str
     utterance_id: _builtins.str
     text: _builtins.str
@@ -2841,6 +2842,14 @@ class CleanupRequest(_message.Message):
     def context(self) -> Global___CleanupContext: ...
     @_builtins.property
     def privacy(self) -> Global___PrivacyFlags: ...
+    @_builtins.property
+    def known_terms(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
+        """Exact written forms of the client's vocabulary/bias terms. An edit may
+        merge or split words, changing only spacing and case, into one of these
+        (or into the text of a non-number, non-negation protected span):
+        "Super Whisper" -> "Superwhisper". Other merges stay rejected.
+        """
+
     def __init__(
         self,
         *,
@@ -2854,10 +2863,11 @@ class CleanupRequest(_message.Message):
         max_edits: _builtins.int = ...,
         budget_ms: _builtins.int = ...,
         privacy: Global___PrivacyFlags | None = ...,
+        known_terms: _abc.Iterable[_builtins.str] | None = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["context", b"context", "privacy", b"privacy"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "language", b"language", "max_edits", b"max_edits", "privacy", b"privacy", "profile_id", b"profile_id", "protected_spans", b"protected_spans", "request_id", b"request_id", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["budget_ms", b"budget_ms", "context", b"context", "known_terms", b"known_terms", "language", b"language", "max_edits", b"max_edits", "privacy", b"privacy", "profile_id", b"profile_id", "protected_spans", b"protected_spans", "request_id", b"request_id", "text", b"text", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 

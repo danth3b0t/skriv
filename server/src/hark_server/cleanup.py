@@ -34,7 +34,7 @@ from hark.v1 import hark_pb2_grpc as pb_grpc
 from .errors import E, HarkError, check_privacy, protocol_violation
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Collection
 
     from .config import CleanupConfig
 
@@ -67,11 +67,17 @@ _WORDS = re.compile(r"[\w']+")
 _UNAVAILABLE = grpc.StatusCode.UNAVAILABLE
 
 # Self-correction cues: `find` = retracted words + cue + correction, `replace` = correction.
+# See self_correction_cut for when a cue word is a cue and not a negation.
 CORRECTION_CUES = (
     ("no", "wait"), ("wait", "no"), ("no", "sorry"), ("sorry", "no"), ("i", "mean"),
     ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),
+    ("make", "that"),
 )  # fmt: skip
-MAX_RETRACTED_WORDS = 8
+BARE_CUES = (("no",), ("sorry",), ("actually",))  # stricter: see self_correction_cut
+MAX_RETRACTED_WORDS = 6  # not counting fillers
+_SENTENCE_END = re.compile(r"[.!?](?=\s|$)")
+# Punctuation around a merged/split term that may change with it ("open pencil" -> "OpenPencil.").
+_TERM_EDGE = "\"'()[]{}.,;:!?\u2019-"
 # At most this share of the words may be removed (fillers + self-corrections).
 MAX_REMOVED_SHARE = 0.5
 # Edits at most this many words apart form a group that is accepted or rejected
@@ -340,33 +346,106 @@ def _words(s: str) -> list[str]:
     return _WORDS.findall(s)
 
 
+def _set_off(gap: str) -> bool:
+    """The text between two words holds punctuation, not just spaces and fillers."""
+    return bool(_WORDS.sub("", gap).strip())
+
+
 def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
-    """find = kept words + 1..MAX_RETRACTED_WORDS retracted words + cue +
-    correction; replace = kept words + correction (case and punctuation may
-    differ). The cue must be set off by punctuation ("Tuesday, no wait,
-    Wednesday"), so "there is no wait time" is not a cue.
+    """find = kept words + retracted words + cue + correction; replace = kept
+    words + correction (case and punctuation may differ). Fillers may surround
+    the cue ("in C, uh no, in Rust"). A cue word ("no") is then not a negation:
+    the speaker retracted the words before it, protected ones included.
+
+    - Retracted: 1..MAX_RETRACTED_WORDS words, fillers not counted, so a cue
+      that starts the text ("No, I don't want C.") retracts nothing.
+    - Correction: at least one word right after the cue (and its fillers).
+    - Cue: a phrase cue ("no wait", "I mean", "scratch that", ...) is set off
+      by punctuation on at least one side, so "there is no wait time" is not
+      one. A bare cue ("no", "sorry", "actually") is set off on both sides, and
+      the correction must be of the same kind as the retracted words: it
+      repeats their first word ("in C, no, in Rust") or replaces a single word
+      after a kept word of the same sentence ("on Tuesday, no, Wednesday").
+    - Sentences: no sentence ends inside the retracted words; a "?" or "!"
+      next to the cue ends the match ("Is it on? No, ..." answers); a "." next
+      to it is allowed only when the correction repeats the first retracted
+      word ("My name is David. No, my name is Dan.").
+
     Returns the character range of `find` that is dropped (retracted words +
-    cue), or None if `find` -> `replace` is not such a correction."""
+    cue + fillers), or None if `find` -> `replace` is not such a correction."""
     tokens = [(m.group().lower(), m.start(), m.end()) for m in _WORDS.finditer(find)]
     before, after = [t[0] for t in tokens], _words(replace.lower())
     for i in range(1, len(before)):
-        for cue in CORRECTION_CUES:
+        for cue in (*CORRECTION_CUES, *BARE_CUES):
             n = len(cue)
-            tail = before[i + n :]
+            if tuple(before[i : i + n]) != cue:
+                continue
+            c = i + n  # the correction's first word
+            while c < len(before) and before[c] in FILLERS:
+                c += 1
+            tail = before[c:]
             j = len(after) - len(tail)  # kept words before the retracted ones
-            if (
-                tuple(before[i : i + n]) == cue
-                and tail
+            retracted = [k for k in range(max(j, 0), i) if before[k] not in FILLERS]
+            if not (
+                tail
                 and 0 <= j < i
-                and i - j <= MAX_RETRACTED_WORDS
                 and after == before[:j] + tail
-                and not (
-                    find[tokens[i - 1][2] : tokens[i][1]].isspace()
-                    and find[tokens[i + n - 1][2] : tokens[i + n][1]].isspace()
-                )
+                and 1 <= len(retracted) <= MAX_RETRACTED_WORDS
             ):
-                return tokens[j][1], tokens[i + n][1]
+                continue
+            first, last = tokens[retracted[0]], tokens[retracted[-1]]
+            gaps = find[last[2] : tokens[i][1]], find[tokens[i + n - 1][2] : tokens[c][1]]
+            restart = before[c] == first[0]
+            if (
+                _SENTENCE_END.search(find, first[1], last[2])
+                or any("?" in g or "!" in g for g in gaps)
+                or (any("." in g for g in gaps) and not restart)
+            ):
+                continue
+            if n > 1:
+                ok = _set_off(gaps[0]) or _set_off(gaps[1])
+            else:
+                slot = (
+                    len(retracted) == 1
+                    and j > 0
+                    and not _SENTENCE_END.search(find, tokens[j - 1][2], first[1])
+                )
+                ok = _set_off(gaps[0]) and _set_off(gaps[1]) and (restart or slot)
+            if ok:
+                return tokens[j][1], tokens[c][1]
     return None
+
+
+def respaced_term(find: str, replace: str, terms: Collection[str]) -> tuple[int, int] | None:
+    """`find` -> `replace` only merges or splits words and changes their case,
+    into a known term: "Super Whisper." -> "Superwhisper." when "Superwhisper"
+    is in `terms`. The changed whitespace tokens, without the punctuation at
+    their edges, must become exactly a term and keep their letters (ignoring
+    case and spaces); the edge punctuation may change like a punctuation edit
+    ("open pencil" -> "OpenPencil."). Returns the character range of the
+    changed words in `find` (protected spans inside it may change), or None."""
+    a, b = list(_TOKEN.finditer(find)), list(_TOKEN.finditer(replace))
+    p = 0
+    while p < min(len(a), len(b)) and a[p].group() == b[p].group():
+        p += 1
+    s = 0
+    while s < min(len(a), len(b)) - p and a[-1 - s].group() == b[-1 - s].group():
+        s += 1
+    old, new = a[p : len(a) - s], b[p : len(b) - s]
+    if not old or not new or len(old) == len(new):
+        return None  # not a merge or split
+    f, r = find[old[0].start() : old[-1].end()], replace[new[0].start() : new[-1].end()]
+    f_core, r_core = f.strip(_TERM_EDGE), r.strip(_TERM_EDGE)
+    f_lead, r_lead = len(f) - len(f.lstrip(_TERM_EDGE)), len(r) - len(r.lstrip(_TERM_EDGE))
+    f_trail, r_trail = f[f_lead + len(f_core) :], r[r_lead + len(r_core) :]
+    if (
+        not f_core
+        or r_core not in terms
+        or "".join(f_core.split()).casefold() != "".join(r_core.split()).casefold()
+        or not _punctuation_ok(f[:f_lead] + "x" + f_trail, r[:r_lead] + "x" + r_trail)
+    ):
+        return None
+    return old[0].start() + f_lead, old[0].start() + f_lead + len(f_core)
 
 
 def _only_fillers_removed(before: list[str], after: list[str]) -> bool:
@@ -666,6 +745,7 @@ class _Request(NamedTuple):
     protected: list[tuple[int, int]]  # byte offsets
     allowed_kinds: list[pb.EditKind.ValueType]
     single_line: bool
+    terms: Collection[str]  # known terms an edit may merge or split words into
 
     def edit_protected(
         self, start: int, find: str, replace: str, kind: pb.EditKind.ValueType
@@ -673,12 +753,15 @@ class _Request(NamedTuple):
         """Whether the edit at character offset `start` changes protected text.
         Protected spans inside the edit must survive it (see _span_kept). A
         self-correction may instead drop them with the words it retracts
-        ("port 8080, sorry, I mean port 8081"; the "no" of "no wait"); the
-        others must reappear in `replace`."""
+        ("port 8080, sorry, I mean port 8081"; the "no" of "in C, no, in
+        Rust"); the others must reappear in `replace`. Spans inside words
+        merged into a known term may change too ("Super Whisper" ->
+        "Superwhisper")."""
         cut = self_correction_cut(find, replace) if kind == K.EDIT_KIND_SELF_CORRECTION else None
+        free = cut or respaced_term(find, replace, self.terms)
         raw = self.text.encode()
         b = [len(self.text[: start + i].encode()) for i in (0, len(find))]
-        drop = [len(self.text[: start + i].encode()) for i in cut] if cut is not None else [-1, -1]
+        drop = [len(self.text[: start + i].encode()) for i in free] if free else [-1, -1]
         for ps, pe in self.protected:
             if not (ps < b[1] and b[0] < pe) or (drop[0] <= ps and pe <= drop[1]):
                 continue
@@ -701,7 +784,7 @@ class _Request(NamedTuple):
         invariants, not the labels, keep an edit safe."""
         if self.single_line and replace.count("\n") > find.count("\n"):
             return None
-        return next(
+        kind = next(
             (
                 k
                 for k in (proposed_kind, *self.allowed_kinds)
@@ -709,6 +792,13 @@ class _Request(NamedTuple):
             ),
             None,
         )
+        if (
+            kind is None
+            and K.EDIT_KIND_SPACING in self.allowed_kinds
+            and respaced_term(find, replace, self.terms)
+        ):
+            return K.EDIT_KIND_SPACING  # a merge/split into a known term
+        return kind
 
     def edit(
         self, start: int, find: str, replace: str, kind: pb.EditKind.ValueType, why: str
@@ -753,6 +843,7 @@ def resolve_edits(  # noqa: PLR0913 - keyword-only flags
     *,
     single_line: bool = False,
     rewrite: bool = False,
+    terms: Collection[str] = (),
 ) -> tuple[list[pb.Edit], list[pb.EditRejection]]:
     """Resolve quoted `find`s to byte ranges and validate (proposal-a §8.2).
 
@@ -768,8 +859,9 @@ def resolve_edits(  # noqa: PLR0913 - keyword-only flags
     drops their groups and the rules run again, any other failure drops all.
     `single_line`: edits may not add line breaks (terminal, chat).
     `rewrite`: the edits come from an aligned rewrite (S1), which changes words
-    no check can verify; rejected edits do not mark the model as misbehaving."""
-    req = _Request(text, protected, allowed_kinds, single_line)
+    no check can verify; rejected edits do not mark the model as misbehaving.
+    `terms`: known terms an edit may merge or split words into (respaced_term)."""
+    req = _Request(text, protected, allowed_kinds, single_line, frozenset(terms))
     rejections: list[pb.EditRejection] = []
     candidates: list[pb.Edit] = []
     failed: list[tuple[int, int]] = []  # byte ranges of edits rejected in place
@@ -842,7 +934,9 @@ _MAX_CORRECTION_CONTEXT = 10  # tokens a self-correction region may grow by
 
 def _has_cue(words: list[str]) -> bool:
     return any(
-        tuple(words[i : i + len(cue)]) == cue for cue in CORRECTION_CUES for i in range(len(words))
+        tuple(words[i : i + len(cue)]) == cue
+        for cue in (*CORRECTION_CUES, *BARE_CUES)
+        for i in range(len(words))
     )
 
 
@@ -1022,6 +1116,10 @@ def prompt_prefix(spec: ProfileSpec) -> list[dict[str, str]]:
     return messages
 
 
+# Protected spans whose text is not a term an edit may merge words into.
+_NOT_TERMS = (pb.PROTECTED_SPAN_KIND_NUMBER, pb.PROTECTED_SPAN_KIND_NEGATION)
+
+
 class CleanupServicer(pb_grpc.TextCleanupServicer):
     def __init__(
         self,
@@ -1068,6 +1166,7 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                     f"text is {len(raw)} bytes (max {profile.max_input_bytes})"
                 )
             protected: list[tuple[int, int]] = []
+            terms = set(request.known_terms)
             for s in request.protected_spans:
                 if not (0 <= s.byte_start < s.byte_end <= len(raw)) or any(
                     b < len(raw) and raw[b] & 0xC0 == 0x80 for b in (s.byte_start, s.byte_end)
@@ -1076,6 +1175,8 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                         "protected span out of range or not on a character boundary"
                     )
                 protected.append((s.byte_start, s.byte_end))
+                if s.kind not in _NOT_TERMS:
+                    terms.add(raw[s.byte_start : s.byte_end].decode())
             max_edits = min(request.max_edits or self.cfg.max_edits, self.cfg.max_edits)
             budget_s = (request.budget_ms or self.cfg.default_budget_ms) / 1000
             # Typed `float` in grpc-stubs, but grpc.aio returns None without a deadline.
@@ -1102,7 +1203,7 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
             s1 = self.cfg.engine == "s1"
             edits, rejections = resolve_edits(
                 request.text, proposed, protected, list(profile.allowed_kinds),
-                single_line=self.specs[profile.id].single_line, rewrite=s1,
+                single_line=self.specs[profile.id].single_line, rewrite=s1, terms=terms,
             )  # fmt: skip
             if s1 and len(edits) > max_edits:
                 # The edit-list engine's schema caps the edits; a rewrite that

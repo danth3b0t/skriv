@@ -31,13 +31,14 @@ import time
 from collections import Counter
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, TypedDict, cast
+from typing import TYPE_CHECKING, NotRequired, TypedDict, cast
 
 import grpc
 
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
 from hark_client.cleanup import Span, protected_spans, validate_edits
+from hark_client.context import Term, TermKind, TermSource
 from hark_server.backends.mock import MockBackend
 from hark_server.config import Config
 from hark_server.server import start
@@ -57,6 +58,7 @@ class Case(TypedDict):
     text: str
     protected: list[str]
     expected: list[str]
+    terms: NotRequired[list[str]]  # vocabulary canonicals, protected like the client's shortlist
 
 
 @dataclass
@@ -109,11 +111,15 @@ def load_cases(path: Path) -> list[Case]:
 def spans(case: Case) -> list[Span]:
     """The case's protected substrings plus the client's own spans."""
     raw = case["text"].encode()
-    out = protected_spans(case["text"], [])
+    out = protected_spans(case["text"], terms(case))
     for p in case["protected"]:
         start = raw.index(p.encode())
         out.append(Span(start, start + len(p.encode()), pb.PROTECTED_SPAN_KIND_BIAS_TERM))
     return sorted(out, key=lambda s: (s.start, s.end))
+
+
+def terms(case: Case) -> list[Term]:
+    return [Term(t, (), 1.0, TermKind.NAME, TermSource.VOCABULARY) for t in case.get("terms", [])]
 
 
 def norm(s: str) -> list[str]:
@@ -140,6 +146,7 @@ async def run_case(stub: pb_grpc.TextCleanupAsyncStub, case: Case, budget_ms: in
         ],
         profile_id=case["profile"],
         budget_ms=budget_ms,
+        known_terms=case.get("terms", []),
     )
     t0 = time.perf_counter()
     try:
@@ -151,7 +158,7 @@ async def run_case(stub: pb_grpc.TextCleanupAsyncStub, case: Case, budget_ms: in
             latency_ms=(time.perf_counter() - t0) * 1000,
         )  # fmt: skip
     latency = (time.perf_counter() - t0) * 1000
-    checked = validate_edits(text, resp.edits, protected)
+    checked = validate_edits(text, resp.edits, protected, case.get("terms", []))
     output = checked.text
     reasons = Counter(pb.EditRejectionReason.Name(r.reason) for r in resp.rejections)
     return Result(
