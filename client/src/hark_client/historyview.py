@@ -74,6 +74,8 @@ def table(records: list[Record], kept: Collection[str] = (), now: datetime | Non
         text = _str(r, "final_text") or _str(r, "raw_text")
         if not text and _str(r, "error"):
             text = f"[{_str(r, 'error')}]"
+        elif not text and r.get("flat_signal"):
+            text = f"[no audio from {_str(r, 'input_device') or 'the mic'}]"
         mark = "*" if uid in kept else " "
         lines.append(
             f"{_when(_str(r, 'ts'), today):<11} {short_id(uid)}{mark} "
@@ -131,15 +133,8 @@ def show(r: Record, *, kept: bool = False) -> str:
         ms = cleanup.get("ms")
         timing = f" ({ms:.0f} ms)" if isinstance(ms, int | float) else ""
         line("cleanup", f"{cleanup.get('status')}{reason}{timing}")
-        out.extend(
-            f"{'':<10}   edit {e.get('find')!r} -> {e.get('replace')!r}"
-            for e in map(_dict, _list(cleanup.get("edits")))
-        )
-        out.extend(
-            f"{'':<10}   dropped {e.get('find')!r} -> {e.get('replace')!r} "
-            f"({e.get('reason', '')}, by {e.get('by', '?')})"
-            for e in map(_dict, _list(cleanup.get("dropped")))
-        )
+        if cleanup.get("status") == "rejected" and cleanup.get("rewrite"):  # what was refused
+            out.append(f"{'':<10}   not kept: {cleanup['rewrite']!r}")
     for key in ("gate", "gates"):  # pipeline gate decisions, when that stage records them
         if key in r:
             line("gate", json.dumps(r[key], ensure_ascii=False))

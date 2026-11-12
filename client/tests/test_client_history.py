@@ -45,6 +45,7 @@ def test_table_previews_one_line_per_dictation():
             status="error",
             error="asr: no FinalResult within 5.0 s",
         ),
+        record(ID_A, today, status="no_speech", input_device="USB Mic", flat_signal=True),
     ]
     lines = historyview.table(rows, kept={ID_B}, now=local(today)).splitlines()
     assert lines[1] == (
@@ -55,7 +56,8 @@ def test_table_previews_one_line_per_dictation():
         f"{local(today).strftime('%H:%M:%S')}    000000b2* com.example… error                -  "
         "[asr: no FinalResult within 5.0 s]"
     )
-    assert lines[3] == "* = audio kept: `hark retry ID` re-runs it"
+    assert lines[3].endswith("no_speech            -  [no audio from USB Mic]")
+    assert lines[4] == "* = audio kept: `hark retry ID` re-runs it"
 
 
 def test_show_lists_every_stage():
@@ -67,11 +69,11 @@ def test_show_lists_every_stage():
         final_text="kubectl get pods",
         replacements=[{"before": "cube control", "after": "kubectl", "reason": "alias"}],
         cleanup={
-            "status": "partial",
-            "reason": "1 of 2",
+            "text": "kubectl get pods",
+            "status": "rejected",
+            "reason": "lost 'kubectl'",
             "ms": 120.0,
-            "edits": [{"find": "a", "replace": "b"}],
-            "dropped": [{"find": "pods", "replace": "Pods", "reason": "protected", "by": "client"}],
+            "rewrite": "Get the pods.",
         },
         gate={"decision": "accept"},
         spacing={"source": "ax", "leading": True},
@@ -84,9 +86,8 @@ def test_show_lists_every_stage():
     for expected in (
         "raw        'cube control get pods'",
         "             'cube control' -> 'kubectl' (alias)",
-        "cleanup    partial [1 of 2] (120 ms)",
-        "             edit 'a' -> 'b'",
-        "             dropped 'pods' -> 'Pods' (protected, by client)",
+        "cleanup    rejected [lost 'kubectl'] (120 ms)",
+        "             not kept: 'Get the pods.'",
         'gate       {"decision": "accept"}',
         "spacing    source=ax, leading=True",
         "status     pasted",
