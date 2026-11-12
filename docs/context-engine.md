@@ -1,8 +1,9 @@
 # Context engine: sources, ranking, learned vocabulary, prefetch
 
-Status: implemented on `feat/ctx-rank` (2026-11-12), `client/src/hark_client/context/`. Applies
+The "with context" of *recognize with context* ([architecture.md](architecture.md)): `client/src/hark_client/context/`
+builds the shortlist sent with `SessionStart` and canonicalizes the result against it. The ranking follows
 [archive/research/context-ranking/REPORT.md](archive/research/context-ranking/REPORT.md) and the context-package parts of
-[archive/research/context-architecture.md](archive/research/context-architecture.md). No protocol change.
+[archive/research/context-architecture.md](archive/research/context-architecture.md).
 
 ## What `collect()` gathers
 
@@ -56,6 +57,16 @@ and the dropped competitors. `ContextSnapshot.prefetched` says whether the slow 
   (`kubectl`); inflections stay out (`Configures`, `Running`). Without a word list the old conservative rules apply.
 - Directory paths (`~/projects/hark`, `/usr/share/dict`, `client/src/hark_client`).
 - Never terms: tool-call/opaque ids, hashes, UUIDs, XML tags, contraction fragments, glob/template spans.
+- Spoken forms also come from a pronunciation lexicon (`hyprctl` → "hyper control", `SQLite` → "sequel light",
+  `ctl` → "control"), versions said with "point", and spoken path prefixes ("tilde slash").
+
+## Canonicalization (`canon.py`)
+
+After the gate, spoken forms of shortlist terms in the transcript are rewritten to their spelling. Only aliases
+already in the transcript are rewritten, whole words, never across a clause boundary, longest first, and only where
+the words' confidence allows. A match made only of everyday English words (`each other`, `wait for`; the list is
+`common_words.txt`) needs evidence that an identifier was meant: a spoken separator, a capital mid-sentence, or
+identifier syntax around it (`called X`, `the X function`). The full rule list is the module docstring.
 
 ## Learned vocabulary (`vocab.py`)
 
@@ -82,10 +93,15 @@ At key-down `collect()` uses a warm entry validated within 6 s and only reads fo
 one run on this Mac: 38 ms warm vs 375 ms cold.
 
 The daemon starts it (`daemon.py`) with `cfg.history.dir`; `ContextConfig.max_terms` is 30 and history records
-carry `snap.provenance`. Hand-written `[[words]]` from the config are merged in front of the ranked
-terms by the client (`context/words.py`, called from `pipeline.py`), not by the engine.
+carry `snap.provenance`. Hand-written `[[words]]` (the config's, then `<repo>/.hark/words.toml`) are merged in
+front of the ranked terms by the client (`context/words.py`, called from `pipeline.py`), not by the engine; the
+terminal profile also gets base shell commands (`git`, `uv`, `kubectl`, …) in the free slots, at most a quarter
+of a full list.
 
 ## Offline replay (the experiment harness, same cutoff and splits)
+
+Measured when this ranking landed (2026-11-12); recognition with these lists is measured by `hark eval`
+([eval.md](eval.md)).
 
 Primary short prompts, exact-match gold, macro recall (micro in parentheses). `old` = task-start engine
 (`current_engine`), `recipe` = the experiment's selected configuration (its expanded extraction *is* the gold
