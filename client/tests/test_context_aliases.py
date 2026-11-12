@@ -5,7 +5,7 @@ import pytest
 from hark_client.context import aliases
 from hark_client.context.aliases import extract_terms, spoken_forms
 from hark_client.context.types import Term, TermKind, TermSource
-from hark_client.context.words import merge_terms
+from hark_client.context.words import TERMINAL_COMMANDS, merge_terms, with_terminal_commands
 
 
 @pytest.mark.parametrize(
@@ -130,6 +130,24 @@ def test_names_are_not_taken_from_plain_text_extraction():
         ("404", TermKind.NAME, {"four oh four"}),
         ("256", TermKind.NAME, {"two fifty six", "two hundred fifty six"}),
         ("50051", TermKind.NAME, {"fifty thousand fifty one", "five oh oh five one"}),
+        # not said as spelled (LEXICON), versions, optional ":", leading prefixes
+        ("Hyprland", TermKind.NAME, {"hyper land", "hyperland"}),
+        ("hark ctl toggle", TermKind.COMMAND, {"hark control toggle", "hark c t l toggle"}),
+        ("SQLite", TermKind.NAME, {"sequel light"}),
+        ("read_wav", TermKind.IDENTIFIER, {"read wave"}),
+        ("tdt-0.6b-v3", TermKind.NAME, {"tdt zero point six b v three"}),
+        (
+            "node:22-alpine",
+            TermKind.NAME,
+            {"node colon twenty two alpine", "node twenty two alpine"},
+        ),
+        (
+            "~/.kube/config",
+            TermKind.PATH,
+            {"tilde slash dot kube slash config", "kube slash config"},
+        ),
+        ("@/lib/utils", TermKind.PATH, {"at slash lib slash utils"}),
+        ("$XDG_RUNTIME_DIR", TermKind.IDENTIFIER, {"dollar xdg runtime dir"}),
     ],
 )
 def test_name_and_command_aliases(canonical: str, kind: TermKind, expected: set[str]):
@@ -242,3 +260,20 @@ def test_dictionary_terms_lead_the_shortlist_and_share_aliases():
     assert merged[0].source == TermSource.DICTIONARY
     assert merge_terms(ctx, words, max_terms=1) == merged[:1]
     assert merge_terms(ctx, (), max_terms=5) == ctx
+
+
+def test_terminal_commands_take_free_slots_and_a_quarter_of_a_full_list():
+    def ctx(n: int) -> tuple[Term, ...]:
+        return tuple(
+            Term(f"t{i}", (f"t {i}",), 0.5, TermKind.WORD, TermSource.REPO) for i in range(n)
+        )
+
+    git = Term("git", ("git",), 0.9, TermKind.COMMAND, TermSource.TERMINAL_TEXT)
+    added = with_terminal_commands((git,), 30)
+    assert [t.canonical for t in added] == list(TERMINAL_COMMANDS)  # git kept, not repeated
+    assert added[0] is git
+    assert "cube control" in added[TERMINAL_COMMANDS.index("kubectl")].spoken
+    full = with_terminal_commands(ctx(30), 30)
+    assert [t.canonical for t in full] == [*(f"t{i}" for i in range(23)), *TERMINAL_COMMANDS[:7]]
+    assert len(with_terminal_commands(ctx(25), 30)) == 30  # 5 free slots, but 7 is the quarter
+    assert with_terminal_commands(ctx(3), 0) == ()

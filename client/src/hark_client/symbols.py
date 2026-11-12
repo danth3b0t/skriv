@@ -9,19 +9,31 @@ Rules, on whitespace-separated words:
   is a command ("cat dot env" -> "cat .env" only for DOTFILES).
 - "dot dot" -> "..", "dot slash X" -> "./X", "dot dot slash X" -> "../X".
 - "dash dash WORD" -> "--word"; "dash L" (one letter) -> "-l" after a command-like
-  word (COMMANDS, or a flag).
+  word (COMMANDS, or a flag), or after any word but a function word once a command
+  that is no everyday word (docker, uv; not add, make) was said in the sentence
+  ("docker compose up dash d").
 - "A slash B ..." -> "A/B...": with 2+ slashes, a final "dot EXT", or a leading
   slash at the start or after a command ("cd slash tmp" -> "cd /tmp"). One slash
-  between ordinary words stays a word ("use the slash command").
-- "colon" is glued to the previous word as ":".
-- ASR-joined forms: "x.by" -> "x.py", "commit-m" -> "commit -m".
+  between ordinary words stays a word ("use the slash command"). A function word
+  ("to", "in") is never the first part: "to slash data slash models" -> "to /data/models".
+  A leading-slash path right after a host:port is glued to it ("localhost:8000/health").
+- "colon" is glued to the previous word as ":", and a number after it too ("localhost:8000").
+- "A underscore B" -> "A_B" between two words that are not function words.
+- "chmod plus x" -> "chmod +x".
+- "issue/PR/port/ticket" + number words -> digits ("PR four thirty seven" -> "PR 437").
+- "zero comma one" -> "0,1" between two numbers.
+- ASR-joined forms: "x.by" -> "x.py", "commit-m" -> "commit -m", and once such a command
+  was said: "up-d" -> "up -d", "dash-fix" -> "--fix"; "dash-dash fix" -> "--fix" always.
 - When a flag was produced and the text starts with a capitalized command, it
-  is lower-cased ("Git commit -m" -> "git commit -m").
+  is lower-cased ("Git commit -m" -> "git commit -m"); so is a capitalized command
+  followed by one of its subcommands ("Git status" -> "git status").
 """
 
 from __future__ import annotations
 
 import re
+
+from hark_client.context.canon import common_words
 
 EXTENSIONS = frozenset({
     "py", "pyi", "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "go", "rb", "java", "kt", "swift",
@@ -45,14 +57,70 @@ COMMANDS = frozenset({
     "man", "which", "kill", "pkill", "ps", "top", "du", "df", "ln", "systemctl", "journalctl",
     "sort", "uniq", "wc", "xargs", "export", "source", "tmux",
 })  # fmt: skip
+_PACKAGE = frozenset({"install", "add", "remove", "run", "test", "build", "dev", "exec", "dlx"})
+# Commands that are no English word, with their subcommands: "Git status" is a command line.
+SUBCOMMANDS: dict[str, frozenset[str]] = {
+    "git": frozenset({
+        "status", "commit", "push", "pull", "add", "checkout", "switch", "log", "diff", "rebase",
+        "merge", "stash", "clone", "fetch", "reset", "restore", "branch", "tag", "show", "init",
+        "remote", "bisect", "blame",
+    }),
+    "docker": frozenset({"compose", "run", "build", "ps", "exec", "logs", "pull", "push", "images"}),
+    "kubectl": frozenset({"get", "apply", "describe", "logs", "delete", "exec", "rollout"}),
+    "uv": frozenset({"run", "sync", "add", "remove", "lock", "pip", "tool", "venv", "init"}),
+    "npm": _PACKAGE, "pnpm": _PACKAGE, "yarn": _PACKAGE, "bun": _PACKAGE,
+    "cargo": frozenset({"build", "run", "test", "check", "add", "clippy", "fmt", "install"}),
+    "systemctl": frozenset({"start", "stop", "restart", "status", "enable", "disable"}),
+    "brew": frozenset({"install", "upgrade", "uninstall", "services"}),
+    "hark": frozenset({
+        "run", "app", "ctl", "once", "retry", "history", "last", "doctor", "eval", "service",
+    }),
+}  # fmt: skip
+# Never the first part of a path or of an underscore identifier.
+FUNCTION_WORDS = frozenset({
+    "to", "from", "in", "into", "on", "onto", "at", "of", "for", "with", "within", "under",
+    "over", "via", "by", "the", "a", "an", "and", "or", "is", "are", "as", "than", "then", "no",
+    "not", "it", "this", "that",
+})  # fmt: skip
+_NUMBER_CUES = frozenset({"issue", "pr", "port", "ticket"})
+_UNITS = {
+    w: i
+    for i, w in enumerate(
+        ("zero", "one", "two", "three", "four", "five", "six", "seven", "eight", "nine", "ten",
+         "eleven", "twelve", "thirteen", "fourteen", "fifteen", "sixteen", "seventeen", "eighteen",
+         "nineteen")
+    )
+}  # fmt: skip
+_TENS = {
+    w: 10 * i
+    for i, w in enumerate(
+        ("twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"), 2
+    )
+}
 _TRAILING = ".,;:!?"
+_SENTENCE_END = ".!?"
 _WORD = re.compile(r"[\w][\w.-]*\Z")
 _JOINED_FLAG = re.compile(r"([A-Za-z]+)-([A-Za-z])\Z")
+_HOST_PORT = re.compile(r"[\w.-]+:\d+\Z")
 
 
 def _split(token: str) -> tuple[str, str]:
     core = token.rstrip(_TRAILING)
     return (core, token[len(core) :]) if core else (token, "")
+
+
+def _number_value(word: str) -> int | None:
+    """0-99 from one word: "seven", "forty", "twenty-one", "42"."""
+    if word.isdigit():
+        return int(word)
+    if word in _UNITS:
+        return _UNITS[word]
+    if word in _TENS:
+        return _TENS[word]
+    tens, _, unit = word.partition("-")
+    if tens in _TENS and _UNITS.get(unit, 0) in range(1, 10):
+        return _TENS[tens] + _UNITS[unit]
+    return None
 
 
 class _Rewriter:
@@ -61,6 +129,7 @@ class _Rewriter:
         self.out: list[str] = []
         self.events: list[str] = []
         self.flag = False
+        self.command_seen = False  # a command that is no everyday word, in this sentence
 
     def low(self, i: int) -> str:
         return self.words[i][0].lower() if i < len(self.words) else ""
@@ -86,28 +155,33 @@ class _Rewriter:
     def run(self) -> tuple[str, list[str]]:
         i = 0
         while i < len(self.words):
-            i = self.step(i)
-        if self.flag and self.out and self.out[0][:1].isupper() and self.out[0].lower() in COMMANDS:
+            n = self.step(i)
+            for core, punct in self.words[i:n]:
+                if core.lower() in COMMANDS and core.lower() not in common_words():
+                    self.command_seen = True  # docker, uv; not add, make, find
+                if any(c in _SENTENCE_END for c in punct):
+                    self.command_seen = False
+            i = n
+        if self.out and self.out[0][:1].isupper() and self.leading_command():
             self.out[0] = self.out[0].lower()
         return " ".join(self.out), self.events
+
+    def leading_command(self) -> bool:
+        first = self.out[0].lower()
+        if self.flag and first in COMMANDS:
+            return True
+        second = _split(self.out[1])[0].lower() if len(self.out) > 1 else ""
+        return second in SUBCOMMANDS.get(first, ())
 
     def step(self, i: int) -> int:  # noqa: PLR0911 - one return per rule
         core, punct = self.words[i]
         c = core.lower()
         if (n := self.path(i)) is not None:
             return n
-        if c == "dash" and self.plain(i) and self.low(i + 1) == "dash" and self.plain(i + 1):
-            nxt = self.low(i + 2)
-            if _WORD.match(nxt) and not nxt.isdigit():
-                self.flag = True
-                self.emit("--" + nxt + self.words[i + 2][1], f"dash dash {nxt}")
-                return i + 3
-        if c == "dash" and self.plain(i) and self.commandish(self.prev_core()):
-            nxt = self.low(i + 1)
-            if len(nxt) == 1 and nxt.isalpha():
-                self.flag = True
-                self.emit("-" + nxt + self.words[i + 1][1], f"dash {nxt}")
-                return i + 2
+        if (n := self.flags(i)) is not None:
+            return n
+        if (n := self.numbers(i)) is not None:
+            return n
         if c == "dot" and self.plain(i):
             nxt = self.low(i + 1)
             if nxt == "dot" and not (self.plain(i + 1) and self.low(i + 2) == "slash"):
@@ -122,20 +196,131 @@ class _Rewriter:
                 self.emit("." + nxt + self.words[i + 1][1], f"dot {nxt}")
                 return i + 2
         if c == "colon" and self.prev_open():
+            if not punct and self.low(i + 1).isdigit():  # localhost colon 8000
+                self.out[-1] += ":" + self.words[i + 1][0] + self.words[i + 1][1]
+                self.events.append("colon")
+                return i + 2
             self.out[-1] += ":" + punct
             self.events.append("colon")
             return i + 1
+        if c == "underscore" and not punct and self.prev_open() and self.joinable(i - 1, i + 1):
+            self.out[-1] += "_" + self.words[i + 1][0] + self.words[i + 1][1]
+            self.events.append("underscore")
+            return i + 2
+        if c == "plus" and not punct and self.prev_core() == "chmod" and self.prev_open():
+            nxt = self.low(i + 1)
+            if len(nxt) == 1 and nxt in "rwx":
+                self.emit("+" + nxt + self.words[i + 1][1], "plus " + nxt)
+                return i + 2
         self.out.append(self.joined_forms(core) + punct)
         return i + 1
 
+    def joinable(self, a: int, b: int) -> bool:
+        """Words a and b (around "underscore") are words, not function words."""
+        if a < 0 or b >= len(self.words):
+            return False
+        return all(
+            _WORD.match(self.words[k][0]) and self.low(k) not in FUNCTION_WORDS for k in (a, b)
+        )
+
+    def flags(self, i: int) -> int | None:
+        """ "dash dash WORD", "dash L" after a command, and the recognizer's "dash-dash WORD",
+        "dash-WORD"."""
+        core, punct = self.words[i]
+        c = core.lower()
+        nxt = self.low(i + 1)
+        if c == "dash" and self.plain(i) and nxt == "dash" and self.plain(i + 1):
+            word = self.low(i + 2)
+            if _WORD.match(word) and not word.isdigit():
+                return self.flag_out("--" + word + self.words[i + 2][1], f"dash dash {word}", i + 3)
+        prev = self.prev_core()
+        after_command = self.commandish(prev) or (
+            self.command_seen
+            and prev is not None
+            and self.prev_open()
+            and prev.lower() not in FUNCTION_WORDS
+        )
+        one_letter = len(nxt) == 1 and nxt.isalpha()
+        if c == "dash" and self.plain(i) and after_command and one_letter:
+            return self.flag_out("-" + nxt + self.words[i + 1][1], f"dash {nxt}", i + 2)
+        if c == "dash-dash" and not punct and _WORD.match(nxt) and not nxt.isdigit():
+            return self.flag_out("--" + nxt + self.words[i + 1][1], f"{c} {nxt}", i + 2)
+        rest = c.removeprefix("dash-")
+        if rest != c and self.command_seen and _WORD.match(rest) and rest.isascii():
+            dashes = "-" if len(rest) == 1 else "--"
+            return self.flag_out(dashes + rest + punct, c, i + 1)
+        return None
+
+    def flag_out(self, text: str, event: str, nxt: int) -> int:
+        self.flag = True
+        self.emit(text, event)
+        return nxt
+
+    def numbers(self, i: int) -> int | None:
+        """Number words after issue/PR/port/ticket, and "zero comma one"."""
+        core, punct = self.words[i]
+        c = core.lower()
+        if c in _NUMBER_CUES and not punct:
+            digits, n = self.read_number(i + 1)
+            if n:
+                self.out.append(core)
+                self.emit(digits + self.words[i + n][1], f"{c} number")
+                return i + n + 1
+        if _number_value(c) is not None and punct in {"", ","} and self.low(i + 1) == "comma":
+            parts = [str(_number_value(c))]
+            j = i + 1
+            while self.low(j) == "comma" and self.plain(j):
+                if (v := _number_value(self.low(j + 1))) is None:
+                    break
+                parts.append(str(v))
+                j += 2
+                if not self.plain(j - 1):
+                    break
+            if len(parts) > 1:
+                self.emit(",".join(parts) + self.words[j - 1][1], "comma")
+                return j
+        return None
+
+    def read_number(self, i: int) -> tuple[str, int]:
+        """(digits, words used) for number words from word i: "four twenty one" -> 421,
+        "eight zero eight zero" -> 8080, "fifty thousand fifty one" -> 50051."""
+        out, j = "", i
+        while j < len(self.words) and (v := _number_value(self.low(j))) is not None:
+            if self.low(j).isdigit():
+                break
+            j += 1
+            if v in _TENS.values() and self.plain(j - 1) and 0 < _UNITS.get(self.low(j), 0) < 10:
+                v, j = v + _UNITS[self.low(j)], j + 1
+            if self.plain(j - 1) and self.low(j) == "hundred":
+                v, j = v * 100, j + 1
+                if self.plain(j - 1) and (rest := self.small(j))[1]:
+                    v, j = v + rest[0], j + rest[1]
+            if self.plain(j - 1) and self.low(j) == "thousand":
+                v, j = v * 1000, j + 1
+                if self.plain(j - 1) and (rest := self.small(j))[1]:
+                    v, j = v + rest[0], j + rest[1]
+            out += str(v)
+            if not self.plain(j - 1):
+                break
+        return out, j - i
+
+    def small(self, j: int) -> tuple[int, int]:
+        """(value, words) for 1-99 at word j: "fifty one", "seven", "twelve"."""
+        v = _number_value(self.low(j))
+        if v is None or v == 0 or self.low(j).isdigit():
+            return 0, 0
+        if v in _TENS.values() and self.plain(j) and 0 < _UNITS.get(self.low(j + 1), 0) < 10:
+            return v + _UNITS[self.low(j + 1)], 2
+        return v, 1
+
     def joined_forms(self, core: str) -> str:
-        """Fix what the ASR already glued: "canon.by", "commit-m"."""
+        """Fix what the ASR already glued: "canon.by", "commit-m", "up-d"."""
         stem, dot, ext = core.rpartition(".")
         if dot and stem and ext.lower() in MISHEARD_EXTENSIONS and _WORD.match(stem):
             self.events.append(f".{ext}")
             return f"{stem}.{MISHEARD_EXTENSIONS[ext.lower()]}"
         m = _JOINED_FLAG.match(core)
-        if m and m.group(1).lower() in COMMANDS:
+        if m and (m.group(1).lower() in COMMANDS or (self.command_seen and m.group(2).islower())):
             self.flag = True
             self.events.append(f"{m.group(1)}-{m.group(2)}")
             return f"{m.group(1)} -{m.group(2).lower()}"
@@ -154,11 +339,14 @@ class _Rewriter:
                 return None
         parts: list[str] = []
         if self.low(j) != "slash":  # "A slash B": A must be an ordinary word
-            if not (self.plain(j) and _WORD.match(self.words[j][0])) or self.commandish(
-                self.words[j][0]
+            head = self.words[j][0]
+            if (
+                not (self.plain(j) and _WORD.match(head))
+                or self.commandish(head)
+                or head.lower() in FUNCTION_WORDS
             ):
                 return None
-            parts.append(self.words[j][0])
+            parts.append(head)
             j += 1
         else:
             leading = True
@@ -180,11 +368,17 @@ class _Rewriter:
             if MISHEARD_EXTENSIONS.get(spoken, spoken) in EXTENSIONS:
                 ext = "." + MISHEARD_EXTENSIONS.get(spoken, spoken)
                 j += 2
-        at_command = not self.out or self.commandish(self.prev_core())
+        path = "/".join(parts) + ext + self.words[j - 1][1]
+        prev = self.prev_core()
+        if leading and not prefix and prev and self.prev_open() and _HOST_PORT.match(prev):
+            self.out[-1] += "/" + path  # localhost:8000 slash health
+            self.events.append("slash")
+            return j
+        at_command = not self.out or self.commandish(prev)
         if not (prefix or slashes >= 2 or ext or (leading and at_command)):
             return None
         root = prefix + "/" if (prefix or leading) else ""
-        self.emit(root + "/".join(parts) + ext + self.words[j - 1][1], "slash")
+        self.emit(root + path, "slash")
         return j
 
 
