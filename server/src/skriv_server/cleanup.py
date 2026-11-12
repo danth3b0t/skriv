@@ -1,9 +1,16 @@
-"""skriv.v1.TextCleanup: "S1-mini" by "Superwhisper" rewrites the text (ADR-001 #6).
+"""skriv.v1.TextCleanup: an LLM rewrites the text (ADR-001 #6).
 
-S1-mini (a Qwen3-0.6B text normalizer, https://huggingface.co/superwhisper/s1-mini) is served
-by an OpenAI-compatible /v1/chat/completions (llama-server). It removes fillers, punctuates,
-cases and smooths the wording, and writes spoken numbers as digits. It is not a chat model: a
-dictated instruction ("ignore previous instructions ...") is cleaned like any other text.
+The model is served by an OpenAI-compatible /v1/chat/completions (llama-server). Its family
+decides the prompt:
+
+- "S1-mini" by "Superwhisper" (a Qwen3-0.6B text normalizer,
+  https://huggingface.co/superwhisper/s1-mini, the default) gets the fixed prompt it was trained
+  on. It removes fillers, punctuates, cases and smooths the wording, and writes spoken numbers as
+  digits. It is not a chat model: a dictated instruction is cleaned like any other text. It never
+  sees the shortlist. Every model whose name does not say "instruct" gets this prompt.
+- An instruct model ("instruct" in its name: qwen3-4b-instruct-2507-q4_k_m) gets rules,
+  few-shots and the request's shortlist (skriv_server.instruct). A `prime` request at key-down
+  sends that prompt without the transcript, so llama.cpp has it cached at key-up.
 
 The server returns the rewrite, after a few deterministic touches per profile (_finish). It
 does not judge fidelity: the client checks the rewrite against its input (skriv_client.fidelity)
@@ -26,9 +33,12 @@ import httpx
 from skriv.v1 import skriv_pb2 as pb
 from skriv.v1 import skriv_pb2_grpc as pb_grpc
 
+from . import instruct
 from .errors import E, SkrivError, check_privacy, protocol_violation
 
 if TYPE_CHECKING:
+    from collections.abc import Sequence
+
     from .config import CleanupConfig
 
 log = logging.getLogger("skriv_server.cleanup")
@@ -193,6 +203,7 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
         http: httpx.AsyncClient | None = None,
     ) -> None:
         self.cfg = cfg
+        self.s1 = "instruct" not in cfg.model.lower()  # S1-mini's prompt
         self.privacy = privacy
         self.http = http or httpx.AsyncClient(base_url=cfg.base_url.rstrip("/") + "/")
         self.specs = {spec.id: spec for spec in PROFILES}
@@ -232,7 +243,10 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
 
             response = pb.CleanupResponse(model=self.cfg.model)
             language = request.language.lower()
-            if not request.text.strip():
+            if request.prime:
+                response.truncated = not await self._prime(profile.id, request.terms, budget_s)
+                response.skipped = "primed"
+            elif not request.text.strip():
                 response.skipped = "empty"
             elif (language and not language.startswith("en")) or likely_non_english(request.text):
                 log.info("cleanup: skipped, not English (%d bytes)", size)
@@ -241,7 +255,7 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                 t_gen = time.perf_counter()
                 try:
                     async with asyncio.timeout(budget_s):
-                        output = await self._rewrite(request.text)
+                        output = await self._rewrite(profile.id, request.terms, request.text)
                 except TimeoutError:
                     response.truncated = True
                 else:
@@ -252,24 +266,52 @@ class CleanupServicer(pb_grpc.TextCleanupServicer):
                     else:
                         response.text = _finish(request.text, output, self.specs[profile.id])
             response.total_ms = int((time.perf_counter() - t0) * 1000)
-            log.info("cleanup: %d bytes, %d ms", size, response.total_ms)
+            what = "primed" if request.prime else f"{size} bytes"
+            log.info("cleanup: %s, %d ms", what, response.total_ms)
             return response
         except SkrivError as e:
             await e.abort(context, request.utterance_id)
 
-    async def _rewrite(self, text: str) -> str | None:
-        body = await self._complete({
-            "model": self.cfg.model,
-            "temperature": 0,  # the model card: greedy
-            "max_tokens": len(text.encode()) // 2 + 32,  # output length tracks the input
-            "stream": False,
-            "messages": [
+    async def _prime(self, profile: str, terms: Sequence[pb.BiasTerm], budget_s: float) -> bool:
+        """The prompt up to the transcript, one token generated (and discarded); False if the
+        budget ran out. S1-mini's prompt is the same for every request and stays cached."""
+        if self.s1:
+            return True
+        try:
+            async with asyncio.timeout(budget_s):
+                await self._complete(self._body(profile, terms, "", 1))
+        except TimeoutError:
+            return False
+        return True
+
+    def _body(
+        self, profile: str, terms: Sequence[pb.BiasTerm], text: str, max_tokens: int
+    ) -> dict[str, object]:
+        messages = (
+            [
                 {"role": "system", "content": S1_SYSTEM},
                 {"role": "user", "content": f"{S1_CONTROL}\n{text}"},
-            ],
-            # The exact training prefix: an empty <think> block (llama.cpp --jinja, vLLM).
+            ]
+            if self.s1
+            else instruct.messages(profile, terms, text)
+        )
+        return {
+            "model": self.cfg.model,
+            "temperature": 0,  # greedy: the S1 model card; deterministic edits
+            "max_tokens": max_tokens,
+            "stream": False,
+            "messages": messages,
+            # S1: the exact training prefix, an empty <think> block (llama.cpp --jinja, vLLM).
+            # Qwen3 hybrid thinkers: no thinking. Templates without the switch ignore it.
             "chat_template_kwargs": {"enable_thinking": False},
-        })  # fmt: skip
+        }
+
+    async def _rewrite(self, profile: str, terms: Sequence[pb.BiasTerm], text: str) -> str | None:
+        # Output length tracks the input; the instruct model may write a little more code.
+        extra = 32 if self.s1 else 64
+        body = await self._complete(
+            self._body(profile, terms, text, len(text.encode()) // 2 + extra)
+        )
         try:
             return _parse_rewrite(body)
         except (ValueError, KeyError, IndexError, TypeError) as e:

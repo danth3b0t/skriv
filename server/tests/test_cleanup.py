@@ -1,4 +1,5 @@
-"""TextCleanup (S1-mini rewrite) against a fake OpenAI-compatible /v1/chat/completions."""
+"""TextCleanup (S1-mini or instruct-model rewrite) against a fake OpenAI-compatible
+/v1/chat/completions."""
 
 from __future__ import annotations
 
@@ -13,6 +14,7 @@ import pytest
 from conftest import dig
 
 from skriv.v1 import skriv_pb2 as pb
+from skriv_server import instruct
 from skriv_server.cleanup import S1_CONTROL, S1_SYSTEM
 
 if TYPE_CHECKING:
@@ -36,6 +38,8 @@ class CleanupFields(TypedDict, total=False):
     budget_ms: int
     privacy: pb.PrivacyFlags
     language: str
+    terms: list[pb.BiasTerm]
+    prime: bool
 
 
 class FakeLLM:
@@ -231,3 +235,52 @@ async def test_english_text_with_accents_is_cleaned(client: Client, fake_llm: Fa
     resp, _, _ = await call(client, text="Grüße! I think the café on main street is fine")
     assert resp is not None
     assert resp.text == "Grüße! I think the café on Main Street is fine."
+
+
+async def test_s1_needs_no_priming(client: Client, fake_llm: FakeLLM):
+    resp, code, _ = await call(client, text="", prime=True)
+    assert code == grpc.StatusCode.OK
+    assert resp is not None
+    assert (resp.HasField("text"), resp.skipped) == (False, "primed")
+    assert fake_llm.requests == []
+
+
+async def test_instruct_model_gets_the_shortlist_and_is_primed_with_the_same_prefix(
+    serve: Serve, fake_llm: FakeLLM
+):
+    client = await serve(
+        cleanup={"base_url": fake_llm.url, "model": "qwen3-4b-instruct-2507-q4_k_m"}
+    )
+    terms = [
+        pb.BiasTerm(id="t0", canonical="kubectl", aliases=[
+            pb.SpokenAlias(text="cube control"), pb.SpokenAlias(text="kubectl"),
+            pb.SpokenAlias(text="kubectl get"), pb.SpokenAlias(text="kube ctl"),
+            pb.SpokenAlias(text="cube cuttle"),
+        ]),
+        pb.BiasTerm(id="t1", canonical="README.md"),
+    ]  # fmt: skip
+    fake_llm.respond_text(".")  # the priming answer, discarded
+    fake_llm.respond_text("Run kubectl get pods.")
+
+    primed, _, _ = await call(client, text="", profile_id="terminal", terms=terms, prime=True)
+    resp, _, _ = await call(
+        client, text="um run cube control get pods", profile_id="terminal", terms=terms
+    )
+
+    assert primed is not None
+    assert (primed.HasField("text"), primed.skipped) == (False, "primed")
+    assert resp is not None
+    assert resp.text == "Run kubectl get pods"  # the terminal profile's finish
+    prime, rewrite = (cast("list[dict[str, str]]", dig(r["json"], "messages")) for r in
+                      fake_llm.requests)  # fmt: skip
+    assert prime[0] == {"role": "system", "content": instruct.SYSTEM}
+    assert len(prime) == len(rewrite) == 2 + 2 * len(instruct.FEWSHOTS)
+    assert prime[:-1] == rewrite[:-1]
+    # Spoken forms with spaces only, at most three; the transcript comes last.
+    assert rewrite[-1]["content"] == (
+        "App: terminal (coding-agent prompt)\n"
+        "Shortlist:\n- kubectl (said: cube control | kubectl get | kube ctl)\n- README.md\n"
+        "Transcript: um run cube control get pods"
+    )
+    assert rewrite[-1]["content"].startswith(prime[-1]["content"])
+    assert dig(fake_llm.requests[0]["json"], "max_tokens") == 1

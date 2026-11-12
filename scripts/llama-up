@@ -41,7 +41,8 @@ if [[ ! -f $path ]]; then
 fi
 
 # -ngl 99: all layers on the GPU (Metal/CUDA/Vulkan; ignored by CPU builds).
-# -c 2048 -np 1: one slot holding the whole prompt (policy + few-shots + text, ~1.3k tokens).
+# -c 4096 -np 1: one slot holding the whole prompt (instruct models: rules + few-shots +
+#   shortlist + text, ~2.1k tokens; S1-mini's is short).
 # --cache-prompt: reuse the KV of the static prompt prefix across requests.
 # --reasoning off + enable_thinking=false: Qwen3 is a hybrid thinker; thinking would
 #   blow the latency budget. The template then opens the assistant turn with an empty
@@ -54,7 +55,7 @@ fi
 exec "$server" \
   -m "$path" --alias "$alias" \
   --host 127.0.0.1 --port 8080 \
-  -ngl 99 -c 2048 -np 1 \
+  -ngl 99 -c 4096 -np 1 \
   --cache-prompt --jinja --reasoning off --chat-template-kwargs '{"enable_thinking":false}' \
   --temp 0 --no-webui \
   --spec-type ngram-simple --spec-ngram-simple-size-n 1 --spec-ngram-simple-size-m 4 \

@@ -6,7 +6,8 @@
 #   scripts/fetch-models qwen3-0.6b-q8_0 qwen3-1.7b-q4_k_m
 #
 # Q8_0 comes from the official Qwen repos; Qwen does not publish Q4_K_M for
-# these sizes, so Q4_K_M comes from unsloth. "S1-mini" by "Superwhisper"
+# these sizes, so Q4_K_M comes from unsloth. qwen3-4b-instruct-2507-q4_k_m is the
+# opt-in instruct cleanup model (docs/bench/2026-11-13-w4-cleanup-llm.md). "S1-mini" by "Superwhisper"
 # (a Qwen3-0.6B fine-tune, Apache-2.0 + naming term) comes from
 # superwhisper/s1-mini-GGUF; its LICENSE and NOTICE are kept next to it.
 # Revisions are pinned commits.
@@ -14,7 +15,7 @@ set -euo pipefail
 
 # Default chosen in docs/bench/2026-11-11-cleanup-s1.md (scripts/llama-up reads this line).
 DEFAULT=s1-mini-q4_k_m
-KEYS=(s1-mini-q4_k_m qwen3-0.6b-q8_0 qwen3-0.6b-q4_k_m qwen3-1.7b-q8_0 qwen3-1.7b-q4_k_m)
+KEYS=(s1-mini-q4_k_m qwen3-4b-instruct-2507-q4_k_m qwen3-0.6b-q8_0 qwen3-0.6b-q4_k_m qwen3-1.7b-q8_0 qwen3-1.7b-q4_k_m)
 
 # key -> "repo revision file sha256"
 spec() {
@@ -23,6 +24,7 @@ spec() {
     qwen3-1.7b-q8_0) echo "Qwen/Qwen3-1.7B-GGUF 90862c4b9d2787eaed51d12237eafdfe7c5f6077 Qwen3-1.7B-Q8_0.gguf 061b54daade076b5d3362dac252678d17da8c68f07560be70818cace6590cb1a" ;;
     qwen3-0.6b-q4_k_m) echo "unsloth/Qwen3-0.6B-GGUF 50968a4468ef4233ed78cd7c3de230dd1d61a56b Qwen3-0.6B-Q4_K_M.gguf ac2d97712095a558e31573f62f466a3f9d93990898b0ec79d7c974c1780d524a" ;;
     qwen3-1.7b-q4_k_m) echo "unsloth/Qwen3-1.7B-GGUF d7f544eead698dbd1f15126ef60b45a1e1933222 Qwen3-1.7B-Q4_K_M.gguf b139949c5bd74937ad8ed8c8cf3d9ffb1e99c866c823204dc42c0d91fa181897" ;;
+    qwen3-4b-instruct-2507-q4_k_m) echo "unsloth/Qwen3-4B-Instruct-2507-GGUF a06e946bb6b655725eafa393f4a9745d460374c9 Qwen3-4B-Instruct-2507-Q4_K_M.gguf 3605803b982cb64aead44f6c1b2ae36e3acdb41d8e46c8a94c6533bc4c67e597" ;;
     s1-mini-q4_k_m) echo "superwhisper/s1-mini-GGUF 34add00a48a2e5d24e5a4ee5405a99620a3a240c s1-mini-q4_k_m.gguf 3b41ebe2502cbd03e811d5d16b022f5ab551eda58d62597d152f89535003c634" ;;
     *) return 1 ;;
   esac
