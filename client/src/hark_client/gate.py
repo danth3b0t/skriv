@@ -1,13 +1,26 @@
 """Acoustic anchor gate (docs/research-ro/context-architecture.md §7.1).
 
 Runs on the FinalResult before canonicalization. The server decodes the same audio
-twice: biased (``n_best[0]``) and unbiased (``anchor``). Each place where they differ
-is a region. A region keeps the biased words only if all of these hold, checked in
-this order (the first failure is the logged reason):
+twice: biased (``n_best[0]``) and unbiased (``anchor``). The gate has two jobs.
+
+Confidence: a boosted beam's word confidence is not acoustic evidence (~0.1 on boosted
+words, < 0.5 on a quarter of the others), the anchor's is. Every biased word gets the
+confidence of the anchor word aligned to it; a word in a differing region gets the
+anchor's least confident word there (its own confidence if the anchor heard nothing).
+Canonicalization reads these confidences whether or not any text is reverted.
+
+Text: each place where the two decodes differ is a region. A region that overlaps no
+bias hit keeps the biased words (``no_hit``): the bias did not act there, and the anchor
+is no better a guess. A bias-hit region (``BiasHit`` on the biased text) keeps them too
+when the anchor's words have the same letters (``same_letters``: case, spacing or
+punctuation only). Otherwise it keeps the biased words only if all of these hold, checked
+in this order (the first failure is the logged reason):
 
 - ``inserted``: the anchor heard something there;
-- ``outside_term``: it is a bias-hit span (``BiasHit`` on the biased text), and the other
-  biased words in it only re-split the anchor's letters (anchor "Harkon", biased "Hark on");
+- ``outside_term``: the other biased words in the region only re-split the anchor's
+  letters (anchor "Harkon", biased "Hark on"). If they don't and the anchor has fewer
+  words, it dropped words the term does not cover: the biased words stay
+  (``anchor_dropped``: "the is terminal" is not reverted to "this terminal");
 - ``in_anchor``: the anchor did not already say one of the term's forms (then the
   anchor's words stay and canonicalization writes the term);
 - ``negation`` / ``number``: no negation added or removed, no number (digits or number
@@ -21,10 +34,9 @@ this order (the first failure is the logged reason):
   word in the region is below ``confident_anchor`` (a confidently heard "hard" stays
   "hard" even though it is close to "hark").
 
-Every other region, including every change outside a bias-hit span, gets the anchor's
-words back. The output is the anchor with the kept regions spliced in. Alignment: token
-Levenshtein (difflib) on normalized words; a hit span is widened to whole replaced runs
-so both sides of a region cover the same speech.
+A failed region gets the anchor's words back. The output is the biased words with the
+reverted regions spliced in. Alignment: token Levenshtein (difflib) on normalized words; a
+hit span is widened to whole replaced runs so both sides of a region cover the same speech.
 """
 
 from __future__ import annotations
@@ -68,12 +80,13 @@ _DIGITS = re.compile(r"\d+")
 _MAX_FORMS = 256  # form combinations tried for a region with several hits
 
 KEPT, REVERTED = "kept", "reverted"
+_KEEP = frozenset(("close", "no_hit", "same_letters", "anchor_dropped"))  # reasons that keep
 
 
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     decision: str  # kept | reverted
-    reason: str  # "close" when kept, else the failed rule (see the module docstring)
+    reason: str  # why it was kept (close, no_hit, same_letters, anchor_dropped) or reverted
     biased: str  # the biased words of the region
     anchor: str  # the anchor words of the same region
     term: str = ""  # canonical(s) of the bias hit(s) ("" outside any hit)
@@ -210,9 +223,11 @@ def _judge(  # noqa: PLR0911, PLR0913 - one return per rule, in order
     if not a:
         return "inserted", None
     heard = letters(" ".join(a))
+    if heard == letters(" ".join(b)):
+        return "same_letters", 0.0
     pre, post = letters(" ".join(b[: hit[0]])), letters(" ".join(b[hit[1] :]))
     if not (heard.startswith(pre) and heard.endswith(post) and len(pre) + len(post) < len(heard)):
-        return "outside_term", None
+        return ("anchor_dropped" if len(a) < len(b) else "outside_term"), None
     if any(a == [*b[: hit[0]], *(_norm(x) for x in f.split()), *b[hit[1] :]] for f in forms):
         return "in_anchor", 0.0
     if _negations(a) != _negations(b):
@@ -259,6 +274,24 @@ def _regions(
     return sorted(regions, key=lambda r: (r.b0, r.a0))
 
 
+def _hit_spans(
+    biased: pb.Hypothesis, b_words: Sequence[WordInfo], hits: Sequence[pb.BiasHit]
+) -> list[tuple[int, int, pb.BiasHit]]:
+    """Each hit as the biased words [start, end) its byte span covers."""
+    spans = _byte_spans(biased.text, b_words)
+    out: list[tuple[int, int, pb.BiasHit]] = []
+    for hit in hits:
+        if hit.text_byte_end <= hit.text_byte_start:
+            continue  # REJECTED: no span
+        inside = [
+            k for k, (s, e) in enumerate(spans)
+            if e > s and s < hit.text_byte_end and e > hit.text_byte_start
+        ]  # fmt: skip
+        if inside:
+            out.append((inside[0], inside[-1] + 1, hit))
+    return out
+
+
 def apply(
     biased: pb.Hypothesis,
     anchor: pb.Hypothesis | None,
@@ -267,9 +300,7 @@ def apply(
     cfg: GateConfig,
 ) -> GateResult:
     """Gate ``biased`` against ``anchor``; without an anchor the biased result passes as is.
-
-    Kept words carry the lowest anchor confidence of their region: a boosted beam's word
-    confidence is not acoustic evidence (~0.1 on boosted words), the anchor's is."""
+    Biased words carry the anchor's confidence (see the module docstring)."""
     b_words = _words(biased)
     if anchor is None:
         return GateResult(biased.text, b_words, [])
@@ -279,34 +310,30 @@ def apply(
 
     forms_of = {t.id: [t.canonical, *(x.text for x in t.aliases)] for t in terms}
     canonical_of = {t.id: t.canonical for t in terms}
-    spans = _byte_spans(biased.text, b_words)
-    hit_spans: list[tuple[int, int, pb.BiasHit]] = []
-    for hit in hits:
-        if hit.text_byte_end <= hit.text_byte_start:
-            continue  # REJECTED: no span
-        inside = [
-            k for k, (s, e) in enumerate(spans)
-            if e > s and s < hit.text_byte_end and e > hit.text_byte_start
-        ]  # fmt: skip
-        if inside:
-            hit_spans.append((inside[0], inside[-1] + 1, hit))
+
+    def aligned(a0: int, a1: int, b0: int, b1: int) -> None:
+        """Equal words: the biased spelling (case) with the anchor's confidence."""
+        out.extend(
+            replace(bw, confidence=aw.confidence)
+            for aw, bw in zip(a_words[a0:a1], b_words[b0:b1], strict=True)
+        )
 
     out: list[WordInfo] = []
     decisions: list[GateDecision] = []
-    pos = 0  # next anchor word
-    kept = False
-    for r in _regions(a, b, hit_spans):
-        out.extend(a_words[pos : r.a0])
-        pos = r.a1
+    pos_a = pos_b = 0  # next anchor / biased word
+    reverted = False
+    for r in _regions(a, b, _hit_spans(biased, b_words, hits)):
+        aligned(pos_a, r.a0, pos_b, r.b0)
+        pos_a, pos_b = r.a1, r.b1
         ar, br = a[r.a0 : r.a1], b[r.b0 : r.b1]
         if ar == br:  # a hit the anchor already had
-            out.extend(a_words[r.a0 : r.a1])
+            aligned(r.a0, r.a1, r.b0, r.b1)
             continue
         confs = [w.confidence for w in a_words[r.a0 : r.a1] if w.confidence is not None]
         conf = min(confs) if confs else None
         term, dist = "", None
         if not r.hits:
-            reason = "outside_term"
+            reason = "no_hit"
         else:
             parts: list[list[str]] = []  # per hit its forms, between hits the biased words
             end = r.hits[0][0]
@@ -319,7 +346,7 @@ def apply(
             hit = (r.hits[0][0] - r.b0, end - r.b0)
             term = ", ".join(canonical_of.get(h.term_id, h.matched_form) for _, _, h in r.hits)
             reason, dist = _judge(ar, br, hit, forms, anchor_conf=conf, cfg=cfg)
-        keep = reason == "close"
+        keep = reason in _KEEP
         decisions.append(
             GateDecision(
                 KEPT if keep else REVERTED,
@@ -330,11 +357,13 @@ def apply(
                 dist,
             )
         )
-        if keep:
-            out.extend(replace(w, confidence=conf) for w in b_words[r.b0 : r.b1])
-            kept = True
-        else:
+        if not keep:
             out.extend(a_words[r.a0 : r.a1])
-    out.extend(a_words[pos:])
-    text = " ".join(w.text for w in out) if kept else anchor.text
+            reverted = True
+        elif conf is None:  # the anchor heard nothing here: only the beam's own confidence
+            out.extend(b_words[r.b0 : r.b1])
+        else:
+            out.extend(replace(w, confidence=conf) for w in b_words[r.b0 : r.b1])
+    aligned(pos_a, len(a_words), pos_b, len(b_words))
+    text = " ".join(w.text for w in out) if reverted else biased.text
     return GateResult(text, out, decisions)
