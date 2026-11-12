@@ -82,8 +82,8 @@ At key-down `collect()` uses a warm entry validated within 6 s and only reads fo
 one run on this Mac: 38 ms warm vs 375 ms cold.
 
 The daemon starts it (`daemon.py`) with `cfg.history.dir`; `ContextConfig.max_terms` is 30 and history records
-carry `snap.provenance`. Hand-written `[[words]]` from the config and promoted corrections (`[learn]`) are merged in
-front of the ranked terms by the client (`pipeline.py`), not by the engine.
+carry `snap.provenance`. Hand-written `[[words]]` from the config are merged in front of the ranked
+terms by the client (`context/words.py`, called from `pipeline.py`), not by the engine.
 
 ## Offline replay (the experiment harness, same cutoff and splits)
 

@@ -170,13 +170,11 @@ def check_paste(r: Report, cfg: Config) -> None:
 
 def check_read_back(r: Report, cfg: Config) -> None:
     from hark_client import fields  # noqa: PLC0415
-    from hark_client.config import expand  # noqa: PLC0415
-    from hark_client.learn import LearnedStore, store_path  # noqa: PLC0415
 
-    if not (cfg.paste.verify or cfg.learn.enabled):
-        r.ok("read-back", "off (paste.verify = false, learn.enabled = false)")
+    if not cfg.paste.verify:
+        r.ok("read-back", "off (paste.verify = false)")
     elif fields.make_reader() is not None:
-        r.ok("read-back", "paste verification" + (" + correction learning" * cfg.learn.enabled))
+        r.ok("read-back", "paste verification")
     else:
         hint = (
             "needs the Accessibility permission"
@@ -184,10 +182,6 @@ def check_read_back(r: Report, cfg: Config) -> None:
             else "needs PyGObject with Atspi 2.0 and an accessibility bus"
         )
         r.warn("read-back", f"unavailable ({hint}); paste verdicts stay 'unknown'")
-    store = LearnedStore(store_path(expand(cfg.history.dir)), cfg.learn.promote_after)
-    entries = store.entries()
-    used = sum(e.count >= store.promote_after for e in entries)
-    r.ok("learned", f"{len(entries)} corrections, {used} in use (`hark learned`)")
 
 
 def check_daemon(r: Report) -> None:

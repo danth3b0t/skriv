@@ -111,8 +111,7 @@ Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = 
 (`start|stop|toggle|cancel|status|ping|paste-last|undo|swap-raw|profile …`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
-the last dictation's status/paste verdict/latency (never its text), whether learning is watching and the profile
-override.
+the last dictation's status/paste verdict/latency (never its text) and the profile override.
 
 ## Configuration
 
@@ -172,13 +171,6 @@ verify = true                 # read the field back after pasting: landed | miss
                               # (at most context.max_terms / 3 entries)
 word = "Hyprland"
 spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
-
-[learn]                       # correction learning, see below; off: nothing learned or used
-enabled = false
-window_ms = 30000             # watch the pasted text this long after a paste (max 30 s)
-poll_ms = 500
-promote_after = 2             # a correction is used after this many occurrences (min 2)
-max_terms = 20                # learned terms added to every shortlist
 
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
@@ -402,7 +394,7 @@ shadow buffer). The shadow buffer cannot see autocomplete, IME composition, mous
 app itself; the AX caret in a terminal is the terminal cursor, which a TUI may park elsewhere. Wide/combined
 characters in tmux rows are mapped to columns approximately.
 
-## Paste verification and correction learning
+## Paste verification
 
 After a paste into a non-terminal app, hark reads the focused field of the target app back (macOS: Accessibility;
 Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). History gets `paste_verdict`: `landed`
@@ -411,29 +403,11 @@ permission, terminal, secure field, empty read-back, > 64 KiB). The verdict is o
 fields can expose stale values); acting on `missing` waits until its false-positive rate is measured. Secure and
 password fields are never read.
 
+## Dictionary
+
 For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
-instead: every dictation gets them, ahead of the context terms, through the same gate and canonicalization rules.
-
-With `[learn] enabled = true`, the same read-back watches the pasted text for up to `window_ms` (≤ 30 s), only while
-the same window stays focused, until the next dictation, or until the text around it changes (e.g. the message was
-sent). If you fix a misheard word in it (`cube control` → `kubectl`, `Kerry` → `Carrie`, `github` → `GitHub`),
-the pair is counted in `<history.dir>/learned.json` (0600). Field contents are never stored, only the pairs. Style
-rewrites, negation changes, corrections into ordinary English words and edits touching more than 3 places or half
-the words are ignored. A pair seen `promote_after` (≥ 2) times becomes a shortlist term with the misheard words as
-its spoken alias, so the recognizer is biased towards it and canonicalization rewrites it. Turning learning off
-again stops using the learned pairs too (they stay in `learned.json`).
-
-```sh
-hark learned                  # list (* = in use)
-hark learned forget kubectl   # delete by heard or written form
-hark learned clear
-```
-
-Terminals expose no field to read, so after a paste into a terminal the learner replays the keys the hotkey
-listener sees (the same stream as the shadow buffer; macOS and X11, not Wayland) on the pasted line
-(`hark_client/keyedits.py`) until Enter, the next dictation, a key reaching another window or `window_ms`. Anything
-it cannot model exactly (history, completion, Home then an edit, mouse clicks, other shortcuts) drops the watch.
-Key events stay in memory; only the derived pairs are stored.
+(`hark_client/context/words.py`): every dictation gets them, ahead of the context terms, through the same gate and
+canonicalization rules.
 
 ## Anchor gate
 
@@ -472,9 +446,8 @@ fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine
 cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the protected-span
 fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocols (text + JSON v1
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
-`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, correction learning
-(diff rules, store, watch window, learned terms reaching the server), the AT-SPI search and the terminal key replay
-(fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
+`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, dictionary terms reaching the server, the
+AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
 events, the start-cue mask on a synthetic tone, undo/swap-raw and every refusal (fake injector), Backspace

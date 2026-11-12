@@ -1,8 +1,7 @@
 """hark CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Hark.app runs it),
 `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
-(pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
-learned vocabulary), `service` (always-on services: systemd user units on Linux, launchd agents
-on macOS).
+(pipeline on a kept recording), `history`, `last`, `doctor`, `eval`, `service` (always-on
+services: systemd user units on Linux, launchd agents on macOS).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -45,8 +44,6 @@ class Args(argparse.Namespace):
     realtime: bool
     no_history: bool
     json: bool
-    learned_action: str
-    text: str | None
     id: str | None
     copy: bool
     history_action: str
@@ -124,11 +121,6 @@ def parse_args(argv: list[str] | None = None) -> Args:
     la = sub.add_parser("last", help="print the last dictated text")
     la.add_argument("--copy", action="store_true", help="copy it to the clipboard instead")
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
-    lp = sub.add_parser("learned", help="corrections learned from your edits (learn.enabled)")
-    lp.add_argument(
-        "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
-    )
-    lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
     ev = sub.add_parser("eval", help="regression set of real dictations (docs/eval.md)")
     ev.add_argument("eval_action", choices=["add", "run", "accept"])
     ev.add_argument(
@@ -269,7 +261,7 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
-    offline = {"learned": cmd_learned, "history": cmd_history, "last": cmd_last, "eval": cmd_eval}
+    offline = {"history": cmd_history, "last": cmd_last, "eval": cmd_eval}
     return offline.get(args.command, cmd_pipeline)(args, cfg)
 
 
@@ -337,33 +329,6 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
     return 1 if failed else 0
 
 
-def cmd_learned(args: Args, cfg: Config) -> int:
-    from hark_client.config import expand  # noqa: PLC0415
-    from hark_client.learn import LearnedStore, store_path  # noqa: PLC0415
-
-    store = LearnedStore(store_path(expand(cfg.history.dir)), cfg.learn.promote_after)
-    if args.learned_action == "forget":
-        if not args.text:
-            print("hark learned forget: give the heard or written form", file=sys.stderr)
-            return 2
-        n = store.forget(args.text)
-        print(f"forgot {n} entr{'y' if n == 1 else 'ies'}")
-        return 0 if n else 1
-    if args.learned_action == "clear":
-        n = store.clear()
-        print(f"cleared {n} entr{'y' if n == 1 else 'ies'} from {store.path}")
-        return 0
-    entries = store.entries()
-    state = "on" if cfg.learn.enabled else "off (learn.enabled = false)"
-    print(f"{store.path}: {len(entries)} entries; learning {state}")
-    for e in entries:
-        mark = "*" if e.count >= store.promote_after else " "
-        print(f"{mark} {e.count:>3}  {e.heard!r} -> {e.written!r}  (last {e.last})")
-    if entries:
-        print(f"* = used for recognition (seen >= {store.promote_after} times)")
-    return 0
-
-
 def cmd_history(args: Args, cfg: Config) -> int:
     import json  # noqa: PLC0415
 
@@ -424,18 +389,13 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
         ConfigError,
         FeedbackConfig,
         default_config_path,
-        expand,
     )
     from hark_client.feedback import Feedback  # noqa: PLC0415
     from hark_client.inject import make_injector  # noqa: PLC0415
-    from hark_client.learn import LearnedStore, Learner, store_path  # noqa: PLC0415
     from hark_client.pipeline import Services  # noqa: PLC0415
     from hark_client.providers import Router  # noqa: PLC0415
 
     router = Router(cfg.provider_configs())
-    learned = LearnedStore(
-        store_path(expand(cfg.history.dir)), cfg.learn.promote_after, cfg.learn.max_terms
-    )
     try:
         if args.command in ("once", "retry"):
             if args.command == "once":
@@ -450,7 +410,6 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 injector=make_injector(cfg.paste, dry_run=args.dry_run),
                 feedback=Feedback(FeedbackConfig(sounds=False, notify=False)),
                 out=print,
-                learned=learned if cfg.learn.enabled else None,
             )  # fmt: skip
             try:
                 return cmd_once(args, svc) if args.command == "once" else cmd_retry(args, svc)
@@ -458,22 +417,10 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 print(f"hark: {e}", file=sys.stderr)
                 return 2
         feedback = Feedback(cfg.feedback)
-        reader = fields.make_reader() if cfg.paste.verify or cfg.learn.enabled else None
-        learner = None
-        if cfg.learn.enabled:
-            learner = Learner(
-                learned, reader,
-                window_s=cfg.learn.window_ms / 1000, poll_s=cfg.learn.poll_ms / 1000,
-                on_promoted=lambda e: feedback.notify(f"Learned: {e.heard!r} -> {e.written!r}"),
-            )  # fmt: skip
-            if reader is None:
-                logging.getLogger("hark").warning(
-                    "learn.enabled, but this platform offers no field read-back (see `hark doctor`);"
-                    " learning only from key replay in terminals"
-                )
+        reader = fields.make_reader() if cfg.paste.verify else None
         svc = Services(
             cfg, router, injector=make_injector(cfg.paste), feedback=feedback,
-            field_reader=reader, learned=learned if cfg.learn.enabled else None, learner=learner,
+            field_reader=reader,
         )  # fmt: skip
         try:
             config_path = Path(args.config) if args.config else default_config_path()

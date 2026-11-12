@@ -46,7 +46,6 @@ auto; no arguments reports the current override.
  "state": "idle", "finishing": 0,
  "last": {"at": 1762950000.123, "utterance_id": "0199…", "status": "pasted", "profile": "prose",
           "paste_verdict": "landed", "keyup_to_paste_ms": 412.5},
- "learning": {"enabled": false, "watching": false},
  "profile_override": null}
 ```
 
@@ -56,8 +55,6 @@ auto; no arguments reports the current override.
   `landed | missing | not_text | unknown`; `keyup_to_paste_ms` may be `null`. **Never** contains dictated text,
   window titles or app content, so a bar module may log it.
 - `profile_override`: the profile picked with `profile` for the next dictation(s), or `null` (by app).
-- `learning.enabled`: correction learning is on (`[learn] enabled`) and the platform can read fields;
-  `learning.watching`: a post-paste watch window is open right now.
 
 Additional `status` fields (facts only; labels, colours and which one wins on a three-word pill belong to
 the UI):
@@ -132,6 +129,7 @@ e.g. a text `error …` reply), `internal` (exception in the daemon).
 
 ## Compatibility
 
-New fields may be added to replies within v1; clients must ignore unknown fields. Removing or retyping a field,
-or changing a `code`, needs `version: 2`. The shapes above are pinned by `client/tests/test_client_ctl.py`
+New fields may be added to replies within v1; clients must ignore unknown fields. Retyping a field or changing a
+`code` needs `version: 2`. hark is a personal tool with clients in this repository only, so fields of features
+that were removed are dropped within v1 (removed so far: `learning`). The shapes above are pinned by `client/tests/test_client_ctl.py`
 (`test_json_v1_contract`), which runs against the real daemon controller.

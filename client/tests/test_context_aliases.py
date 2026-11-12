@@ -4,7 +4,8 @@ import pytest
 
 from hark_client.context import aliases
 from hark_client.context.aliases import extract_terms, spoken_forms
-from hark_client.context.types import TermKind
+from hark_client.context.types import Term, TermKind, TermSource
+from hark_client.context.words import merge_terms
 
 
 @pytest.mark.parametrize(
@@ -227,3 +228,17 @@ def test_directory_paths_are_terms_but_slashed_prose_is_not():
     )
     paths = [t for t, k in extract_terms(text, prose=True) if k is TermKind.PATH]
     assert paths == ["~/projects/hark", "/usr/share/dict", "client/src/hark_client"]
+
+
+def test_dictionary_terms_lead_the_shortlist_and_share_aliases():
+    ctx = (
+        Term("kubectl", ("kube control",), 0.7, TermKind.COMMAND, TermSource.TERMINAL_TEXT),
+        Term("pods", ("pods",), 0.5, TermKind.WORD, TermSource.TERMINAL_TEXT),
+    )
+    words = (Term("kubectl", ("cube control",), 1.0, TermKind.WORD, TermSource.DICTIONARY),)
+    merged = merge_terms(ctx, words, max_terms=2)
+    assert [t.canonical for t in merged] == ["kubectl", "pods"]
+    assert merged[0].spoken == ("cube control", "kube control")
+    assert merged[0].source == TermSource.DICTIONARY
+    assert merge_terms(ctx, words, max_terms=1) == merged[:1]
+    assert merge_terms(ctx, (), max_terms=5) == ctx

@@ -22,7 +22,6 @@ from hark_client.continuation import PASTE_ECHO_S, KeyPress
 from hark_client.fields import FieldText
 from hark_client.indicator import Indicator
 from hark_client.inject import DryRunInjector, PasteResult
-from hark_client.learn import LearnedStore, Learner
 from hark_client.providers import Router
 from hark_server.backends.mock import MockBackend
 
@@ -321,38 +320,6 @@ class EditableField:
         return FieldText("text", self.before + "".join(t for t, _ in self.injector.pasted))
 
 
-def test_paste_read_back_feeds_the_learner(
-    tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]
-    field = EditableField(injector)
-    c.svc.field_reader = field
-    c.svc.learner = Learner(LearnedStore(tmp_path / "learned.json"), field, window_s=5, poll_s=0.02)
-    c.handle("start")
-    c.on_pcm(pcm(1.0))  # no bias term: the mock says "please run cube control ..."
-    c.handle("stop")
-    wait_idle(c)
-    ((pasted, _),) = injector.pasted
-    assert "cube control" in pasted
-    assert c.svc.learner.watching
-    field.edited = "Dear Ann, " + pasted.replace("cube control", "kubectl")
-    time.sleep(0.1)
-    c.handle("start")  # the next dictation ends the watch
-    c.handle("cancel")
-    c.svc.learner.join(2)
-    assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
-        ("cube control", "kubectl")
-    ]
-    status = c.status_json()
-    assert cast("dict[str, object]", status["last"])["paste_verdict"] == "landed"
-    record = cast(
-        "dict[str, object]", json.loads((tmp_path / "history.jsonl").read_text().splitlines()[0])
-    )
-    assert record["paste_verdict"] == "landed"
-    assert "kubectl" not in json.dumps(record)  # the edit itself is never written to history
-
-
 def test_a_paste_missing_from_the_field_is_recorded_only(
     controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
 ):
@@ -370,30 +337,6 @@ def test_a_paste_missing_from_the_field_is_recorded_only(
     assert feedback.notifications == []
     last = cast("dict[str, object]", c.status_json()["last"])
     assert (last["status"], last["paste_verdict"]) == ("pasted", "missing")
-
-
-def test_keys_typed_after_a_terminal_paste_feed_the_learner(
-    tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("kitty", terms=())]
-    c.svc.learner = Learner(LearnedStore(tmp_path / "learned.json"), None, window_s=5)
-    c.handle("start")
-    c.on_pcm(pcm(1.0))
-    c.handle("stop")
-    wait_idle(c)
-    ((pasted, terminal),) = injector.pasted
-    assert terminal
-    assert c.svc.learner.watching
-    typed(c, "v", mods=frozenset({"ctrl", "shift"}))  # hark's own paste chord, right after
-    tail = pasted[pasted.index("cube control") + len("cube control") :]
-    typed(c, *["left"] * len(tail))
-    typed(c, "backspace", "backspace", mods=frozenset({"alt"}))
-    typed(c, *"kubectl", "enter")
-    c.svc.learner.join(2)
-    assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
-        ("cube control", "kubectl")
-    ]
 
 
 def test_a_profile_picked_by_hand_applies_to_the_next_dictation(

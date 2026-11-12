@@ -10,7 +10,7 @@ hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> anchor gate -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
     focus re-check -> caret context / shadow buffer -> smart spacing -> paste ->
-    read-back (verdict; correction learning, opt-in) -> history.
+    read-back (verdict) -> history.
 """
 
 from __future__ import annotations
@@ -35,7 +35,6 @@ from hark_client import (
     gate,
     guardrails,
     history,
-    learn,
     symbols,
 )
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
@@ -43,6 +42,7 @@ from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
+from hark_client.context.words import dictionary_terms, merge_terms
 from hark_client.inject import PasteResult
 
 if TYPE_CHECKING:
@@ -53,7 +53,6 @@ if TYPE_CHECKING:
     from hark_client.feedback import Feedback
     from hark_client.fields import FieldReader
     from hark_client.inject import Injector
-    from hark_client.learn import LearnedStore, Learner
     from hark_client.providers import Provider, Router
 
 log = logging.getLogger("hark")
@@ -67,8 +66,6 @@ class Services:
     feedback: Feedback
     out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
     field_reader: FieldReader | None = None  # paste read-back; None = verdict "unknown"
-    learned: LearnedStore | None = None  # promoted corrections join every shortlist
-    learner: Learner | None = None  # watches edits after a paste (learn.enabled)
     on_stage: Callable[[str, str], None] | None = None  # (utterance id, "cleaning"): indicator
 
 
@@ -185,16 +182,9 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
-        if self.svc.learned is not None:
-            try:
-                learned = self.svc.learned.terms()
-            except OSError as e:
-                learned = ()
-                log.warning("learned vocabulary unreadable: %s", e)
-            snap = replace(snap, terms=learn.merge_terms(snap.terms, learned, cfg.max_terms))
         if self.svc.cfg.words:  # hand-written spellings go first
-            words = learn.dictionary_terms(self.svc.cfg.words)
-            snap = replace(snap, terms=learn.merge_terms(snap.terms, words, cfg.max_terms))
+            words = dictionary_terms(self.svc.cfg.words)
+            snap = replace(snap, terms=merge_terms(snap.terms, words, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)
 
@@ -580,9 +570,6 @@ class Utterance:
         svc.feedback.sound("done" if res.paste.ok else "error")
         if res.status == "pasted" and not prof.terminal:
             self._read_back(res, snap.focus, text)
-        elif res.status == "pasted" and svc.learner is not None:
-            # terminals expose no editable field: replay the keys typed into it instead
-            svc.learner.after_terminal_paste(snap.focus, text, _focus_token)
         return res
 
     def _gate(
@@ -646,21 +633,19 @@ class Utterance:
         return sp.text
 
     def _read_back(self, res: Result, focus: FocusInfo, pasted: str) -> None:
-        """After the paste (off the latency path): verdict, then hand the field to the learner.
+        """After the paste (off the latency path): the verdict.
         ``pasted``: the text as pasted (smart spacing/casing applied)."""
         svc = self.svc
         reader = svc.field_reader
-        if reader is None or not (svc.cfg.paste.verify or svc.learner is not None):
+        if reader is None or not svc.cfg.paste.verify:
             return
         t1 = time.perf_counter()
-        verdict, field_text = fields.verify(reader, focus, pasted)
+        verdict, _ = fields.verify(reader, focus, pasted)
         res.timings["verify_ms"] = _ms(t1)
         res.paste_verdict = verdict
         self._report("verify", f"{verdict} ({res.timings['verify_ms']:.1f} ms)")
         if verdict == "missing":
             log.info("paste not seen in the target field (verdict recorded only)")
-        if verdict == "landed" and svc.learner is not None:
-            svc.learner.after_paste(focus, pasted, field_text.value, _focus_token)
 
     def _cleanup(
         self, text: str, snap: ContextSnapshot, profile_name: str, provider: Provider

@@ -55,7 +55,7 @@ def status(**over: object) -> dict[str, object]:
         "finishing": 0, "paused": False, "mic": {"status": "ok"},
         "server": {"name": "desktop", "state": "ok", "rtt_ms": 38.2, "fallback": False},
         "config": {"changed": False, "restart_needed": []}, "last": None,
-        "learning": {"enabled": False, "watching": False}, "profile_override": None,
+        "profile_override": None,
     }  # fmt: skip
     s.update(over)
     return s

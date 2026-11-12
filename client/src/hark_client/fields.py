@@ -1,6 +1,6 @@
 """Read the focused text field of the paste target, and judge whether a paste landed.
 
-Used after a paste only (verification, correction learning), never on the key-down path.
+Used after a paste only (verification), never on the key-down path.
 
 - macOS: Accessibility (``AXFocusedUIElement`` of the target pid -> ``AXValue``), needs the
   Accessibility permission hark already asks for.

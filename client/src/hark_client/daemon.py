@@ -190,8 +190,6 @@ class Controller:
             self.started += 1
         if self.indicator is not None:
             self.indicator.recording(utt.id, _label("Listening", utt))
-        if self.svc.learner is not None:
-            self.svc.learner.cancel()  # the next paste changes the field: stop watching the last
         if cue:
             self.svc.feedback.sound("start")
         log.info("recording...")
@@ -557,11 +555,8 @@ class Controller:
         return f"ok {label}{scope}"
 
     def user_input(self, press: KeyPress) -> None:
-        """A key press or click from the hotkey listener: keeps the shadow buffer current and
-        feeds the learner's terminal key replay (one listener for both)."""
+        """A key press or click from the hotkey listener: keeps the shadow buffer current."""
         self.shadow.key(press)
-        if self.svc.learner is not None:
-            self.svc.learner.key(press)
 
     def status(self) -> str:
         with self._lock:
@@ -646,7 +641,6 @@ class Controller:
             busy = self.busy
             last = self.last_result
             paused = self.paused
-        learner = self.svc.learner
         return {
             "state": state,
             "phase": phase,
@@ -656,10 +650,6 @@ class Controller:
             "server": self.server_status(),
             "config": {"changed": self.config_changed(), "restart_needed": self.restart_needed},
             "last": None if last is None else _last_json(*last, self._retry_available(last[1])),
-            "learning": {
-                "enabled": learner is not None,
-                "watching": learner is not None and learner.watching,
-            },
             "profile_override": self.profile_override,
         }
 

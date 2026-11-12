@@ -110,7 +110,6 @@ def v1_status(last: object, rtt: str = "float") -> dict[str, object]:
         "server": {"name": "str", "state": "str", "rtt_ms": rtt, "fallback": "bool"},
         "config": {"changed": "bool", "restart_needed": "list"},
         "last": last,
-        "learning": {"enabled": "bool", "watching": "bool"},
         "profile_override": "NoneType",
     }
 

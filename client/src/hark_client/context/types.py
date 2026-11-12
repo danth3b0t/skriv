@@ -23,7 +23,6 @@ class TermKind(StrEnum):
 class TermSource(StrEnum):
     DICTIONARY = "dictionary"  # hand-written [[words]] in the config
     VOCABULARY = "vocabulary"  # user's vocabulary (learned from earlier agent sessions)
-    LEARNED = "learned"  # aliases learned from corrections
     SELECTION = "selection"
     FOCUSED_TEXT = "focused_text"
     WINDOW_TITLE = "window_title"
