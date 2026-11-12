@@ -1,0 +1,133 @@
+#!/usr/bin/env bash
+# Build a pinned transcribe.cpp (ggml) shared library into ./build and download the
+# pinned Parakeet TDT 0.6B v3 GGUF into ./models. Nothing is installed globally:
+# cmake comes from PATH or, if absent, from `uvx` (uv's cache).
+#
+#   scripts/fetch-transcribe            # macOS arm64: CPU + Metal; Linux: CPU
+#   scripts/fetch-transcribe vulkan     # Linux: CPU + Vulkan (needs libvulkan-dev + glslc)
+#   scripts/fetch-transcribe cuda       # Linux: CPU + CUDA (needs nvcc)
+#   scripts/fetch-transcribe cpu        # CPU only (macOS: no Metal)
+#   QUANT=Q8_0 scripts/fetch-transcribe # another quantization of the model
+#
+# Result:
+#   build/transcribe.cpp-<tag>/                      source (git, pinned commit)
+#   build/transcribe.cpp-<tag>/build-<variant>/      build tree
+#   build/transcribe/<variant>/lib                   -> the shared libtranscribe
+#   build/transcribe/python                          -> the matching Python binding (ctypes)
+#   models/parakeet-tdt-0.6b-v3-<QUANT>.gguf (+ .LICENSE, .NOTICE)
+# The hark-server backend `transcribe_cpp` and scripts/cpu-server-up use these paths.
+#
+# On Linux, libopenblas-dev (or another CBLAS) speeds up the host-side TDT decoder;
+# without one the build uses a scalar path.
+set -euo pipefail
+
+TAG=v0.4.2
+COMMIT=275cd50d2c4104c204009a197ac091b9687668e5 # 2026-11-11, "release: 0.4.2"
+REPO=https://github.com/handy-computer/transcribe.cpp
+CMAKE_PIN=4.4.4 # PyPI `cmake`, used via uvx only when cmake is not on PATH
+
+HF_REPO=handy-computer/parakeet-tdt-0.6b-v3-gguf
+HF_REV=d8d8c32cb2017c57e5307767343e97870f8a7f53 # 2026-10-16
+QUANT="${QUANT:-Q4_K_M}"
+
+model_sha() {
+  case "$1" in
+    Q4_K_M) echo b68557be1e3c40207fd7c4bd9d63f1d3316b963f15325bfb0cc16a8bb0ffd181 ;;
+    Q5_K_M) echo cc722e76adc1a629fc0b2535de879d99b8160d07ad4c0215e2ca7d7ea0ae4b8f ;;
+    Q6_K) echo ab1bbcbe3e1c4c2ec12ca1df1aeafd22e9043ce7262e4b5f5c5d7d76418a9ae8 ;;
+    Q8_0) echo 5859f77944efcd8eafa23a6350731960b2b55b2203df51f319665c807d802cc7 ;;
+    F16) echo d9ec7e2c39da7b4fec3e01e71e82c7f7bbe97741e08c0c054091bf3d520a41d3 ;;
+    *) return 1 ;;
+  esac
+}
+
+root="$(cd "$(dirname "$0")/.." && pwd)"
+os="$(uname -s)-$(uname -m)"
+variant="${1:-}"
+if [[ -z $variant ]]; then
+  [[ $os == Darwin-arm64 ]] && variant=metal || variant=cpu
+fi
+
+flags=(-DCMAKE_BUILD_TYPE=Release -DTRANSCRIBE_BUILD_SHARED=ON -DTRANSCRIBE_BUILD_TESTS=OFF
+  -DTRANSCRIBE_BUILD_EXAMPLES=ON)
+case "$os/$variant" in
+  Darwin-arm64/metal) flags+=(-DTRANSCRIBE_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON) ;;
+  Darwin-*/cpu) flags+=(-DTRANSCRIBE_METAL=OFF -DGGML_METAL=OFF) ;;
+  Linux-*/cpu) ;;
+  Linux-*/vulkan) flags+=(-DTRANSCRIBE_VULKAN=ON) ;;
+  Linux-*/cuda) flags+=(-DTRANSCRIBE_CUDA=ON) ;;
+  *)
+    echo "fetch-transcribe: unsupported platform/variant '$os/$variant'" >&2
+    echo "  supported: Darwin-arm64 (metal | cpu), Linux (cpu | vulkan | cuda)" >&2
+    exit 2
+    ;;
+esac
+if ! sha_want="$(model_sha "$QUANT")"; then
+  echo "fetch-transcribe: unknown QUANT '$QUANT' (Q4_K_M | Q5_K_M | Q6_K | Q8_0 | F16)" >&2
+  exit 2
+fi
+
+sha256() {
+  if command -v sha256sum >/dev/null; then sha256sum "$1"; else shasum -a 256 "$1"; fi | cut -d' ' -f1
+}
+
+# --- source -----------------------------------------------------------------------
+src="$root/build/transcribe.cpp-${TAG#v}"
+if [[ ! -d $src/.git ]]; then
+  echo "fetch-transcribe: cloning $REPO@$TAG"
+  git clone --quiet --depth 1 --branch "$TAG" "$REPO" "$src"
+fi
+got="$(git -C "$src" rev-parse HEAD)"
+if [[ $got != "$COMMIT" ]]; then
+  echo "fetch-transcribe: $src is at $got, want $COMMIT ($TAG)" >&2
+  exit 1
+fi
+
+# --- build ------------------------------------------------------------------------
+if command -v cmake >/dev/null; then
+  cmake=(cmake)
+else
+  cmake=(uvx --from "cmake==$CMAKE_PIN" cmake)
+fi
+jobs="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+bdir="$src/build-$variant"
+"${cmake[@]}" -S "$src" -B "$bdir" "${flags[@]}" >/dev/null
+"${cmake[@]}" --build "$bdir" -j "$jobs" --target transcribe transcribe-cli
+
+[[ $os == Darwin-* ]] && libname=libtranscribe.dylib || libname=libtranscribe.so
+lib="$(find "$bdir" -name "$libname" \( -type f -o -type l \) | head -1)"
+if [[ -z $lib ]]; then
+  echo "fetch-transcribe: $libname not found under $bdir" >&2
+  exit 1
+fi
+out="$root/build/transcribe"
+mkdir -p "$out/$variant"
+ln -sfn "$lib" "$out/$variant/lib"
+ln -sfn "$(find "$bdir" -name transcribe-cli -type f -perm -u+x | head -1)" "$out/$variant/transcribe-cli"
+ln -sfn "$src/bindings/python/src" "$out/python"
+echo "fetch-transcribe: $out/$variant/lib -> $lib"
+
+# --- model ------------------------------------------------------------------------
+models="$root/models"
+mkdir -p "$models"
+file="parakeet-tdt-0.6b-v3-$QUANT.gguf"
+fetch() { # remote-file local-path sha256
+  if [[ -f $2 ]]; then
+    echo "fetch-transcribe: $2 already present"
+    return
+  fi
+  echo "fetch-transcribe: downloading $HF_REPO/$1@${HF_REV:0:8}"
+  curl -fL --retry 3 --progress-bar -o "$2.part" "https://huggingface.co/$HF_REPO/resolve/$HF_REV/$1"
+  got="$(sha256 "$2.part")"
+  if [[ $got != "$3" ]]; then
+    echo "fetch-transcribe: sha256 mismatch for $1: got $got, want $3" >&2
+    rm -f "$2.part"
+    exit 1
+  fi
+  mv "$2.part" "$2"
+}
+fetch "$file" "$models/$file" "$sha_want"
+# Parakeet weights are CC-BY-4.0: keep the licence and the attribution next to them.
+fetch LICENSE "$models/parakeet-tdt-0.6b-v3.LICENSE" 9ba9550ad48438d0836ddab3da480b3b69ffa0aac7b7878b5a0039e7ab429411
+fetch NOTICE "$models/parakeet-tdt-0.6b-v3.NOTICE" 6f02c515f3deed71bb0e8909c8d8449faeb365ae507f67cd026c677b1bddcec8
+echo "fetch-transcribe: model $models/$file"
