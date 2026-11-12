@@ -6,6 +6,8 @@
     "parse_args"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Add a test for competition_key with parse_config and parse_args."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_adam speed 0.89; level -20 dBFS, reverb RT60 0.62 s, keyboard + office at SNR 12 dB; app Ghostty (com.mitchellh.ghostty); context full: 20 terms (4 for this clip, 16 distractors from hark); tags identifier"
 }

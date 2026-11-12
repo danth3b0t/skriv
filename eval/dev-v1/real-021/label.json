@@ -4,6 +4,8 @@
   "forbidden": [
     "hark"
   ],
-  "accepted": [],
+  "accepted": [
+    "I hope he doesn't work too hard, said Shaggy."
+  ],
   "note": "real speech: LibriSpeech dev-clean 1272-135031-0008 via hf-internal-testing/librispeech_asr_dummy@5be91486 (speaker 1272, read audiobook); license CC-BY-4.0; app Ghostty (com.mitchellh.ghostty); context full: 21 terms (1 for this clip, 20 distractors from hark); trap terms on the list: hark"
 }

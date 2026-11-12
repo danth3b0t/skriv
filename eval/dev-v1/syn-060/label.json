@@ -2,6 +2,8 @@
   "said": "I don't think we need the anchor gate for short clips, but don't remove it yet",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "I don't think we need the anchor gate for short clips, but don't remove it yet."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_sky speed 1.18; level -28 dBFS, quiet room (tone -61 dBFS); app Alacritty (Alacritty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags negation"
 }

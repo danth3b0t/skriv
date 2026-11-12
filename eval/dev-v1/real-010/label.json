@@ -4,6 +4,9 @@
   "forbidden": [
     "uv"
   ],
-  "accepted": [],
+  "accepted": [
+    "The last Airbender. You mentioned Avatar, and I remember there was a similar show, but not exactly similar. Samurai Jack. Remember Samurai Jack?",
+    "The last Airbender. You've mentioned Avatar. And I remember there was a similar show, but not exactly similar. Samurai Jack. Remember Samurai Jack?"
+  ],
   "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00004 row group 1 row 31; speaker EDACC-C35-A, Kenyan English, L1 Kenyan English, female); license CC-BY-SA-4.0; app Ghostty (com.mitchellh.ghostty); context full: 28 terms (1 for this clip, 27 distractors from hark); trap terms on the list: uv"
 }

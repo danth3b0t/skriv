@@ -5,6 +5,8 @@
     "hark history"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Add a --json flag to hark history list."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_liam speed 1.12; level -22 dBFS, laptop mic, office at SNR 14 dB; app Ghostty (com.mitchellh.ghostty); context full: 22 terms (2 for this clip, 20 distractors from hark); tags flag"
 }

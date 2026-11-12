@@ -4,6 +4,8 @@
   "forbidden": [
     "ruff"
   ],
-  "accepted": [],
+  "accepted": [
+    "The build is rough around the edges, but it works, so let's merge it."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_michael speed 1.04; level -21 dBFS, laptop mic, meeting babble at SNR 14 dB; app Slack (Slack); context full: 16 terms (1 for this clip, 15 distractors from hark); tags trap"
 }

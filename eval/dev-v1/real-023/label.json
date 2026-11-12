@@ -2,6 +2,8 @@
   "said": "only unfortunately his own work never does get good",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Only, unfortunately, his own work never does get good."
+  ],
   "note": "real speech: LibriSpeech dev-clean 1272-128104-0012 via hf-internal-testing/librispeech_asr_dummy@5be91486 (speaker 1272, read audiobook); license CC-BY-4.0; app kitty (kitty); context full: 26 terms (0 for this clip, 26 distractors from hark); trap terms on the list: none"
 }

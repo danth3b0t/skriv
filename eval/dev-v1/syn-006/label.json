@@ -5,6 +5,8 @@
     "pnpm dev"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Run pnpm install and then pnpm dev."
+  ],
   "note": "synthetic (L2 es): Kokoro-82M ef_dora speed 0.93; level -27 dBFS, reverb RT60 0.56 s, laptop mic, office at SNR 20 dB; app Ghostty (com.mitchellh.ghostty); context full: 24 terms (1 for this clip, 23 distractors from web); tags short, command, filler; TTS read 'um, run p n p m install and then p n p m dev'"
 }

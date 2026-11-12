@@ -5,6 +5,8 @@
     "TextField",
     "ScreenText"
   ],
-  "accepted": [],
+  "accepted": [
+    "It should read the text field first, and only then fall back to the screen text."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_adam speed 0.96; level -22 dBFS, quiet room (tone -59 dBFS); app kitty (kitty); context full: 23 terms (2 for this clip, 21 distractors from hark); tags trap"
 }

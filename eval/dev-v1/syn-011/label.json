@@ -2,6 +2,8 @@
   "said": "continue, please",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Continue, please."
+  ],
   "note": "synthetic (en_GB): Kokoro-82M bm_george speed 1.18; level -24 dBFS, laptop mic, fan at SNR 13 dB; app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags short"
 }

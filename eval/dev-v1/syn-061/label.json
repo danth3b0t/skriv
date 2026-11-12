@@ -2,6 +2,8 @@
   "said": "the cleanup must not drop negations, ever, and it shouldn't add anything either",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "The cleanup must not drop negations, ever, and it shouldn't add anything either."
+  ],
   "note": "synthetic (en_AU): macOS say Karen 175 wpm; level -25 dBFS, laptop mic, cafeteria at SNR 15 dB; app Ghostty (com.mitchellh.ghostty); context full: 28 terms (0 for this clip, 28 distractors from hark); tags negation"
 }

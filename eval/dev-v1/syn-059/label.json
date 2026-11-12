@@ -2,6 +2,9 @@
   "said": "never paste into a window that lost focus, copy it to the clipboard instead",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Never paste into a window that lost focus. Copy it to the clipboard instead.",
+    "Never paste into a window that lost focus, copy it to the clipboard instead."
+  ],
   "note": "synthetic (L2 es): Kokoro-82M em_alex speed 0.96; level -22 dBFS, office at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context full: 19 terms (0 for this clip, 19 distractors from hark); tags negation"
 }

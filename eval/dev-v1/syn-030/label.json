@@ -5,6 +5,8 @@
     "context.json"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Explain what retry.save does with the context.json file."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_nicole speed 0.94; level -27 dBFS, living room at SNR 16 dB; app Ghostty (com.mitchellh.ghostty); context full: 18 terms (3 for this clip, 15 distractors from hark); tags identifier, path"
 }

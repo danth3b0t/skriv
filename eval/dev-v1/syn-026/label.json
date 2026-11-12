@@ -5,6 +5,8 @@
     "0.7.1"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Bump the parakeet-mlx package to version 0.7.1."
+  ],
   "note": "synthetic (en_GB): Kokoro-82M bf_alice speed 0.89; level -25 dBFS, laptop mic, cafeteria at SNR 14 dB; app kitty (kitty); context full: 26 terms (1 for this clip, 25 distractors from hark); tags identifier, number"
 }

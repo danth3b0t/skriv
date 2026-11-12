@@ -6,6 +6,8 @@
   "forbidden": [
     "fetch_rows"
   ],
-  "accepted": [],
+  "accepted": [
+    "Call it fetch_row_batch."
+  ],
   "note": "synthetic (en_ZA): macOS say Tessa 226 wpm; level -22 dBFS, laptop mic, cafeteria at SNR 10 dB; app Ghostty (com.mitchellh.ghostty); context full: 24 terms (2 for this clip, 22 distractors from ml); tags correction, identifier"
 }

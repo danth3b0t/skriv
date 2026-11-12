@@ -5,6 +5,8 @@
     "uv sync"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Delete the .venv folder and run uv sync again."
+  ],
   "note": "synthetic (en_IN): macOS say Aman 200 wpm; level -24 dBFS, reverb RT60 0.44 s, living room at SNR 14 dB; app Ghostty (com.mitchellh.ghostty); context sparse: 6 terms (2 for this clip, 4 distractors from hark); tags path, command; TTS read 'delete the dot venv folder and run u v sync again'"
 }

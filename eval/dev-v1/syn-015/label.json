@@ -4,6 +4,8 @@
     "snapshot_json"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "The bug is in snapshot_json. It drops the provenance when the focus is a terminal."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_eric speed 1.05; level -22 dBFS, meeting babble at SNR 16 dB; app Ghostty (com.mitchellh.ghostty); context full: 27 terms (2 for this clip, 25 distractors from hark); tags identifier"
 }

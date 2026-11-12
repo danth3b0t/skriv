@@ -4,6 +4,8 @@
     "client/src/hark_client/pipeline.py"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Open client/src/hark_client/pipeline.py"
+  ],
   "note": "synthetic (L2 es): Kokoro-82M em_alex speed 1.22; level -23 dBFS, reverb RT60 0.27 s, laptop mic, keyboard at SNR 22 dB; app Ghostty (com.mitchellh.ghostty); context full: 16 terms (1 for this clip, 15 distractors from hark); tags path"
 }

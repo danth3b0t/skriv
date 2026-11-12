@@ -5,6 +5,8 @@
     "useWorkspaceStore"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Rename useSessionStore to useWorkspaceStore everywhere."
+  ],
   "note": "synthetic (en_IE): macOS say Moira 182 wpm; level -25 dBFS, reverb RT60 0.22 s, laptop mic, quiet room (tone -56 dBFS); app Code (code); context full: 17 terms (2 for this clip, 15 distractors from web); tags identifier"
 }

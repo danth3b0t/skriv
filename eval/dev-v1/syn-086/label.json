@@ -2,6 +2,8 @@
   "said": "hey, I pushed the fix for the paste bug, um, can you test it on your mac before we merge? I don't have one here.",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Hey, I pushed the fix for the paste bug. Can you test it on your Mac before we merge? I don't have one here."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_puck speed 0.85; level -31 dBFS, reverb RT60 0.44 s, quiet room (tone -57 dBFS); app Slack (Slack); context full: 19 terms (0 for this clip, 19 distractors from hark); tags negation, filler"
 }

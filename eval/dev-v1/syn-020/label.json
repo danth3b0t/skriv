@@ -4,6 +4,8 @@
     "DryRunInjector"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "So the DryRunInjector should record what it would paste, not print it."
+  ],
   "note": "synthetic (L2 es): Kokoro-82M ef_dora speed 0.95; level -21 dBFS, laptop mic, quiet room (tone -55 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 26 terms (2 for this clip, 24 distractors from hark); tags identifier, filler, negation"
 }

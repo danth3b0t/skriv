@@ -4,6 +4,8 @@
     "is_interesting_identifier"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "is_interesting_identifier returns true for single letters, that's wrong."
+  ],
   "note": "synthetic (en_IN): macOS say Tara 224 wpm; level -30 dBFS, reverb RT60 0.66 s, laptop mic, quiet room (tone -59 dBFS); app Code (code); context full: 26 terms (2 for this clip, 24 distractors from hark); tags identifier"
 }

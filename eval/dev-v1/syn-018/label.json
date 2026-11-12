@@ -4,6 +4,9 @@
     "wait_final"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Why does wait_final time out when the server sends the result late?",
+    "Why does wait_final timeout when the server sends the result late?"
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_sky speed 1.04; level -31 dBFS, laptop mic, quiet room (tone -63 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 28 terms (3 for this clip, 25 distractors from hark); tags identifier"
 }

@@ -4,6 +4,8 @@
   "forbidden": [
     "hark part"
   ],
-  "accepted": [],
+  "accepted": [
+    "The hard part is the timing, not the model."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_bella speed 1.1; level -21 dBFS, reverb RT60 0.29 s, quiet room (tone -59 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 17 terms (1 for this clip, 16 distractors from hark); tags trap, negation"
 }

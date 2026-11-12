@@ -4,6 +4,8 @@
     "fix:"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Commit this with the message fix: handle empty transcripts."
+  ],
   "note": "synthetic (en_IN): macOS say Rishi 178 wpm; level -29 dBFS, cafeteria at SNR 14 dB; app Alacritty (Alacritty); context full: 21 terms (0 for this clip, 21 distractors from hark); tags command, symbols"
 }

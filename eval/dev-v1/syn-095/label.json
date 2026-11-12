@@ -4,6 +4,8 @@
   "forbidden": [
     "mark_down"
   ],
-  "accepted": [],
+  "accepted": [
+    "Mark down the time when the user cancels so we can compare it later."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_nicole speed 1.09; level -24 dBFS, reverb RT60 0.65 s, living room at SNR 16 dB; app kitty (kitty); context full: 27 terms (1 for this clip, 26 distractors from hark); tags trap"
 }

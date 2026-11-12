@@ -2,6 +2,9 @@
   "said": "no, that's wrong, the gate isn't the problem, the canonicalizer is",
   "critical": [],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "No, that's wrong, the gate isn't the problem, the canonicalizer is.",
+    "No, that's wrong. The gate isn't the problem. The canonicalizer is."
+  ],
   "note": "synthetic (en_AU): macOS say Karen 220 wpm; level -21 dBFS, reverb RT60 0.58 s, laptop mic, office at SNR 8 dB; app Ghostty (com.mitchellh.ghostty); context full: 17 terms (0 for this clip, 17 distractors from hark); tags negation"
 }

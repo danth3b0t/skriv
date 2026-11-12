@@ -4,6 +4,8 @@
     "useMemo"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Explain why useMemo doesn't help here. The component still re-renders on every keystroke."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_aoede speed 0.93; level -21 dBFS, keyboard at SNR 19 dB; app Code (code); context full: 30 terms (2 for this clip, 28 distractors from web); tags negation, identifier"
 }
