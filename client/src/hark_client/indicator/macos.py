@@ -44,8 +44,7 @@ IDLE_POLL_S = 0.5
 
 _DOT_RGB: dict[State, tuple[float, float, float]] = {
     "recording": (1.0, 0.27, 0.23),
-    "transcribing": (1.0, 0.75, 0.2),
-    "cleaning": (0.55, 0.6, 1.0),
+    "working": (0.55, 0.6, 1.0),
     "done": (0.3, 0.85, 0.4),
     "error": (1.0, 0.27, 0.23),
     "cancelled": (0.6, 0.6, 0.6),
@@ -201,8 +200,8 @@ class PanelBackend:
                 AppKit.NSColor.colorWithSRGBRed_green_blue_alpha_(r, g, b, 1.0).CGColor()
             )
             self.meter.setHidden_(view.state != "recording")
-        if self._shown is None or self._shown.label != view.label:
-            self.label.setStringValue_(view.label)
+        if self._shown is None or self._shown.name != view.name:
+            self.label.setStringValue_(view.name)  # no glyphs here: the whole sentence
         self.meter.setDoubleValue_(view.level)
         if self._shown is None:
             self._place()

@@ -20,7 +20,7 @@ from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
 from hark_client.continuation import PASTE_ECHO_S, KeyPress
 from hark_client.fields import FieldText
-from hark_client.indicator import Indicator, View
+from hark_client.indicator import Indicator
 from hark_client.inject import DryRunInjector, PasteResult
 from hark_client.learn import LearnedStore, Learner
 from hark_client.providers import Router
@@ -412,11 +412,13 @@ def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     assert c.handle("profile sideways") == "error usage: profile [next | auto | set NAME]"
     assert c.handle("start now") == "error start takes no arguments"
     assert c.handle("profile set chat") == "ok chat (next dictation)"
-    assert ind.view == View("info", "Profile: chat")
+    assert ind.view is not None
+    assert ind.view.label == "Profile: chat"
     c.handle("start")
-    assert ind.view == View("recording", "Listening · chat")
+    assert ind.view is not None
+    assert (ind.view.glyph, ind.view.pinned) == ("dot", "chat")
     c.hands_free()
-    assert ind.view == View("recording", "Hands-free · chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("lock", "chat")
     c.on_pcm(pcm(0.4))
     c.handle("stop")
     wait_idle(c)

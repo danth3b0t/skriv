@@ -292,9 +292,12 @@ systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server
 
 ## Recording indicator
 
-While `hark run` works, a small pill shows its state: **Listening** (or **Hands-free**, plus a hand-picked
-profile) with the live input level, **Transcribing…**,
-**Cleaning up…**, then **Pasted** / **Copied** / **No speech** / **Cancelled** / **Failed: hark retry** for a moment.
+While `hark run` works, a small pill shows its state (design/SPEC.md §4): a red dot (a lock when hands-free, plus a
+hand-picked profile) with the live input level, three dots while working, then the outcome for a moment: ✓ (sent,
+with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 2:00*), **Copied**, **Paste
+failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. A press that starts nothing says why:
+**Paused**, **Mic lost**, or the working dots while the previous dictation finishes. On Omarchy, failure pills name
+the key that opens hark's panel (**Super Alt D**); elsewhere a failure names `hark retry` when its audio is kept.
 It never takes focus or clicks, so the paste still goes to the window you dictated into.
 
 - macOS: a borderless `NSPanel` with `NSWindowStyleMaskNonactivatingPanel`, click-through, status-window level, on
@@ -303,7 +306,9 @@ It never takes focus or clicks, so the paste still goes to the window you dictat
   that fails it; `test_client_indicator.py` pins it). AppKit needs the main thread, so `hark run` pumps the AppKit
   event loop there; mic, hotkey listener, ctl socket and each dictation's finish run on their own threads.
 - Linux: GTK 4 + gtk4-layer-shell via PyGObject, if importable: an overlay layer surface anchored to the bottom (or
-  top) edge, `KeyboardMode.NONE`, empty input region (Hyprland, sway, KDE). Needs `gtk4 gtk4-layer-shell` plus
+  top) edge, 24 px in, `KeyboardMode.NONE`, empty input region (Hyprland, sway, KDE). Colours and text size come
+  from the running Omarchy theme (`~/.local/state/omarchy/current/theme/colors.toml`, re-read when it changes; inks
+  solved to WCAG contrast); glyphs need a Nerd Font as `monospace` (Omarchy's default). Needs `gtk4 gtk4-layer-shell` plus
   PyGObject and pycairo in hark's Python: the `hark-git` package has them; from a checkout `uv sync --extra gi`
   (builds them: `gobject-introspection cairo pkgconf base-devel`). Without them, or without layer-shell (GNOME), there is no indicator. **Untested on real hardware.**
 

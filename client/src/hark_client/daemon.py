@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from hark_client.context import CaretContext, FocusInfo
     from hark_client.continuation import KeyPress
     from hark_client.hotkey import PushToTalk
-    from hark_client.indicator import Indicator
+    from hark_client.indicator import Indicator, Refusal
     from hark_client.mic import Mic
     from hark_client.pipeline import Result, Services
 
@@ -150,29 +150,31 @@ class Controller:
 
     # -- dictation ---------------------------------------------------------------------
 
-    def _refuse(self, reply: str) -> str:
+    def _refuse(self, reply: str, why: Refusal) -> str:
         if self.on_recording is not None:
             # nothing records: the hotkey must not wait for a release, a tap or an Esc
             self.on_recording(False)  # noqa: FBT003 - Callable[[bool], None]
+        if self.indicator is not None:
+            self.indicator.refused(why)
         return reply
 
     def start(self) -> str:
         with self._lock:
             if self.paused:
-                return self._refuse("error paused")
+                return self._refuse("error paused", "paused")
             if self.current is not None:
                 return "ok already recording"
             if self.finishing is not None:
                 # one at a time: a second dictation could paste out of order or into a prompt
-                # edited meanwhile; the indicator already shows the first one working
-                return self._refuse("error busy")
+                # edited meanwhile; the indicator shows the first one working
+                return self._refuse("error busy", "busy")
         error = self._mic_ready()
         if error:
             with self._lock:
-                return self._refuse(f"error {error}")
+                return self._refuse(f"error {error}", "mic")
         with self._lock:
             if self.current is not None or self.finishing is not None:
-                return self._refuse("error busy")
+                return self._refuse("error busy", "busy")
             cue = self._start_cue()
             mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
             profile = self.profile_override
@@ -233,7 +235,7 @@ class Controller:
         self.mic_status = status
         if status == "lost":
             if self.indicator is not None:
-                self.indicator.notice("Mic lost")
+                self.indicator.mic_lost()
             self.svc.feedback.notify("Microphone lost; hark keeps trying to reopen it")
         self.touch()
 
@@ -318,7 +320,7 @@ class Controller:
         end = pb.END_REASON_MAX_DURATION if reason == "limit" else pb.END_REASON_KEY_UP
 
         def work() -> None:
-            status = "error"
+            res: Result | None = None
             try:
                 utt.wait_started()  # bounded; the key-down context goes with the audio
                 kept = self._keep(utt, None)  # before transcribing: a crash keeps the audio
@@ -326,7 +328,6 @@ class Controller:
                     min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow,
                     reason=end,
                 )  # fmt: skip
-                status = res.status
                 self.last_result = (time.time(), res)
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
@@ -342,7 +343,10 @@ class Controller:
                 )  # fmt: skip
             finally:
                 if self.indicator is not None:
-                    self.indicator.finished(utt.id, status)
+                    cfg = self.svc.cfg
+                    prof = cfg.profiles.get(res.profile) if res is not None else None
+                    expected = prof is not None and prof.cleanup and cfg.cleanup.enabled
+                    self.indicator.outcome(utt.id, res, cleanup_expected=expected)
                 with self._lock:
                     self.busy -= 1
                     self.finishing = None
