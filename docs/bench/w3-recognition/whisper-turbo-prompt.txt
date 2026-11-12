@@ -1,0 +1,123 @@
+real-001 408 ms primary school, it wasn't even seven feet. So it was very fun to go back there and then mess about there after I did some coaching.
+real-002 285 ms So, it was quite brutal. We could, it was quick, very quickly, but it was a game.
+real-003 313 ms And you worked hard and you graduated and, you know. So yeah, no, do it, do it, do it. Highly recommend.
+real-004 310 ms God, I know. It's so hard, especially in Edinburgh. Like, most of the winter, it was just easier to set at home.
+real-005 427 ms Wait, wait, wait, hold on. You might feel tall, okay? It's a feeling, I understand, so don't let me give you that impression, but you might feel tall, you know?
+real-006 834 ms he/him, it was more like, you know, great gift. He told me, if you can do well in your grades, I'm going to buy a bicycle. And I had to strive hard.
+real-007 320 ms Thank you. I think that we are done for today. Thank you very much for this discussion, and we'll see you very soon. We'll see each other.
+real-008 292 ms that's your question. So, when the younger brother asked him to leave the negative activities, is there any specific reason?
+real-009 295 ms I didn't even realize the ghost one left. You know, the only character I remember was Humongeso. Humongeso!
+real-010 332 ms The Last Airbender. You've mentioned Avatar, and I remember there was a similar show, but not exactly similar, Samurai Jack. Do you remember Samurai Jack?
+real-011 239 ms No, it's almost like an indie film.
+real-012 309 ms So, men sing amongst yourselves. When you're with your bros, you can sing together, but when you're outside, yeah, it's really cool.
+real-013 315 ms Chlorine or Chlorine? I don't know his pronunciation. Chlorine or Chlorine? Okay, I want to say Chlorine.
+real-014 266 ms Well, I guess this video was not planified as it should be.
+real-015 367 ms No, not yet. After we're done speaking with each other, I think I'm going to get me a pizza.
+real-016 306 ms Yeah, you mentioned that drama recently, right? You said you finished almost five, six seasons out of it already? What's that called?
+real-017 1290 ms Nere ba ba chitah? A first met yer ba tithah?
+real-018 331 ms so yeah you can watch that also it's fun i can't believe you never watch it before because it's been like a long time anime
+real-019 290 ms But, but, uh, finally, but finally, we, uh, look, luckily, because we don't get exclusive with COVID-19.
+real-020 259 ms By the way, I don't like the ride the motorbike. I have one
+real-021 250 ms "I hope it doesn't work too hard," said Shaggy.
+real-022 250 ms only his heart and lungs worked on at a strong, measured rate.
+real-023 250 ms Only, unfortunately, his own work never does get good.
+real-024 265 ms I begged Ruggedo long ago to send him away, but he would not do so.
+real-025 262 ms I also offered to help your brother to escape, but he would not go.
+real-026 316 ms In fact, there's nothing he can do in these dominions as well as our gnomes, whose numbers are so great that it worries us to keep them all busy.
+syn-001 224 ms Run the tests again.
+syn-002 212 ms yes, do it
+syn-003 221 ms Looks good, ship it.
+syn-004 216 ms No stop revert that.
+syn-005 215 ms get status.
+syn-006 240 ms Run pnpm install and then pnpm dev.
+syn-007 259 ms uv_run_py_test-k gate.
+syn-008 260 ms Commit this with the message fix:handle empty transcripts.
+syn-009 240 ms show me the diff for pipeline.py.
+syn-010 225 ms Cube control get pods dash end staging.
+syn-011 212 ms Continue, please.
+syn-012 223 ms Never push directly to Maine.
+syn-013 244 ms Rename useSessionStore to useWorkspaceStore everywhere.
+syn-014 260 ms In the useEffect, hook_um, add a cleanup function that clears the interval.
+syn-015 270 ms The bug is in snapshot_json. It drops the provenance when the focus is a terminal.
+syn-016 260 ms MakeLoadSnapshot return an emptyContextSnapshot instead of raising.
+syn-017 263 ms At a field called confident_anchor_to_gate_config, defaults 0.97.
+syn-018 254 ms Why does wait_final timeout when the server sends the result late?
+syn-019 262 ms Rename the East Terminal flag on FocusInfo2, a terminal light.
+syn-020 275 ms Um, so the DryRunInjector should, like, record what it would paste, not print it.
+syn-021 267 ms Check_weather_smart_facing is off when Check_cocuts is passed.
+syn-022 264 ms Set min_speech_ms to 200 and pre-roll_ms to 300.
+syn-023 247 ms The TranscribeStream class leaks a thread when cancel is called twice.
+syn-024 257 ms Add a test for competition key with parse_config and parse_args.
+syn-025 255 ms Is_interesting_identifier returns true for single letters, that's wrong?
+syn-026 255 ms Bump the Parakeet MLX package to version 0.7.1.
+syn-027 249 ms Use the llama's server on port 8080, not the one on 8081
+syn-028 269 ms hark-server should log the boost_min and boost max_it_actually_uses.
+syn-029 280 ms Can you add type hints to read_wav and write wave-based pyright complains about the numpy arrays?
+syn-030 253 ms explain what retry.save does with the context.json file.
+syn-031 229 ms Add an index on user_id in the sessions table.
+syn-032 259 ms Replace requests.get with http.AsyncClient
+syn-033 269 ms Use useQuery from TanStack Query instead of fetching a useEffect.
+syn-034 266 ms openclient/src/hark_client/pipeline.py
+syn-035 268 ms Runhawk eval run-dash-set eval/dev-v1
+syn-036 258 ms Add a --json flag to hark history list.
+syn-037 250 ms Run rough check with dash dash fix, and then basedpyright.
+syn-038 233 ms Delete the .ven folder and run uv-sync again
+syn-039 271 ms Look at docs/protocol/ctl-v1.md before you change the reply format.
+syn-040 234 ms Pass dash dash no dash history to hark once.
+syn-041 281 ms git push-dash-dash-force-with-lease, but don't force_push_main.
+syn-042 314 ms NPM installs audit version 3.23
+syn-043 282 ms Set the environment variable HARK_MODELS_DIR to /data/models.
+syn-044 260 ms tail the logs with journalctl, --user-urok.
+syn-045 253 ms chmod+xscript/make-eval-set.
+syn-046 250 ms use the cube config from tilde slash dot cube slash config.
+syn-047 265 ms docker compose up -d, then curl localhost:8000/health.
+syn-048 272 ms Switch the branch to feat/eval-set and rebase on main.
+syn-049 275 ms In tovi.conf.json, set the window to not be resizable.
+syn-050 252 ms The error says module not found, can't resolve at /lib/utils.
+syn-051 251 ms We need Python 3.12, 3.13 breaks gRPC.
+syn-052 238 ms Set_final_timeout_ms to 1500
+syn-053 340 ms Close issue 421 and link it from PR437
+syn-054 269 ms The model is barrakeet_tdt-0.6b-v3.
+syn-055 245 ms Bump the docker image to node 22-alpine.
+syn-056 236 ms PIP install torch 2.5 with Poudre 12.4
+syn-057 236 ms Don't touch the server code, only change the client.
+syn-058 250 ms This should not retry when the user cancels.
+syn-059 261 ms Never paste into a window that lost focus, copy it to the clipboard instead.
+syn-060 269 ms I don't think we need the anchor gate for short clips, but don't remove it yet.
+syn-061 273 ms The clean-up must not drop negations, ever, and it shouldn't add anything either.
+syn-062 270 ms No, that's wrong, the gate isn't the problem, the canonicalizer is.
+syn-063 254 ms It's not hyperland, it's the quickshell bar that crashes.
+syn-064 281 ms Explain why useMemo doesn't help here, the component still re-renders on every keystroke.
+syn-065 249 ms Use Postgres, no wait, SQLite for the cash.
+syn-066 241 ms Set the timeout to 3 seconds, sorry 5 seconds.
+syn-067 276 ms Put it in client/src, Actually no, put it in server/src.
+syn-068 252 ms Call it fetch_rows, I mean fetch_row_batch.
+syn-069 263 ms Run it on the GPU server, no, on the CPU fileback.
+syn-070 244 ms Write it in TypeScript, um, no, in Rust.
+syn-071 278 ms Add it to the README, scratch that, add it to docs/eval.md.
+syn-072 244 ms Make the limit 10MB, no, 20MB
+syn-073 448 ms Okay so, um, here's the thing when I dictate into ghosty and the context collect misses the deadline. The session start goes out with zero bias terms and I want you to log that as a warning with the app id, and, like, add a canter to hark doctor so we can see how often it happens, don't change the deadline itself.
+syn-074 456 ms So basically the problem is that the cleanup model sometimes rewrites --dry-run into dry-run without the dashing. When you add flags to the protected spans in cleanup.py and add a test to it, you know, three or four flags, like --4s, --4s and --8.
+syn-075 402 ms On hyperland the paste goes to the wrong window if I switch workspaces while it's transcribing. Um, we should check the window_id from hyper_control_active_window right before we paste, and if it changed, uh, just copy to the clipboard and notify.
+syn-076 340 ms In the PyTorch training loop, move the optimizer zero grad call before the backward pass, and don't forget to call model.train at the start of each epoch.
+syn-077 314 ms The o-markey panel should show, like, the last three dictations, and clicking one should run hark-control-paste-last.
+syn-078 299 ms Add a Ghosty keybind for Super-Alt-D that runs hark_control_toggle.
+syn-079 287 ms The CTL socket should live in $XDG runtime dial, not in /10.
+syn-080 299 ms pnpm r-T vtest, then create a vtest.config.ts with the jsdom environment.
+syn-081 285 ms In the redis config, set maxmemory-policy to all keys lru and don't enable persistence
+syn-082 284 ms Set CUDA_VISIBLE_DEVICES to 0,1 before you start the training.
+syn-083 383 ms Okay, ah, so the eval set should have, you know, about a hundred clips, mostly terminal prompts, and it should never include anything from my real history without asking first.
+syn-084 332 ms I think the canonicalizer is too eager. When the shortlist has wait_for and the user says wait for the build, we must not write it with an underscore.
+syn-085 301 ms Refactor the router so the health probe for each provider runs in parallel. Keep max_latency_ms as the per-provider budget.
+syn-086 300 ms Hey, I pushed the fix for the paste bug. Um, can you test it on your Mac before we merge? I don't have one here.
+syn-087 309 ms Meeting notes, we decided to keep S1-mini as the default cleanup model and not switch to Quen3 for now.
+syn-088 268 ms Write a short summary of what changed on this branch for the PR description. Keep it under five bullet points.
+syn-089 257 ms The build is rough around the edges, but it works, so let's merge it.
+syn-090 253 ms Highland Park is where the off-site is, so don't book anything downtown.
+syn-091 255 ms Write a quick shell script that waits for the server to come up.
+syn-092 256 ms Show me the last text you generated, and key it to one line.
+syn-093 252 ms We need a session start and end time in the report.
+syn-094 239 ms The hard part is the timing, not the model.
+syn-095 269 ms Mark down the time when the user cancels, so we can compare it later.
+syn-096 253 ms It should read the text field first, and only then fall back to the screen text.
+WER all 20.1% real 19.7% E 31.8%; E targets 8/22; model ms p50 264 p95 383

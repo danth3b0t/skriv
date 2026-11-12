@@ -1,0 +1,3 @@
+# English only: SessionStart.languages = ["en"], which the server routes to its English-only companion (parakeet-tdt-0.6b-v2).
+[server]
+language = "en"

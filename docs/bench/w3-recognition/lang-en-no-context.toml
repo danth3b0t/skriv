@@ -1,0 +1,5 @@
+# English only (parakeet-tdt-0.6b-v2 companion) and no context: the shortlist is cut to 0 terms.
+[server]
+language = "en"
+[context]
+max_terms = 0
