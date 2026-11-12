@@ -38,7 +38,7 @@ export async function connect({ root = process.cwd(), env = {} } = {}) {
   await request('initialize', {
     protocolVersion: '2025-06-18',
     capabilities: {},
-    clientInfo: { name: 'hark-design', version: '0.1' }
+    clientInfo: { name: 'skriv-design', version: '0.1' }
   })
   notify('notifications/initialized', {})
   return {

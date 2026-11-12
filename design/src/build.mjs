@@ -1,6 +1,6 @@
-// Build design/hark-ui.fig in the running OpenPencil app over MCP, then export PNGs headlessly.
-//   node design/src/build.mjs                 full build -> design/hark-ui.fig + design/exports/*.png
-//   node design/src/build.mjs --only panel    scratch build of one page group -> /tmp/hark-scratch/*.png
+// Build design/skriv-ui.fig in the running OpenPencil app over MCP, then export PNGs headlessly.
+//   node design/src/build.mjs                 full build -> design/skriv-ui.fig + design/exports/*.png
+//   node design/src/build.mjs --only panel    scratch build of one page group -> /tmp/skriv-scratch/*.png
 import { execFileSync } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
@@ -12,7 +12,7 @@ import { PAGES } from './pages.mjs'
 const here = path.dirname(fileURLToPath(import.meta.url))
 const DESIGN = path.resolve(here, '..')
 const only = process.argv.includes('--only') ? process.argv[process.argv.indexOf('--only') + 1] : null
-const FIG = only ? `scratch-${only}.fig` : 'hark-ui.fig'
+const FIG = only ? `scratch-${only}.fig` : 'skriv-ui.fig'
 
 const c = await connect({ root: DESIGN, env: { OPENPENCIL_MCP_EVAL: '1' } })
 const J = (r) => JSON.parse(c.text(r))
@@ -34,7 +34,7 @@ const spec = Object.entries(VARS).map(([name, [key, desc]]) => ({
 }))
 const setup = await evalJS(`
 const g = figma.graph
-const col = g.createCollection('hark · Omarchy theme')
+const col = g.createCollection('Skriv · Omarchy theme')
 const modes = ${JSON.stringify(MODES)}
 g.renameMode(col.id, col.modes[0].modeId, modes[0])
 const modeIds = [col.modes[0].modeId]
@@ -122,10 +122,10 @@ if (only) await c.call('close_file', { document_id: DOC, unsaved: 'discard' })
 c.close()
 
 // ---------------------------------------------------------------- PNG exports (headless OpenPencil renderer)
-const out = only ? `/tmp/hark-scratch/${only}` : path.join(DESIGN, 'exports')
+const out = only ? `/tmp/skriv-scratch/${only}` : path.join(DESIGN, 'exports')
 execFileSync('node', [path.join(here, 'raster.mjs'), path.join(DESIGN, FIG), out, '2'], { stdio: 'inherit' })
 if (only) {
-  const keep = `/tmp/hark-scratch/${only}.fig`
+  const keep = `/tmp/skriv-scratch/${only}.fig`
   if (existsSync(path.join(DESIGN, FIG))) renameSync(path.join(DESIGN, FIG), keep)
 }
 process.exit(0)

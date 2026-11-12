@@ -154,7 +154,7 @@ def test_own_paste_chord_is_ignored_only_right_after_pasting(
 ):
     buf, clock, _ = shadow
     buf.pasted("w1", " Next")
-    keys(buf, "v")  # macOS: hark's Cmd+V carries its flag only, no Cmd key event
+    keys(buf, "v")  # macOS: skriv's Cmd+V carries its flag only, no Cmd key event
     keys(buf, "v", mods=CTRL)  # X11: xdotool ctrl+v
     assert buf.before("w1") == "up until this point. Next"
     clock.now += 1.0

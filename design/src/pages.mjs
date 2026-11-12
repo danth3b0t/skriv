@@ -1,4 +1,4 @@
-// Page list for design/hark-ui.fig. Root frames named `export/<name>` are exported as design/exports/<name>.png.
+// Page list for design/skriv-ui.fig. Root frames named `export/<name>` are exported as design/exports/<name>.png.
 import { pillBoard } from './screens-indicator.mjs'
 import { quickPanelIdle, quickPanelAttention, quickPanelStates, quickPanelProfile, quickPanelOff, barWidgetStates } from './screens-panel.mjs'
 import { historyPasted, historyFailed, historyDiff } from './screens-history.mjs'

@@ -1,4 +1,4 @@
-"""`hark doctor`: ASR providers, mic, permissions, paste tools, control socket, context."""
+"""`skriv doctor`: ASR providers, mic, permissions, paste tools, control socket, context."""
 
 from __future__ import annotations
 
@@ -114,7 +114,7 @@ def check_mic(r: Report, cfg: Config) -> None:
         return
     if level < -80 or constant:
         hint = (
-            "grant Microphone access to Hark.app or your terminal (System Settings > Privacy & Security)"
+            "grant Microphone access to Skriv.app or your terminal (System Settings > Privacy & Security)"
             if sys.platform == "darwin"
             else "check the input source/mute (pavucontrol, wpctl)"
         )
@@ -127,14 +127,14 @@ def check_mic(r: Report, cfg: Config) -> None:
 def check_permissions(r: Report) -> None:
     if sys.platform != "darwin":
         return
-    print("macOS permissions (of Hark.app, or of the terminal that runs `hark run`)")
+    print("macOS permissions (of Skriv.app, or of the terminal that runs `skriv run`)")
     from skriv_client import macos  # noqa: PLC0415
 
     mic = macos.mic_authorization()
     if mic == "authorized":
         r.ok("Microphone", "allowed")
     elif mic == "not_determined":
-        r.warn("Microphone", "not asked yet (Hark.app: Setup & Permissions)")
+        r.warn("Microphone", "not asked yet (Skriv.app: Setup & Permissions)")
     else:
         r.fail("Microphone", f"{mic}: System Settings > Privacy & Security > Microphone")
     if macos.can_listen_events():
@@ -173,9 +173,9 @@ def check_daemon(r: Report) -> None:
     path = ctl.socket_path()
     print(f"daemon ({path})")
     try:
-        r.ok("hark run", ctl.send("status", path, timeout=1.0))
+        r.ok("skriv run", ctl.send("status", path, timeout=1.0))
     except OSError:
-        r.warn("hark run", "not running")
+        r.warn("skriv run", "not running")
 
 
 def check_context(r: Report, cfg: Config) -> None:

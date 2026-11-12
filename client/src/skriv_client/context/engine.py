@@ -99,7 +99,7 @@ def collect_detailed(
         focus = focus_res.focus if focus_res else FocusInfo()
         term_pid = focus.pid
         screen_job = run.start("screen", lambda: screen_text(focus)) if focus.pid else None
-        # SKRIV_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
+        # SKRIV_CONTEXT_CWD pins the working directory (testing, `skriv once --cwd`).
         pinned = os.environ.get("SKRIV_CONTEXT_CWD")
         warm = prefetch.lookup(focus.window_id)
         if warm is not None and pinned in {None, warm.cwd}:

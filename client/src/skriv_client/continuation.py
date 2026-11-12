@@ -2,7 +2,7 @@
 
 Right before pasting, the pipeline asks ``context.caret_context()`` for the text before and
 after the caret. When that is unavailable or untrusted (Ghostty exposes no caret, TUIs hide
-the cursor), it falls back to the :class:`ShadowBuffer`: hark's own last paste plus the keys
+the cursor), it falls back to the :class:`ShadowBuffer`: skriv's own last paste plus the keys
 typed into the same window since, as seen by the hotkey listener. :func:`decide` then picks
 
 - a leading space iff the character before the caret is known, is not whitespace, not an
@@ -27,7 +27,7 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-# Key events this soon after hark pasted can be its own synthetic paste chord.
+# Key events this soon after skriv pasted can be its own synthetic paste chord.
 PASTE_ECHO_S = 0.5
 SHADOW_CHARS = 64
 
@@ -102,7 +102,7 @@ class Edit(Enum):
     BACKSPACE = auto()
     WORD_BACKSPACE = auto()
     LINE_START = auto()  # the caret is at a known line start
-    PASTE_CHORD = auto()  # Cmd/Ctrl(+Shift)+V: hark's own within the echo window
+    PASTE_CHORD = auto()  # Cmd/Ctrl(+Shift)+V: skriv's own within the echo window
     IGNORE = auto()  # does not move the caret or change text before it
     UNKNOWN = auto()
 
@@ -147,7 +147,7 @@ def _drop_word(text: str) -> str:
 
 
 class ShadowBuffer:
-    """The text before the caret as far as hark knows it: its last paste plus what the user
+    """The text before the caret as far as skriv knows it: its last paste plus what the user
     typed into the same window since. Thread-safe (paste thread vs. listener threads).
 
     ``focus_token`` (``context.focus_token``) is checked on every tracked key: a key that went
@@ -178,7 +178,7 @@ class ShadowBuffer:
             self._target = ""
 
     def pasted(self, target: str, text: str) -> None:
-        """Call right before hark pastes ``text`` (spacing included) into window ``target``."""
+        """Call right before skriv pastes ``text`` (spacing included) into window ``target``."""
         now = self._clock()
         with self._lock:
             if not target:
@@ -208,7 +208,7 @@ class ShadowBuffer:
                 return
             edit, char = classify(press)
             echo = now - self._pasted_at < self.echo_s
-            # hark's Cmd+V is posted with flags only, so the listener may see a bare "v"
+            # skriv's Cmd+V is posted with flags only, so the listener may see a bare "v"
             if edit is Edit.IGNORE or (echo and press.char.lower() in {"v", "\x16"}):
                 return
             target = self._target
@@ -225,12 +225,12 @@ class ShadowBuffer:
         if edit is Edit.APPEND:
             self._set(self._text + char, anchored=self._anchored)
         elif edit in {Edit.BACKSPACE, Edit.WORD_BACKSPACE}:
-            if not self._text:  # into text hark never saw
+            if not self._text:  # into text skriv never saw
                 self._target = ""
                 return
             rest = self._text[:-1] if edit is Edit.BACKSPACE else _drop_word(self._text)
             if not rest and edit is Edit.WORD_BACKSPACE and not self._anchored:
-                self._target = ""  # the word may continue before what hark saw
+                self._target = ""  # the word may continue before what skriv saw
                 return
             self._text = rest
         elif edit is Edit.LINE_START:

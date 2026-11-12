@@ -1,13 +1,13 @@
-// hark design source: OpenPencil design-JSX helpers that mirror Omarchy shell (qs.Commons / qs.Ui)
+// skriv design source: OpenPencil design-JSX helpers that mirror Omarchy shell (qs.Commons / qs.Ui)
 // geometry at the default scale ([font] base-size 12, [spacing] scale 1, Hyprland rounding 0).
-// Colours are bound to the "hark · Omarchy theme" variable collection (one mode per Omarchy theme),
+// Colours are bound to the "skriv · Omarchy theme" variable collection (one mode per Omarchy theme),
 // so every frame can be switched between themes inside OpenPencil.
 import { readFileSync } from 'node:fs'
 
-export const TOKENS = JSON.parse(readFileSync(new URL('../tokens/omarchy-hark-tokens.json', import.meta.url)))
+export const TOKENS = JSON.parse(readFileSync(new URL('../tokens/omarchy-skriv-tokens.json', import.meta.url)))
 export const MODES = ['tokyo-night', 'catppuccin-latte', 'catppuccin', 'gruvbox', 'rose-pine', 'flexoki-light', 'matte-black', 'nord']
 
-// variable name -> [token key in omarchy-hark-tokens.json, Omarchy source / formula]
+// variable name -> [token key in omarchy-skriv-tokens.json, Omarchy source / formula]
 export const VARS = {
   bg: ['bg', 'colors.toml background = [popups] background'],
   fg: ['fg', 'colors.toml foreground = [popups] text'],
@@ -81,11 +81,11 @@ export function spacer() { return frame({ name: 'spacer', grow: 1, h: 1 }) }
 // ---------------------------------------------------------------- atoms
 export function dot(color = 'live-ink', size = 8) { return ellipse({ name: 'dot', w: size, h: size, bg: v(color) }) }
 
-export function harkMark(size = 16, color = 'fg') {
-  // three level bars: the hark glyph (drawn in the bar at Style.bar.iconSize)
+export function skrivMark(size = 16, color = 'fg') {
+  // three level bars: the skriv glyph (drawn in the bar at Style.bar.iconSize)
   const u = size / 16
   const bars = [[1, 7], [6.25, 14], [11.5, 9.5]] // x, height; centred: a three-sample waveform
-  return frame({ name: 'hark-mark', w: size, h: size },
+  return frame({ name: 'skriv-mark', w: size, h: size },
     bars.map(([x, h]) => rect({ x: Math.round(x * u), y: Math.round(((16 - h) / 2) * u), w: Math.max(2, Math.round(3.5 * u)), h: Math.round(h * u), bg: v(color) })))
 }
 

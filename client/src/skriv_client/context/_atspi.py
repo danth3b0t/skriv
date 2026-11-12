@@ -1,6 +1,6 @@
 """AT-SPI access to the focused text field of an application (Linux; optional).
 
-Needs PyGObject (``gi``) with the ``Atspi`` 2.0 typelib, which hark does not depend on:
+Needs PyGObject (``gi``) with the ``Atspi`` 2.0 typelib, which skriv does not depend on:
 without it :func:`focused_text` returns None. **Untested on real hardware**; the caret
 logic using it (``skriv_client.context.caret.text_field_caret``) is unit-tested with fakes.
 

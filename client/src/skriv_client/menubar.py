@@ -1,14 +1,14 @@
-"""Hark.app's menu-bar status item (`hark app`, macOS).
+"""Skriv.app's menu-bar status item (`skriv app`, macOS).
 
 An ``NSStatusItem`` whose SF Symbol shows the daemon state (ready, listening, transcribing,
 paused, last dictation failed) and a menu: last dictation, Copy / Retry last, Pause / Resume,
 Profile override, Open History, Settings, Setup & Permissions, Run Doctor, Launch at Login,
 Quit. It lives on the main thread in the same AppKit loop as the recording indicator
 (``indicator.macos.pump``); the daemon calls :meth:`MenuBar.tick` from that loop. Opening the
-menu does not activate Hark, so the dictation target keeps focus.
+menu does not activate Skriv, so the dictation target keeps focus.
 
-Commands that already exist in the CLI (`hark retry`, `hark doctor`) run as child processes of
-Hark, so they run with Hark's permissions; `hark history` opens in Terminal.
+Commands that already exist in the CLI (`skriv retry`, `skriv doctor`) run as child processes of
+Skriv, so they run with Skriv's permissions; `skriv history` opens in Terminal.
 """
 # pyright: reportAny=false, reportExplicitAny=false, reportUntypedBaseClass=false
 # ruff: noqa: ANN401, N802 - pyobjc is untyped, takes positional booleans, selector names
@@ -64,7 +64,7 @@ PREVIEW_CHARS = 40
 LOOP_POLL_S = 0.25
 CACHE_DIR = Path.home() / "Library" / "Caches" / "skriv"
 LOG_DIR = Path.home() / "Library" / "Logs" / "skriv"
-CONFIG_STUB = "# hark client config; every key is optional. See client/README.md#configuration\n"
+CONFIG_STUB = "# skriv client config; every key is optional. See client/README.md#configuration\n"
 
 
 def menu_state(c: Controller, now: float) -> str:
@@ -138,7 +138,7 @@ def symbol(name: str, description: str) -> Any:
 
 
 def bundle_path() -> Path | None:
-    """The running Hark.app, or None when `hark app` runs outside a bundle."""
+    """The running Skriv.app, or None when `skriv app` runs outside a bundle."""
     path = Path(str(AppKit.NSBundle.mainBundle().bundlePath()))
     return path if path.suffix == ".app" else None
 
@@ -167,7 +167,7 @@ class MenuBar:
         self.c = controller
         self.stop = stop
         self.config_path = config_path
-        self.cli = cli  # global options for child `hark` commands (--config, --server)
+        self.cli = cli  # global options for child `skriv` commands (--config, --server)
         self.app = shared_app()
         self.actions = make_actions()
         self.actions.on_menu_open = self.refresh
@@ -175,7 +175,7 @@ class MenuBar:
         self.item = AppKit.NSStatusBar.systemStatusBar().statusItemWithLength_(
             AppKit.NSVariableStatusItemLength
         )
-        self.menu = AppKit.NSMenu.alloc().initWithTitle_("Hark")
+        self.menu = AppKit.NSMenu.alloc().initWithTitle_("Skriv")
         self.menu.setAutoenablesItems_(False)
         self.menu.setDelegate_(self.actions)
         self.item.setMenu_(self.menu)
@@ -205,7 +205,7 @@ class MenuBar:
         self.menu.addItem_(AppKit.NSMenuItem.separatorItem())
 
     def _build(self) -> None:
-        self.status_line = self._add("Hark")
+        self.status_line = self._add("Skriv")
         self.last_line = self._add("No dictation yet")
         self.copy_item = self._add("Copy Last Dictation", self.copy_last)
         self.retry_item = self._add("Retry Last Dictation", self.retry_last)
@@ -230,7 +230,7 @@ class MenuBar:
         self._add("Run Doctor", self.run_doctor)
         self.login_item = self._add("Launch at Login", self.toggle_login) if bundle_path() else None
         self._separator()
-        self._add("Quit Hark", self.stop.set)
+        self._add("Quit Skriv", self.stop.set)
 
     # --- loop ---------------------------------------------------------------------------
 
@@ -239,8 +239,8 @@ class MenuBar:
         if state != self._state:
             self._state = state
             button = self.item.button()
-            button.setImage_(symbol(SYMBOLS[state], f"Hark: {LABELS[state]}"))
-            button.setToolTip_(f"Hark: {LABELS[state]}")
+            button.setImage_(symbol(SYMBOLS[state], f"Skriv: {LABELS[state]}"))
+            button.setToolTip_(f"Skriv: {LABELS[state]}")
         if self.setup is not None:
             self.setup.tick()
 
@@ -250,7 +250,7 @@ class MenuBar:
     def refresh(self) -> None:
         """Menu about to open: current titles, checkmarks and enabled states."""
         on, off = AppKit.NSControlStateValueOn, AppKit.NSControlStateValueOff
-        self.status_line.setTitle_(f"Hark: {LABELS[menu_state(self.c, time.time())]}")
+        self.status_line.setTitle_(f"Skriv: {LABELS[menu_state(self.c, time.time())]}")
         text = self.last_text()
         self.last_line.setTitle_(f"Last: “{preview(text)}”" if text else "No dictation yet")
         self.copy_item.setEnabled_(bool(text))
@@ -275,18 +275,22 @@ class MenuBar:
         if text and not self.c.svc.injector.copy(text):
             self.c.svc.feedback.notify("Could not write the clipboard")
 
-    def hark(self, *args: str) -> list[str]:
-        """argv for a child `hark` command run by this interpreter."""
+    def skriv(self, *args: str) -> list[str]:
+        """argv for a child `skriv` command run by this interpreter."""
         return [sys.executable, "-m", "skriv_client", *self.cli, *args]
 
     def retry_last(self) -> None:
         def work() -> None:
             proc = subprocess.run(  # noqa: S603 - our own CLI
-                self.hark("retry", "last"), capture_output=True, text=True, timeout=120, check=False
+                self.skriv("retry", "last"),
+                capture_output=True,
+                text=True,
+                timeout=120,
+                check=False,
             )
             lines = (proc.stdout + proc.stderr).strip().splitlines()
             self.c.svc.feedback.notify(
-                lines[-1] if lines else f"hark retry: exit {proc.returncode}"
+                lines[-1] if lines else f"skriv retry: exit {proc.returncode}"
             )
 
         threading.Thread(target=work, daemon=True, name="skriv-retry").start()
@@ -296,11 +300,11 @@ class MenuBar:
         self.tick()
 
     def set_profile(self, name: str | None) -> None:
-        """Same override as `hark ctl profile set NAME|auto` (the next dictation)."""
+        """Same override as `skriv ctl profile set NAME|auto` (the next dictation)."""
         self.c.profile(["set", name] if name is not None else ["auto"])
 
     def open_history(self) -> None:
-        open_in_terminal(self.hark("history"), "history")
+        open_in_terminal(self.skriv("history"), "history")
 
     def open_settings(self) -> None:
         path = self.config_path
@@ -308,15 +312,15 @@ class MenuBar:
             path.parent.mkdir(parents=True, exist_ok=True)
             path.write_text(CONFIG_STUB)
         subprocess.Popen(["/usr/bin/open", "-t", str(path)])  # noqa: S603
-        self.c.svc.feedback.notify("Restart Hark after editing the config")
+        self.c.svc.feedback.notify("Restart Skriv after editing the config")
 
     def run_doctor(self) -> None:
         def work() -> None:
             LOG_DIR.mkdir(parents=True, exist_ok=True, mode=0o700)
             report = LOG_DIR / "doctor.txt"
             with report.open("w") as out:
-                subprocess.run(  # noqa: S603 - our own CLI, with Hark's permissions
-                    self.hark("doctor"), stdout=out, stderr=subprocess.STDOUT, timeout=60,
+                subprocess.run(  # noqa: S603 - our own CLI, with Skriv's permissions
+                    self.skriv("doctor"), stdout=out, stderr=subprocess.STDOUT, timeout=60,
                     check=False,
                 )  # fmt: skip
             subprocess.Popen(["/usr/bin/open", "-t", str(report)])  # noqa: S603
@@ -346,7 +350,7 @@ class MenuBar:
         picked up only by a new process)."""
         app = bundle_path()
         if app is None:
-            self.c.svc.feedback.notify("Restart `hark app` to apply the new permissions")
+            self.c.svc.feedback.notify("Restart `skriv app` to apply the new permissions")
             return
         pid = Foundation.NSProcessInfo.processInfo().processIdentifier()
         script = f"while kill -0 {pid} 2>/dev/null; do sleep 0.2; done; /usr/bin/open {shlex.quote(str(app))}"

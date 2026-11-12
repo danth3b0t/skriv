@@ -150,7 +150,7 @@ class CtlServer:
             except OSError:
                 path.unlink()  # stale socket from a crashed daemon
             else:
-                raise DaemonRunningError(f"another hark daemon is listening on {path}")
+                raise DaemonRunningError(f"another skriv daemon is listening on {path}")
 
         def json_handler(command: str) -> JsonObject:
             if status_json is not None:

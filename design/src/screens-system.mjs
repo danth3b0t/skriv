@@ -1,5 +1,5 @@
 // System boards: cover, the visual system (colour roles, type, space, motion), theme matrix.
-import { F, MODES, frame, text, rect, v, harkMark, spacer, boardTitle } from './lib.mjs'
+import { F, MODES, frame, text, rect, v, skrivMark, spacer, boardTitle } from './lib.mjs'
 import { pill } from './screens-indicator.mjs'
 
 export function cover(theme) {
@@ -11,7 +11,7 @@ export function cover(theme) {
     'Every colour and size from the Omarchy theme'
   ]
   return frame({ name: `export/cover-${theme}`, flex: 'col', gap: 48, p: 64, w: 1200, bg: v('bg') },
-    frame({ flex: 'row', gap: 14, items: 'center' }, harkMark(24), text('hark', { size: F.display, weight: 'bold' })),
+    frame({ flex: 'row', gap: 14, items: 'center' }, skrivMark(24), text('Skriv', { size: F.display, weight: 'bold' })),
     frame({ flex: 'col', gap: 10 }, principles.map((p) => text(p, { size: F.body, color: 'text-2' }))),
     frame({ flex: 'row', gap: 16, items: 'center' }, pill('recording'), pill('working'), pill('sent'), pill('copied'), pill('failed')))
 }
@@ -46,7 +46,7 @@ export function themeMatrix() {
     text(m, { size: F.bodySmall, color: 'text-2' }),
     pill('recording'), pill('copied'), pill('pastefailed'),
     frame({ flex: 'col', gap: 12, w: 'fill', p: 12, stroke: v('accent'), strokeWidth: 2 },
-      frame({ flex: 'row', gap: 8, items: 'center', w: 'fill', h: 28 }, harkMark(14), text('hark', { size: F.body, weight: 'bold' }), spacer(), text('Pause', { size: F.body, color: 'text-2' })),
+      frame({ flex: 'row', gap: 8, items: 'center', w: 'fill', h: 28 }, skrivMark(14), text('Skriv', { size: F.body, weight: 'bold' }), spacer(), text('Pause', { size: F.body, color: 'text-2' })),
       frame({ flex: 'row', w: 'fill', h: 28, px: 8, items: 'center', bg: v('fill-hover') }, text('Profile', { size: F.body }), spacer(), text('auto', { size: F.body, color: 'text-2' }))))
   return frame({ name: 'export/theme-matrix', flex: 'col', gap: 24, p: 48, w: 1400, bg: '#202020' },
     text('Theme matrix', { size: F.title, color: '#a0a0a0' }),

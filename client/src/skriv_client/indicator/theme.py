@@ -1,6 +1,6 @@
 """The pill's colours and sizes from the running Omarchy theme (design/SPEC.md §3).
 
-hark defines no colours: everything comes from ``colors.toml`` of the current theme, and the
+skriv defines no colours: everything comes from ``colors.toml`` of the current theme, and the
 inks are solved per theme to WCAG contrast (text 4.5:1, glyphs 3:1) because some theme colours
 fall short (yellow and green on light themes). Same formulas as ``design/src/tokens.py`` and the
 shell plugin's ``Model.js``. Without an Omarchy theme the shell's own fallback colours apply.

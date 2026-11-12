@@ -10,7 +10,7 @@ set -u
 
 notify() {
   if command -v omarchy-notification-send >/dev/null 2>&1; then
-    omarchy-notification-send "skriv" "$1"
+    omarchy-notification-send "Skriv" "$1"
   fi
   echo "skriv-panel: $1" >&2
 }

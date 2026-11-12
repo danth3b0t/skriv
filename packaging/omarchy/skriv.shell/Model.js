@@ -128,25 +128,25 @@ function serverParts(status, online) {
   return parts.filter(function(p) { return p.text !== "" })
 }
 
-// One line: "skriv · ready · desktop 38 ms", or the state / the problem. Also the bar item's
+// One line: "Skriv · ready · desktop 38 ms", or the state / the problem. Also the bar item's
 // accessible name.
 function sentence(status, online, seenId) {
   var p = problem(status, online)
-  if (p) return "skriv · " + p.label
+  if (p) return "Skriv · " + p.label
   var state = glyphState(status, online)
-  if (state === "paused") return "skriv · paused"
-  if (state === "recording") return "skriv · recording"
-  if (state === "working") return "skriv · working"
+  if (state === "paused") return "Skriv · paused"
+  if (state === "recording") return "Skriv · recording"
+  if (state === "working") return "Skriv · working"
   if (unseenFailure(status, seenId)) {
     var last = status.last
-    if (last.flat_signal === true) return "skriv · no audio from mic"
-    if (last.status === "paste_failed") return "skriv · paste failed, text in clipboard"
+    if (last.flat_signal === true) return "Skriv · no audio from mic"
+    if (last.status === "paste_failed") return "Skriv · paste failed, text in clipboard"
     var reason = FAILURE_WORDS[last.failure] || ""
-    return "skriv · last dictation failed" + (reason !== "" ? " · " + reason : "")
+    return "Skriv · last dictation failed" + (reason !== "" ? " · " + reason : "")
   }
   var server = status.server || {}
   var where = [String(server.name || ""), rtt(server)].filter(function(s) { return s !== "" }).join(" ")
-  return "skriv · ready" + (where !== "" ? " · " + where : "")
+  return "Skriv · ready" + (where !== "" ? " · " + where : "")
 }
 
 // ---- the last dictation (the newest `skriv history -n 1 --json` record)

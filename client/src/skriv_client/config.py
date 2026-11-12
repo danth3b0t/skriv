@@ -79,7 +79,7 @@ class ProviderConfig:
     order) at the start of every dictation; see skriv_client.providers."""
 
     address: str = ""  # host:port or unix:/path
-    name: str = ""  # shown in `hark doctor` and history; "" => address
+    name: str = ""  # shown in `skriv doctor` and history; "" => address
     priority: int = 0
     # Privacy: send the context shortlist (bias terms from screen, repo, agent sessions) to
     # this server. false => audio and the transcript only (cleanup gets the text and which
@@ -173,7 +173,7 @@ class PasteConfig:
     # (skriv_client.continuation). join_space is the older name; false turns it off too.
     smart_spacing: bool = True
     join_space: bool = True
-    # Without a readable caret: hark's last paste + the keys typed since, forgotten after
+    # Without a readable caret: skriv's last paste + the keys typed since, forgotten after
     # this long without a key or paste in that window.
     join_window_ms: int = 60_000
 
@@ -197,7 +197,7 @@ class HistoryConfig:
 @dataclass
 class RetryConfig:
     # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600), so
-    # `hark retry` can re-run a failed one and `hark eval add` can copy one. 0 = off.
+    # `skriv retry` can re-run a failed one and `skriv eval add` can copy one. 0 = off.
     keep: int = 10
 
 
@@ -470,7 +470,7 @@ def load_words(path: Path, max_terms: int) -> list[WordConfig]:
     return words
 
 
-# `hark words add/remove` edit the file as text, so comments and layout stay as written.
+# `skriv words add/remove` edit the file as text, so comments and layout stay as written.
 _HEADER_RE = re.compile(r"""^\s*\[\[?\s*[\w.\-"' ]+\s*\]\]?\s*(#.*)?$""")
 _WORDS_HEADER_RE = re.compile(r"^\s*\[\[\s*words\s*\]\]\s*(#.*)?$")
 

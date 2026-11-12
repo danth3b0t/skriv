@@ -1,10 +1,10 @@
-"""Hark.app first-run setup window (macOS): permissions, mic level, hotkey and server checks.
+"""Skriv.app first-run setup window (macOS): permissions, mic level, hotkey and server checks.
 
 Shown at launch while a permission is missing (and from the menu: Setup & Permissions…). Unlike
-the indicator this is an ordinary window that takes focus; closing it deactivates Hark so the
+the indicator this is an ordinary window that takes focus; closing it deactivates Skriv so the
 previous app gets focus back. Each permission row asks with the system prompt first
 (AVCaptureDevice, AXIsProcessTrustedWithOptions, CGRequestListenEventAccess) and opens the
-System Settings pane after that. The mic level and server rows reuse ``hark doctor``'s checks.
+System Settings pane after that. The mic level and server rows reuse ``skriv doctor``'s checks.
 Input Monitoring granted after launch needs a restart: the hotkey listener is created at start.
 """
 # pyright: reportAny=false, reportExplicitAny=false
@@ -58,7 +58,7 @@ def key_name(key: str) -> str:
 
 
 class Collect(doctor.Report):
-    """`hark doctor` checks, collected instead of printed."""
+    """`skriv doctor` checks, collected instead of printed."""
 
     def __init__(self) -> None:
         super().__init__()
@@ -130,7 +130,7 @@ class Setup:
         win = AppKit.NSWindow.alloc().initWithContentRect_styleMask_backing_defer_(
             Foundation.NSMakeRect(0, 0, WIDTH, height), style, AppKit.NSBackingStoreBuffered, False
         )
-        win.setTitle_("Set up Hark")
+        win.setTitle_("Set up Skriv")
         win.setReleasedWhenClosed_(False)
         win.setDelegate_(self.actions)
         content = win.contentView()
@@ -172,7 +172,7 @@ class Setup:
                 bind(self.actions, button, action)
                 content.addSubview_(button)
             self.rows[key] = Row(label, detail, button)
-        restart = AppKit.NSButton.buttonWithTitle_target_action_("Restart Hark", None, None)
+        restart = AppKit.NSButton.buttonWithTitle_target_action_("Restart Skriv", None, None)
         restart.setFrame_(Foundation.NSMakeRect(MARGIN, 16, BUTTON_W, 30))
         bind(self.actions, restart, self.relaunch)
         done = AppKit.NSButton.buttonWithTitle_target_action_("Done", None, None)
@@ -231,14 +231,14 @@ class Setup:
     def _refresh_permissions(self) -> None:
         mic = macos.mic_authorization()
         if mic == "authorized":
-            restart = "" if self.mic_at_start else ": click Restart Hark to use it"
+            restart = "" if self.mic_at_start else ": click Restart Skriv to use it"
             self.rows["mic"].show(f"Allowed{restart}", good=True)
         elif mic == "not_determined":
-            self.rows["mic"].show("Hark asks when you click Allow", "Allow…")
+            self.rows["mic"].show("Skriv asks when you click Allow", "Allow…")
         else:
-            self.rows["mic"].show("Denied: turn Hark on in System Settings", "Open Settings")
+            self.rows["mic"].show("Denied: turn Skriv on in System Settings", "Open Settings")
         if macos.accessibility_trusted():
-            self.rows["ax"].show("Allowed: Hark can paste and read the text field", good=True)
+            self.rows["ax"].show("Allowed: Skriv can paste and read the text field", good=True)
         else:
             self.rows["ax"].show(
                 "Needed to paste (Cmd+V) and to read the text around the caret",
@@ -252,7 +252,7 @@ class Setup:
         elif self.listen_at_start:
             self.rows["listen"].show("Allowed", good=True)
         else:
-            self.rows["listen"].show("Allowed: click Restart Hark to start the hotkey", good=True)
+            self.rows["listen"].show("Allowed: click Restart Skriv to start the hotkey", good=True)
 
     def _post(self, key: str, text: str, *, good: bool) -> None:
         with self._lock:

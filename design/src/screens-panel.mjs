@@ -1,8 +1,8 @@
 // Bar glyph (S2) and quick panel (S3): the only control surface. One page + the profile list.
 // Blocks: header (server · rtt, Pause/Resume) · problem line (only when present) · last dictation · Profile ·
 // History / Config / Doctor. Labels and values only; one verb per problem.
-import { F, frame, text, icon, v, harkMark, spacer, boardTitle } from './lib.mjs'
-import { omarchyBar, harkBarWidget, BAR_H } from './screens-bar.mjs'
+import { F, frame, text, icon, v, skrivMark, spacer, boardTitle } from './lib.mjs'
+import { omarchyBar, skrivBarWidget, BAR_H } from './screens-bar.mjs'
 
 const W = 300 // content width: Style.space(300)
 const cur = (on) => (on ? { bg: v('fill-hover') } : {})
@@ -17,8 +17,8 @@ function pauseControl(paused, cursor) {
 
 function header({ status = 'desktop · 38 ms', paused = false, statusColor = 'text-2', cursor = false, running = true } = {}) {
   return frame({ name: 'header', flex: 'row', w: 'fill', gap: 10, items: 'center', h: 28 },
-    frame({ opacity: running && !paused ? 1 : 0.4 }, harkMark(14)),
-    text('hark', { size: F.body, weight: 'bold' }),
+    frame({ opacity: running && !paused ? 1 : 0.4 }, skrivMark(14)),
+    text('Skriv', { size: F.body, weight: 'bold' }),
     text(status, { size: F.bodySmall, color: statusColor }), spacer(),
     running ? pauseControl(paused, cursor) : '')
 }
@@ -62,12 +62,12 @@ export function panelCard(children) {
   return frame({ name: 'KeyboardPanel', flex: 'col', w: W + 36, p: 18, gap: 18, bg: v('bg'), stroke: v('accent'), strokeWidth: 2 }, children)
 }
 
-function withBar(name, title, panel, { hark = 'idle' } = {}) {
+function withBar(name, title, panel, { skriv = 'idle' } = {}) {
   const w = 720
   return frame({ name, flex: 'col', gap: 32, p: 48, bg: v('dark-bg') },
     boardTitle(title),
     frame({ name: 'composition', w, flex: 'col' },
-      frame({ name: 'bar-crop', w, h: BAR_H, overflow: 'hidden' }, frame({ position: 'absolute', x: w - 1280, y: 0 }, omarchyBar(1280, { hark, underline: true }))),
+      frame({ name: 'bar-crop', w, h: BAR_H, overflow: 'hidden' }, frame({ position: 'absolute', x: w - 1280, y: 0 }, omarchyBar(1280, { skriv, underline: true }))),
       frame({ flex: 'row', w, justify: 'end', pr: 96, pt: 5 }, panel)))
 }
 
@@ -77,12 +77,12 @@ export function quickPanelIdle(theme) {
 
 export function quickPanelAttention(theme) {
   return withBar(`export/quick-panel-attention-${theme}`, 'Quick panel · needs you',
-    panelCard([header({ status: 'desktop' }), problem('server'), last('failed', { cursor: false }), profileRow(), links()]), { hark: 'attention' })
+    panelCard([header({ status: 'desktop' }), problem('server'), last('failed', { cursor: false }), profileRow(), links()]), { skriv: 'attention' })
 }
 
 export function quickPanelOff(theme) {
   return withBar(`export/quick-panel-off-${theme}`, 'Quick panel · not running',
-    panelCard([header({ status: '', running: false }), problem('off'), links(['Config', 'Doctor'])]), { hark: 'off' })
+    panelCard([header({ status: '', running: false }), problem('off'), links(['Config', 'Doctor'])]), { skriv: 'off' })
 }
 
 export function quickPanelProfile(theme) {
@@ -124,8 +124,8 @@ export function barWidgetStates(theme) {
   return frame({ name: `export/bar-widget-states-${theme}`, flex: 'col', gap: 32, p: 48, bg: v('dark-bg') },
     boardTitle('Bar glyph'),
     frame({ flex: 'row', gap: 32, items: 'start' }, states.map((s) => frame({ name: `state/${s}`, flex: 'col', gap: 12, items: 'center' },
-      frame({ flex: 'row', h: BAR_H, px: 10, items: 'center', bg: v('bg') }, harkBarWidget(s)), dim(s)))),
+      frame({ flex: 'row', h: BAR_H, px: 10, items: 'center', bg: v('bg') }, skrivBarWidget(s)), dim(s)))),
     frame({ flex: 'row', gap: 16, items: 'center' },
-      frame({ name: 'tooltip', flex: 'row', px: 10, py: 6, bg: v('bg'), stroke: v('border-hover'), strokeWidth: 1 }, text('hark · ready · desktop 38 ms', { size: F.bodySmall })),
+      frame({ name: 'tooltip', flex: 'row', px: 10, py: 6, bg: v('bg'), stroke: v('border-hover'), strokeWidth: 1 }, text('Skriv · ready · desktop 38 ms', { size: F.bodySmall })),
       dim('left panel · middle paste last · Super Alt D panel on last')))
 }

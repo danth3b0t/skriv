@@ -1,4 +1,4 @@
-"""Recovery ring (`retry.keep`) and `hark retry`."""
+"""Recovery ring (`retry.keep`) and `skriv retry`."""
 
 from __future__ import annotations
 
@@ -93,7 +93,7 @@ def test_failed_dictation_is_retried_with_its_original_context(
     fake_context: FakeContext,
     capsys: pytest.CaptureFixture[str],
 ):
-    """Server down at dictation time -> audio kept, notification points at `hark retry`; the
+    """Server down at dictation time -> audio kept, notification points at `skriv retry`; the
     retry runs against the live server with the key-down context (bias terms), and copies
     because another window has focus now."""
     with socket.socket() as s:  # a port nobody listens on
@@ -109,7 +109,7 @@ def test_failed_dictation_is_retried_with_its_original_context(
     svc = Services(cfg, router, DryRunInjector(out=lambda _: None), feedback)
     dictate(Controller(svc, None), 1.0)  # 5 mock words: the 3rd+4th are "cube control"
     router.close()
-    assert any("`hark retry`" in n for n in feedback.notifications)
+    assert any("`skriv retry`" in n for n in feedback.notifications)
     failed_id = history_ids(tmp_path)[0]
 
     # now: another window, no context terms; the retry must not use either
@@ -153,7 +153,7 @@ def test_degenerate_recognizer_output_fails_and_is_kept_for_retry(
     assert (last["failure"], last["retry_available"]) == ("degenerate_output", True)
     assert [e.meta["status"] for e in retry.entries(tmp_path)] == ["error"]
     feedback = cast("RecordingFeedback", c.svc.feedback)
-    assert any("`hark retry`" in n for n in feedback.notifications)
+    assert any("`skriv retry`" in n for n in feedback.notifications)
 
 
 def test_retry_without_a_known_window_copies_and_bad_ids_fail(

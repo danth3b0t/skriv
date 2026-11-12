@@ -53,7 +53,7 @@ STAGES = frozenset({"transcribing", "cleaning"})
 LEVEL_INTERVAL_S = 0.05  # input level redraws at most 20 times a second
 LEVEL_FLOOR_DB = -60.0
 METER_BARS = 8  # the newest samples, one bar each
-RECOVERY_KEY = "Super Alt D"  # hark-panel on Omarchy (packaging/omarchy)
+RECOVERY_KEY = "Super Alt D"  # skriv-panel on Omarchy (packaging/omarchy)
 OMARCHY_THEME = Path.home() / ".local/state/omarchy/current/theme"  # where Omarchy's shell reads it
 LONG_S = 60  # a recording longer than this shows its elapsed time
 COUNTDOWN_S = 30  # this close to audio.max_ms the time left shows instead
@@ -162,9 +162,9 @@ def status_view(status: str) -> tuple[View, float] | None:
 
 
 def no_speech_view(res: Result) -> tuple[View, float]:
-    """Nothing heard: which mic it listened to and `hark doctor`. Quiet is not an error (a
+    """Nothing heard: which mic it listened to and `skriv doctor`. Quiet is not an error (a
     press with nothing said); a flat signal from the mic is."""
-    hint = "hark doctor"
+    hint = "skriv doctor"
     if res.flat_signal:
         label = "No audio from mic"
         name = _join(label, res.input_device, hint)
@@ -189,7 +189,7 @@ def outcome_view(
 
     ``cleanup_expected``: the profile asks for cleanup, so a result without it is tagged.
     ``recovery``: the key that opens the panel (failures name it); ``retry_hint``: name
-    `hark retry` on a failure instead when there is no such key."""
+    `skriv retry` on a failure instead when there is no such key."""
     status = "error" if res is None else res.status
     if res is not None and status == "no_speech" and res.input_device:
         simple = no_speech_view(res)
@@ -200,7 +200,7 @@ def outcome_view(
     if res is None or status not in ("pasted", "copied", "focus_changed", "paste_failed"):
         reason = failure_reason(res.error) if res is not None else ""
         label = f"Failed · {reason}" if reason else "Failed"
-        hint = recovery or ("hark retry" if retry_hint else "")
+        hint = recovery or ("skriv retry" if retry_hint else "")
         return View("error", "alert", "live", _join(label, hint), label, hint=hint), LINGER_PROBLEM
     delivery = res.delivery
     if status == "paste_failed" or (status == "focus_changed" and delivery != "copied"):
@@ -405,8 +405,8 @@ def make(
     cfg: IndicatorConfig, *, retry_hint: bool = False, limit_s: float = 0.0
 ) -> Indicator | None:
     """The platform's indicator, or None (disabled, or no usable toolkit). Main thread only.
-    On Omarchy failure pills name the key that opens hark's panel (``hark-panel``, bound by
-    omarchy-install-dictation-hark)."""
+    On Omarchy failure pills name the key that opens skriv's panel (``skriv-panel``, bound by
+    omarchy-install-dictation-skriv)."""
     if not cfg.enabled:
         return None
     backend: Backend | None = None

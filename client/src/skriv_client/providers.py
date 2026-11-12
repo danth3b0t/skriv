@@ -1,4 +1,4 @@
-"""ASR provider routing: which hark server takes this dictation.
+"""ASR provider routing: which skriv server takes this dictation.
 
 `[[providers]]` lists servers (default: one at 127.0.0.1:50051), e.g. the desktop GPU first and the
 laptop's own CPU server (scripts/cpu-server-up) last. At the start of every dictation,
@@ -7,11 +7,11 @@ laptop's own CPU server (scripts/cpu-server-up) last. At the start of every dict
 - health = grpc.health.v1 `Check("skriv.v1.Asr")` with a deadline of the provider's
   `max_latency_ms`: SERVING in time -> ok; deadline exceeded -> slow; anything else
   (connection refused, NOT_SERVING while the model loads, TLS failure) -> down;
-- results are cached (ok for 30 s, slow/down for 5 s), and `hark run` refreshes them in the
+- results are cached (ok for 30 s, slow/down for 5 s), and `skriv run` refreshes them in the
   background, so key-down normally probes nothing;
 - a dictation that gets no answer from its provider marks it down: the next one moves on;
 - if nothing is healthy, the first provider is used anyway (it may be back; its error then
-  reaches the user, and `hark retry` can re-run the audio).
+  reaches the user, and `skriv retry` can re-run the audio).
 
 The choice is made once, at session start, while the context is collected; audio recorded
 meanwhile is replayed to the chosen server.

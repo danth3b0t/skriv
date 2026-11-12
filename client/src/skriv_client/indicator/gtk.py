@@ -7,7 +7,7 @@ output the compositor picks (the focused one on Hyprland), 24 px from the edge,
 through). Colours and sizes come from the running Omarchy theme (``indicator.theme``), re-read
 when it changes; glyphs are Material Design Icons from the Nerd Font Omarchy sets as
 ``monospace``. Needs the system packages gtk4, gtk4-layer-shell and PyGObject + pycairo
-importable by hark's Python (the client's ``gi`` extra; the skriv-git package includes it).
+importable by skriv's Python (the client's ``gi`` extra; the skriv-git package includes it).
 Unavailable pieces => None.
 
 GTK runs on the main thread (:meth:`LayerShellBackend.run`); :meth:`LayerShellBackend.render`

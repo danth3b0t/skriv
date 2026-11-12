@@ -1,15 +1,15 @@
-# hark on Omarchy: UI spec
+# Skriv on Omarchy: UI spec
 
-**Authoritative.** This file is the source of truth for the hark UI. [AUDIT.md](AUDIT.md) is historical (it set the
+**Authoritative.** This file is the source of truth for the skriv UI. [AUDIT.md](AUDIT.md) is historical (it set the
 first scope); background is in [RESEARCH.md](RESEARCH.md). The daemon facts used here are defined in
 [docs/protocol/ctl-v1.md](../docs/protocol/ctl-v1.md); labels, priority and linger durations are the UI's.
 
-Design file [hark-ui.fig](hark-ui.fig) (OpenPencil, 6 pages). Renders in [exports/](exports/) are **illustrative**
+Design file [skriv-ui.fig](skriv-ui.fig) (OpenPencil, 6 pages). Renders in [exports/](exports/) are **illustrative**
 (18 PNGs at 2×). Source in [src/](src/): `node design/src/build.mjs` rebuilds the `.fig` in a running OpenPencil
-(MCP, eval on) and re-exports every PNG; `--only <page>` builds one page to `/tmp/hark-scratch/`.
+(MCP, eval on) and re-exports every PNG; `--only <page>` builds one page to `/tmp/skriv-scratch/`.
 
 The UI is for **state and recovery**. Anything changed less than about once a month lives in
-`~/.config/hark/config.toml`; explanations live in the README.
+`~/.config/skriv/config.toml`; explanations live in the README.
 
 ## 1. Principles
 
@@ -21,7 +21,7 @@ The UI is for **state and recovery**. Anything changed less than about once a mo
    fill is the cursor row.
 4. **Quiet until needed.** Idle shows one monochrome glyph. A problem adds a dot to the glyph and one line to the
    panel. Silence is never an error: people pause to think.
-5. **Honest.** ✓ means *sent*, never *confirmed*: hark does not read a paste back.
+5. **Honest.** ✓ means *sent*, never *confirmed*: skriv does not read a paste back.
 6. **Native.** Every colour, size, radius and duration comes from the running Omarchy theme.
 
 Copy: sentence case, no full stops, no config keys, no mechanism. `·` separates a state from its reason. Keys are
@@ -32,10 +32,10 @@ name carries the full sentence.
 
 | | Surface | Drawn by | Data |
 |---|---|---|---|
-| S1 | **Pill** | the daemon's own indicator: GTK4 layer-shell overlay (`hark-indicator`, no keyboard, empty input region), bottom-centre of the output, 24 px up | in-process (it has the input level) |
-| S2 | **Bar glyph** | `hark.shell` bar-widget, section `right` | `subscribe` |
-| S3 | **Quick panel** | `hark.shell` `KeyboardPanel` from S2: the **only control surface** | `subscribe` + the last history record |
-| S4 | **History** (optional) | `hark.shell` `panel` card | `hark history --json` |
+| S1 | **Pill** | the daemon's own indicator: GTK4 layer-shell overlay (`skriv-indicator`, no keyboard, empty input region), bottom-centre of the output, 24 px up | in-process (it has the input level) |
+| S2 | **Bar glyph** | `skriv.shell` bar-widget, section `right` | `subscribe` |
+| S3 | **Quick panel** | `skriv.shell` `KeyboardPanel` from S2: the **only control surface** | `subscribe` + the last history record |
+| S4 | **History** (optional) | `skriv.shell` `panel` card | `skriv history --json` |
 
 Build in this order and stop when it is good enough:
 
@@ -45,19 +45,19 @@ Build in this order and stop when it is good enough:
 4. History
 5. (deferred) target marker
 
-There is no settings window, onboarding or diagnostics page. `Config` opens `$EDITOR`, `Doctor` runs `hark
-doctor` in a terminal, and `omarchy-install-dictation-hark` ends with `hark doctor`.
+There is no settings window, onboarding or diagnostics page. `Config` opens `$EDITOR`, `Doctor` runs `skriv
+doctor` in a terminal, and `omarchy-install-dictation-skriv` ends with `skriv doctor`.
 
-**Recovery bind.** The installer adds `o.bind("SUPER + ALT + D", "Dictation panel", "hark-panel")` (free in
-Omarchy's defaults). `hark-panel` opens the quick panel with the cursor on the last dictation (`omarchy-shell shell
-toggle hark.shell '{"cursor":"last"}'`). Failure pills name this key, because the pill itself is click-through.
+**Recovery bind.** The installer adds `o.bind("SUPER + ALT + D", "Dictation panel", "skriv-panel")` (free in
+Omarchy's defaults). `skriv-panel` opens the quick panel with the cursor on the last dictation (`omarchy-shell shell
+toggle skriv.shell '{"cursor":"last"}'`). Failure pills name this key, because the pill itself is click-through.
 
 **macOS: frozen scope.** The existing indicator, menu bar and Setup window stay and get correctness fixes only.
 There is no parity promise with this UI.
 
 ## 3. Visual system — `exports/system-*.png`, `theme-matrix.png`
 
-**Colour.** hark defines no colours. `Theme.qml` reads `colors.toml` (re-read on `applyTheme`) and derives:
+**Colour.** Skriv defines no colours. `Theme.qml` reads `colors.toml` (re-read on `applyTheme`) and derives:
 
 | token | source | use |
 |---|---|---|
@@ -108,8 +108,8 @@ interrupts any linger.
 | mic dropped out | `last.mic_interrupted` | ✓ mic dropped | 1.5 s |
 | length limit | `last.stop_reason: limit` | ✓ Stopped at 2:00 | 1.5 s |
 | cancelled | `cancelled`, `no_speech`, `too_short`, `empty` | × Cancelled / No speech / Too short | 0.6 s |
-| no speech | `no_speech` with `last.input_device` | × No speech · *device* · hark doctor | 1.5 s |
-| no audio from mic | `no_speech` with `last.flat_signal` | mic-off (`live`) · No audio from mic · *device* · hark doctor | 4 s |
+| no speech | `no_speech` with `last.input_device` | × No speech · *device* · skriv doctor | 1.5 s |
+| no audio from mic | `no_speech` with `last.flat_signal` | mic-off (`live`) · No audio from mic · *device* · skriv doctor | 4 s |
 | copied | `status: copied` (clipboard mode) | copy glyph · Copied | 1 s |
 | focus moved | `status: focus_changed`, `delivery: copied` | copy glyph (`warn`) · Copied · focus moved | 2.5 s |
 | paste failed | `status: paste_failed` | copy glyph · Paste failed · copied · `Super Alt D` (no "copied" if `delivery: failed`) | 4 s |
@@ -119,7 +119,7 @@ interrupts any linger.
 
 ✓ tags are exclusive. If several apply, show the first of: mic dropped, cleanup skipped, via *provider*.
 
-**Delivery.** ✓ means the text was sent. hark never claims confirmation in the pill, because terminals and many
+**Delivery.** ✓ means the text was sent. Skriv never claims confirmation in the pill, because terminals and many
 fields cannot be read back, and it never warns after an ordinary terminal paste.
 
 **Mic.** `mic.status: lost` (the stream stopped delivering audio) and `last.flat_signal` (the input sent no signal
@@ -140,7 +140,7 @@ accent outline.
 | attention | `server.state: down`, `mic.status: lost`, `config.changed` or `config.restart_needed`, or an unseen `last.status: error \| paste_failed` or `last.flat_signal` | mark + 4 px `live-ink` dot, cleared when the panel opens |
 | idle | otherwise | mark, `fg` |
 
-Tooltip: one line, `hark · ready · desktop 38 ms`, or the problem. Left click opens the panel; middle click runs
+Tooltip: one line, `Skriv · ready · desktop 38 ms`, or the problem. Left click opens the panel; middle click runs
 `paste-last`; right click opens History once it exists. Accessible role `StatusBar`; its name is the full state
 sentence, updated as a live region.
 
@@ -149,15 +149,15 @@ sentence, updated as a live region.
 Card: `Style.space(300)` content width, 2 px `accent` border. The cursor (arrows/hjkl) starts on the problem line if
 there is one, otherwise on the last dictation.
 
-1. **Header:** mark, **hark**, `server.name · rtt_ms` in `text-2`. The status shows `laptop · fallback` in
+1. **Header:** mark, **Skriv**, `server.name · rtt_ms` in `text-2`. The status shows `laptop · fallback` in
    `warn-ink` when `server.fallback`, the rtt in `warn-ink` when `slow`, and `paused` when paused. On the right is
    a labelled text control, **Pause**; while paused it reads **Resume** in `fg`. Enter toggles it.
 2. **Problem line** (only when present; first in this order):
 
    | condition | line | verb |
    |---|---|---|
-   | no socket | Not running | `↵ Start` (`systemctl --user start hark.service`) |
-   | `mic.status: lost` | Mic lost | `↵ Restart` (`hark service restart`) |
+   | no socket | Not running | `↵ Start` (`systemctl --user start skriv.service`) |
+   | `mic.status: lost` | Mic lost | `↵ Restart` (`skriv service restart`) |
    | `server.state: down` | Server down | `↵ Doctor` |
    | `config.restart_needed` non-empty | Restart needed | `↵ Restart` |
    | `config.changed` | Config changed | `↵ Reload` (`reload`) |
@@ -168,12 +168,12 @@ there is one, otherwise on the last dictation.
 4. **Profile** `auto ›`: a choice page (auto showing the resolved profile, terminal, prose), via `profile`.
 5. **History · Config · Doctor** (History only once it exists).
 
-**Keys on the last dictation.** `↵` = **Copy** (the default, `hark last --copy`). `P` = **Paste**: the panel closes
-first, then `paste-last` pastes into the window that had focus before the panel opened. `R` = **Retry** (`hark
+**Keys on the last dictation.** `↵` = **Copy** (the default, `skriv last --copy`). `P` = **Paste**: the panel closes
+first, then `paste-last` pastes into the window that had focus before the panel opened. `R` = **Retry** (`skriv
 retry last`), shown only when `last.retry_available`; on a failed dictation `↵` is Retry. Opening the panel during a
 recording never changes the target, which is frozen at key-down.
 
-Preview text, app and failure reason come from the newest record of `hark history -n 1 --json`, read when the
+Preview text, app and failure reason come from the newest record of `skriv history -n 1 --json`, read when the
 panel opens. That read is text-bearing and local, and is never logged. `status` itself carries no text.
 
 ## 7. History (S4, optional, later) — `exports/history-*.png`
@@ -189,11 +189,11 @@ A 900 × 480 card with search (`/`; matches both texts and the app; `failed` wor
   only while audio is kept.
   A cleanup outcome line appears only when cleanup did not apply.
 
-Pipeline internals stay in `hark history show`. There is no words UI; spellings live in `[[words]]` in the config.
+Pipeline internals stay in `skriv history show`. There is no words UI; spellings live in `[[words]]` in the config.
 
 ## 8. Behaviour and accessibility
 
-- Nothing hark draws during a dictation takes focus or input. The overlay is mapped only while it has content.
+- Nothing skriv draws during a dictation takes focus or input. The overlay is mapped only while it has content.
 - `status` / `subscribe` never carry dictated text, titles or field content. The shell may log them; it never logs
   the history read.
 - Contrast: text ≥ 4.5:1 and glyphs ≥ 3:1 on every theme (solved at runtime). The diff uses strikethrough and
@@ -206,7 +206,7 @@ Pipeline internals stay in `hark history show`. There is no words UI; spellings 
 ## 9. Contract gaps
 
 The design uses only ctl v1 facts and existing commands (`paste-last`, `profile`, `reload`, `subscribe`) plus the
-local CLI (`hark last --copy`, `hark retry`, `hark history --json`, `hark service restart`), and `pause` /
+local CLI (`skriv last --copy`, `skriv retry`, `skriv history --json`, `skriv service restart`), and `pause` /
 `resume`. No gap remains.
 
 Cleanup and Sounds toggles are not in the panel: they are config keys (edit, then `↵ Reload`).
@@ -214,7 +214,7 @@ Cleanup and Sounds toggles are not in the panel: they are config keys (edit, the
 ## 10. Open
 
 - `keep_open` keeps Omarchy's mic indicator lit; check on hardware.
-- If Superwhisper is also installed: dim `hark.shell` when hark is not `omarchy-default-dictation`.
+- If Superwhisper is also installed: dim `skriv.shell` when skriv is not `omarchy-default-dictation`.
 
 ## 11. Exports
 

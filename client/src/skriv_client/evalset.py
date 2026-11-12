@@ -1,6 +1,6 @@
-"""`hark eval`: a small real-speech regression set, scored per stage (docs/eval.md).
+"""`skriv eval`: a small real-speech regression set, scored per stage (docs/eval.md).
 
-A clip is a kept dictation (`hark retry` ring) copied into the set with its key-down context and a
+A clip is a kept dictation (`skriv retry` ring) copied into the set with its key-down context and a
 hand-edited ``label.json``:
 
 - ``said``: what was actually said, verbatim (fillers included) -> recognition word error rate.
@@ -8,7 +8,7 @@ hand-edited ``label.json``:
 - ``forbidden``: strings it must not contain (false substitutions: a dictionary word where the
   ordinary word was meant).
 - ``accepted``: final texts a human has reviewed as saying the same thing as ``said``. Cleanup may
-  reword, so a new wording is *unreviewed*, not a failure: `hark eval accept ID` adds it.
+  reword, so a new wording is *unreviewed*, not a failure: `skriv eval accept ID` adds it.
 
 A run fails (exit 1) on a missing critical string, a forbidden one, or fewer negations in an
 unreviewed final text than in ``said`` (after a spoken self-correction in it is resolved). Words, negations and exact strings are counted as
@@ -191,7 +191,7 @@ def run_clip(svc: Services, clip: Path) -> Result:
 
 
 def report(s: Score, res: Result) -> dict[str, object]:
-    """One clip for `hark eval run --report`: the score and every stage's text and timing."""
+    """One clip for `skriv eval run --report`: the score and every stage's text and timing."""
     gate = res.gate or {}
     return {
         "clip": s.clip,
@@ -227,7 +227,7 @@ def accept(set_dir: Path, clip_id: str) -> str:
     try:
         final = str(cast("dict[str, object]", json.loads((clip / LAST).read_text()))["final"])
     except (OSError, ValueError, KeyError) as e:
-        raise LookupError(f"{clip.name}: no run to accept yet (`hark eval run`)") from e
+        raise LookupError(f"{clip.name}: no run to accept yet (`skriv eval run`)") from e
     data = cast("dict[str, object]", json.loads((clip / LABEL).read_text()))
     accepted = cast("list[object]", data.setdefault("accepted", []))
     if final not in accepted:

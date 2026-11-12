@@ -1,6 +1,6 @@
 """eval-cleanup: run the cleanup eval set against an OpenAI-compatible endpoint.
 
-Each case goes through the real skriv.v1 TextCleanup path: an in-process hark server (mock ASR
+Each case goes through the real skriv.v1 TextCleanup path: an in-process skriv server (mock ASR
 backend) asks the endpoint for a rewrite, and the client's `cleanup.run` checks it
 (`skriv_client.fidelity`) with the case's protected strings and terms as its shortlist. The
 output (the rewrite if it passed, else the input) is compared with the expected texts.

@@ -1,4 +1,4 @@
-// Indicator pill (S1). Glyph + meter + at most three words. Click-through; recovery is the hark-panel key.
+// Indicator pill (S1). Glyph + meter + at most three words. Click-through; recovery is the skriv-panel key.
 import { F, frame, text, icon, rect, ellipse, v, boardTitle } from './lib.mjs'
 
 export const LEVELS = {
@@ -23,7 +23,7 @@ const g = (name, color, size = 12) => icon(name, { size, color })
 const w = (s, color = 'fg') => text(s, { size: F.bodySmall, color })
 const dim = (s) => text(s, { size: F.caption, color: 'text-2' })
 const ok = () => g('mdi:check', 'ok-ink', 14)
-// Recovery bind (hark-panel): opens the quick panel on the last dictation. Appended to failure pills only;
+// Recovery bind (skriv-panel): opens the quick panel on the last dictation. Appended to failure pills only;
 // it is a key hint, not a word, so it may run past the three-word limit.
 export const RECOVER_KEY = 'Super Alt D'
 const key = () => dim(RECOVER_KEY)

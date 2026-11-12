@@ -1,4 +1,4 @@
-"""`hark run`: mic + hotkey/ctl socket -> Utterance pipeline, until SIGINT/SIGTERM.
+"""`skriv run`: mic + hotkey/ctl socket -> Utterance pipeline, until SIGINT/SIGTERM.
 
 Threads: the main thread runs the recording indicator's UI loop (AppKit / GTK; they want the
 main thread) or just waits for a signal; the mic callback, the hotkey listener, the ctl socket
@@ -74,14 +74,14 @@ class Controller:
         self.busy = 0  # utterances still finishing
         self._max_hit = False
         self._cue_pending = False  # the start sound waits for the recording's first audio
-        # hark's pastes + the keys typed since: the caret when the app does not expose it
+        # skriv's pastes + the keys typed since: the caret when the app does not expose it
         self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
-        self.last_text = ""  # newest pasted/copied text (`hark ctl paste-last`)
+        self.last_text = ""  # newest pasted/copied text (`skriv ctl paste-last`)
         self.indicator: Indicator | None = None
         # told (under the lock, so in order) when a recording starts or ends: the hotkey listener
         self.on_recording: Callable[[bool], None] | None = None
-        # `hark ctl profile` and the menu bar's Profile menu; None = by app
+        # `skriv ctl profile` and the menu bar's Profile menu; None = by app
         self.profile_override: str | None = None
         self.paused = False  # menu bar: hotkey/ctl start refused, mic released
         self.started = 0  # dictations started (onboarding's hotkey test watches it)
@@ -195,7 +195,7 @@ class Controller:
         if status == "lost":
             if self.indicator is not None:
                 self.indicator.mic_lost()
-            self.svc.feedback.notify("Microphone lost; hark keeps trying to reopen it")
+            self.svc.feedback.notify("Microphone lost; skriv keeps trying to reopen it")
         self.report.touch()
 
     def check_mic(self) -> None:
@@ -292,11 +292,11 @@ class Controller:
                 if res.flat_signal:
                     self.svc.feedback.notify(
                         f"No audio from {res.input_device or 'the microphone'}: it sends a flat"
-                        " signal (muted, or the wrong input?); run `hark doctor`"
+                        " signal (muted, or the wrong input?); run `skriv doctor`"
                     )
                 elif res.status == "no_speech":
                     log.info(
-                        "no speech heard from %s; `hark doctor` tests the mic", res.input_device
+                        "no speech heard from %s; `skriv doctor` tests the mic", res.input_device
                     )
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
@@ -383,7 +383,7 @@ class Controller:
         }
 
     def _keep(self, utt: Utterance, res: Result | None) -> Path | None:
-        """Recovery ring for `hark retry`; None if not kept."""
+        """Recovery ring for `skriv retry`; None if not kept."""
         base = expand(self.svc.cfg.history.dir)
         try:
             return retry.save(
@@ -391,7 +391,7 @@ class Controller:
                 self._meta(utt, res),
             )  # fmt: skip
         except OSError as e:
-            log.warning("could not keep the recording for `hark retry`: %s", e)
+            log.warning("could not keep the recording for `skriv retry`: %s", e)
             return None
 
     def _kept(self, kept: Path | None, utt: Utterance, res: Result) -> None:
@@ -531,7 +531,7 @@ class StartupError(RuntimeError):
 
 
 class AppUi(Protocol):
-    """Main-thread UI beside the indicator (Hark.app's menu-bar item)."""
+    """Main-thread UI beside the indicator (Skriv.app's menu-bar item)."""
 
     def tick(self) -> None:
         """Called from the UI loop at least every 0.5 s."""
@@ -548,7 +548,7 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
     if listener == "auto":
         listener = "pynput" if sys.platform == "darwin" or _x11_only() else "none"
     if listener != "pynput":
-        log.info("no global hotkey; bind `hark ctl start` / `hark ctl stop` in your compositor")
+        log.info("no global hotkey; bind `skriv ctl start` / `skriv ctl stop` in your compositor")
         return None
     try:
         from skriv_client.hotkey import PushToTalk  # noqa: PLC0415
@@ -562,7 +562,7 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
 
         if not macos.can_listen_events():
             log.warning(
-                "no Input Monitoring permission: the hotkey will not fire (see `hark doctor`)"
+                "no Input Monitoring permission: the hotkey will not fire (see `skriv doctor`)"
             )
         if swallow_esc and not macos.can_post_events():
             # a filtering event tap needs Accessibility; without it the tap is not created at all
@@ -581,7 +581,7 @@ def _make_mic(svc: Services, controller: Controller) -> Mic:
         mic = Mic(controller.on_pcm, svc.cfg.audio.device)
     except Exception as e:  # PortAudioError / OSError (no PortAudio library)
         raise StartupError(
-            f"cannot open the microphone ({type(e).__name__}: {e}); see `hark doctor`"
+            f"cannot open the microphone ({type(e).__name__}: {e}); see `skriv doctor`"
         ) from e
     log.info("mic: %s @ %d Hz -> 16 kHz", mic.device_name, mic.rate)
     return mic
@@ -617,9 +617,9 @@ def run(
     app_ui: Callable[[Controller, threading.Event], AppUi] | None = None,
     config_path: Path | None = None,
 ) -> int:
-    """``app_ui(controller, stop)`` builds a main-thread UI (``hark app``); setting ``stop``
+    """``app_ui(controller, stop)`` builds a main-thread UI (``skriv app``); setting ``stop``
     quits. ``config_path``: the file `reload` re-reads."""
-    from skriv_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
+    from skriv_client import ctl  # noqa: PLC0415 - keep `skriv ctl` imports light
     from skriv_client.service import linux as systemd  # noqa: PLC0415 - no-ops outside systemd
 
     _log_providers(svc)
@@ -647,7 +647,7 @@ def run(
     )
     controller.open_mic()
     server.start()
-    systemd.notify("READY=1")  # Type=notify unit: ready once `hark ctl` gets answers
+    systemd.notify("READY=1")  # Type=notify unit: ready once `skriv ctl` gets answers
     if hotkey is not None:
         controller.on_recording = hotkey.recording
         controller.on_finishing = hotkey.finishing
@@ -663,7 +663,7 @@ def run(
 
     signal.signal(signal.SIGINT, on_signal)
     signal.signal(signal.SIGTERM, on_signal)
-    log.info("hark ready (paste: %s)", svc.injector.name)
+    log.info("skriv ready (paste: %s)", svc.injector.name)
     try:
         _main_loop(ui, app_ui(controller, stop) if app_ui is not None else None, stop)
     finally:

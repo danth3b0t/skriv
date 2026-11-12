@@ -1,4 +1,4 @@
-"""Daemon controller (what hotkeys and `hark ctl` drive), without a microphone."""
+"""Daemon controller (what hotkeys and `skriv ctl` drive), without a microphone."""
 
 from __future__ import annotations
 
@@ -104,12 +104,12 @@ def test_without_a_readable_caret_spacing_follows_the_shadow_of_typed_keys(
     ]
 
 
-def test_hark_own_paste_chord_is_not_a_user_key(
+def test_skriv_own_paste_chord_is_not_a_user_key(
     controller: tuple[Controller, DryRunInjector],
 ):
     c, injector = controller
     dictate(c)
-    typed(c, "v", mods=frozenset({"cmd"}))  # the listener sees hark's Cmd+V right after
+    typed(c, "v", mods=frozenset({"cmd"}))  # the listener sees skriv's Cmd+V right after
     dictate(c)
     time.sleep(PASTE_ECHO_S)
     typed(c, "v", mods=frozenset({"cmd"}))  # the user's own paste: unknown text
@@ -236,7 +236,7 @@ def test_nothing_heard_names_the_mic_and_only_a_flat_signal_is_a_mic_problem(
     assert reported == facts  # `status` reports them (docs/protocol/ctl-v1.md)
     assert len(injector.pasted) == 1
     assert feedback.notifications == [
-        "No audio from fake: it sends a flat signal (muted, or the wrong input?); run `hark doctor`"
+        "No audio from fake: it sends a flat signal (muted, or the wrong input?); run `skriv doctor`"
     ]
     (flat, *_) = history.recent(tmp_path, 3)
     assert (flat["input_device"], flat["flat_signal"]) == ("fake", True)
@@ -428,7 +428,7 @@ def test_one_dictation_at_a_time_cancellable_until_it_is_pasted(
     assert c.report.json()["phase"] == "finishing"
     assert c.handle("start") == "error busy"  # nothing records; the listener is told so
     assert hotkey_told == [True, False, False]
-    # the audio is kept for `hark retry` before it is transcribed
+    # the audio is kept for `skriv retry` before it is transcribed
     until(lambda: [e.meta.get("status") for e in retry.entries(tmp_path)] == ["finishing"])
     assert c.handle("cancel") == "ok cancelled"
     wait_idle(c)

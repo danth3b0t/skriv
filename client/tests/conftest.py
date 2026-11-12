@@ -1,4 +1,4 @@
-"""In-process hark server (mock backend) on its own event-loop thread, a fake
+"""In-process skriv server (mock backend) on its own event-loop thread, a fake
 OpenAI-compatible cleanup endpoint, and a scriptable context engine.
 
 The client uses synchronous gRPC, so the grpc.aio server cannot share the test's
@@ -219,7 +219,7 @@ class RecordingFeedback(Feedback):
         self.sounds_played.append(kind)
 
     @override
-    def notify(self, body: str, title: str = "hark") -> None:
+    def notify(self, body: str, title: str = "Skriv") -> None:
         self.notifications.append(body)
 
 

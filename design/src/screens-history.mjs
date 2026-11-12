@@ -1,5 +1,5 @@
 // History (S4, optional, built last): search · list · detail (Final and Recognized, optional diff).
-// Reads `hark history --json` (text-bearing, local). Card = Omarchy popup chrome, padding 24, gap 24.
+// Reads `skriv history --json` (text-bearing, local). Card = Omarchy popup chrome, padding 24, gap 24.
 import { F, frame, text, icon, v, spacer, boardTitle } from './lib.mjs'
 
 const dim = (s, size = F.bodySmall) => text(s, { size, color: 'text-2' })

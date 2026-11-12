@@ -6,7 +6,7 @@ is shown with ``orderFrontRegardless`` (never ``makeKeyAndOrderFront``). :func:`
 checks this and the backend refuses to show a panel that fails it.
 
 AppKit is main-thread only: :func:`pump` runs the AppKit event loop on the main thread (also
-for Hark.app's menu-bar item, ``skriv_client.menubar``); :meth:`PanelBackend.render` (any thread)
+for Skriv.app's menu-bar item, ``skriv_client.menubar``); :meth:`PanelBackend.render` (any thread)
 stores the latest view and wakes the loop with an application-defined event
 (``postEvent:atStart:`` is safe from other threads).
 

@@ -109,7 +109,7 @@ class Mic:
 
 
 def record(seconds: float, device: str = "") -> bytes:
-    """Blocking capture for `hark doctor`; returns 16 kHz mono PCM16."""
+    """Blocking capture for `skriv doctor`; returns 16 kHz mono PCM16."""
     _, rate = describe_input(device)
     frames = sd.rec(
         int(seconds * rate), samplerate=rate, channels=1, dtype="float32", device=_device(device)

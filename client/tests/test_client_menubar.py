@@ -1,4 +1,4 @@
-"""Hark.app menu bar: which state icon the daemon's state maps to (no status item is created)."""
+"""Skriv.app menu bar: which state icon the daemon's state maps to (no status item is created)."""
 
 from __future__ import annotations
 

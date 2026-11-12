@@ -31,9 +31,9 @@ def test_detect_agent(cmdline: list[str], agent: str | None):
 
 def test_parse_tmux_clients_picks_the_focused_client():
     out = (
-        "/dev/ttys007\t86174\t/dev/ttys016\t/w/kairo\n/dev/ttys009\t99898\t/dev/ttys008\t/w/hark\n"
+        "/dev/ttys007\t86174\t/dev/ttys016\t/w/kairo\n/dev/ttys009\t99898\t/dev/ttys008\t/w/skriv\n"
     )
-    assert parse_tmux_clients(out, "/dev/ttys009") == TmuxPane(99898, "/dev/ttys008", "/w/hark")
+    assert parse_tmux_clients(out, "/dev/ttys009") == TmuxPane(99898, "/dev/ttys008", "/w/skriv")
     assert parse_tmux_clients(out, "/dev/ttys001") is None
 
 

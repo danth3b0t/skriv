@@ -319,7 +319,7 @@ Panel {
             Layout.alignment: Qt.AlignVCenter
           }
           Text {
-            text: "skriv"
+            text: "Skriv"
             textFormat: Text.PlainText
             color: root.foreground
             font.family: root.fontFamily

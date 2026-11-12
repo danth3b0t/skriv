@@ -11,7 +11,7 @@
   text stays in the clipboard. Only a command that certainly did nothing falls through to the next one.
 - The clipboard is restored `restore_delay_s` after the paste (the target reads it asynchronously). A newer
   paste before then takes over the saved content, so back-to-back dictations restore the user's clipboard,
-  not hark's previous text.
+  not skriv's previous text.
 - dry-run prints instead of touching the clipboard; `clipboard` copies without pasting.
 """
 

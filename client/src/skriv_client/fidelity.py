@@ -1,4 +1,4 @@
-"""Fidelity: does a rewrite say what the input said? One definition for cleanup and `hark eval`.
+"""Fidelity: does a rewrite say what the input said? One definition for cleanup and `skriv eval`.
 
 Cleanup may rewrite for clarity (drop fillers, fix casing and punctuation, smooth wording,
 write spoken numbers as digits) but never add, drop or reverse a claim. `check` approximates
@@ -251,7 +251,7 @@ def _retractions(text: str) -> Iterator[str]:
 
 def negations_kept(said: str, text: str) -> bool:
     """`text` has no fewer negations than `said`, or than `said` with a spoken
-    self-correction resolved ("10 MB, no, 20 MB" -> "20 MB"). For `hark eval`."""
+    self-correction resolved ("10 MB, no, 20 MB" -> "20 MB"). For `skriv eval`."""
     have = negations(text)
     return have >= negations(said) or any(have >= negations(m) for m in _retractions(said))
 

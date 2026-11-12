@@ -1,4 +1,4 @@
-"""`hark history`: a table of recent dictations and one dictation's stages, from history.jsonl."""
+"""`skriv history`: a table of recent dictations and one dictation's stages, from history.jsonl."""
 
 from __future__ import annotations
 
@@ -64,7 +64,7 @@ def latency_ms(r: Record) -> float | None:
 
 
 def table(records: list[Record], kept: Collection[str] = (), now: datetime | None = None) -> str:
-    """One line per record, oldest first. ``kept``: utterance ids with audio for `hark retry`
+    """One line per record, oldest first. ``kept``: utterance ids with audio for `skriv retry`
     (marked ``*``)."""
     today = now or datetime.now().astimezone()
     lines = [f"{'TIME':<11} {'ID':<9} {'APP':<{APP_W}} {'STATUS':<13} {'LATENCY':>8}  TEXT"]
@@ -84,7 +84,7 @@ def table(records: list[Record], kept: Collection[str] = (), now: datetime | Non
             f"{_clip(text, PREVIEW)}"
         )
     if kept and any(_str(r, "utterance_id") in kept for r in records):
-        lines.append("* = audio kept: `hark retry ID` re-runs it")
+        lines.append("* = audio kept: `skriv retry ID` re-runs it")
     return "\n".join(lines)
 
 
@@ -101,7 +101,7 @@ def show(r: Record, *, kept: bool = False) -> str:
         out.append(f"{label:<10} {text}")
 
     t = _local(_str(r, "ts"))
-    line("id", uid + (f"  (audio kept: hark retry {short_id(uid)})" if kept else ""))
+    line("id", uid + (f"  (audio kept: skriv retry {short_id(uid)})" if kept else ""))
     line("time", t.strftime("%Y-%m-%d %H:%M:%S") if t else _str(r, "ts"))
     app = _str(r, "app") or "?"
     mic = f"  mic={_str(r, 'input_device')}" if _str(r, "input_device") else ""

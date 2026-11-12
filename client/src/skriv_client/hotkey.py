@@ -2,9 +2,9 @@
 
 Hold the key to dictate, release to paste. A short tap (under ``hotkey.tap_ms``) instead keeps
 recording hands-free until the next tap. Esc while recording cancels. On macOS the process
-running hark (i.e. your terminal app) needs Input Monitoring (to see keys) and Accessibility (to
+running skriv (i.e. your terminal app) needs Input Monitoring (to see keys) and Accessibility (to
 post Cmd+V) in System Settings > Privacy & Security. Wayland has no global key grabs for
-clients: bind `hark ctl start/stop/toggle` in the compositor instead.
+clients: bind `skriv ctl start/stop/toggle` in the compositor instead.
 
 Listener callbacks only update the key state machine; the actions (start, stop, the shadow
 buffer's key tracking...) run in order on one worker thread, so a slow action never holds up
@@ -267,7 +267,7 @@ class PushToTalk:
 
 class _XEscGrab:
     """X11: a passive grab of Esc (any modifiers) on the root window while recording, so Esc goes
-    to hark instead of the focused window; the listener (RECORD extension) still sees it and
+    to skriv instead of the focused window; the listener (RECORD extension) still sees it and
     cancels, which releases the grab. **Untested on real hardware.**"""
 
     def __init__(self, display) -> None:  # noqa: ANN001 - an untyped Xlib Display

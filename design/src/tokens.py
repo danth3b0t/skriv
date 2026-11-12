@@ -1,4 +1,4 @@
-"""Derive hark UI tokens from Omarchy theme colors.toml files and check WCAG contrast.
+"""Derive skriv UI tokens from Omarchy theme colors.toml files and check WCAG contrast.
 
 Every derived token is a formula over Omarchy theme variables (colors.toml + the shell.toml.tpl
 defaults), so the QML implementation can compute the same values at runtime.
@@ -9,7 +9,7 @@ import sys
 import tomllib
 from pathlib import Path
 
-SRC = Path(sys.argv[2] if len(sys.argv) > 2 else "/tmp/hark-design-research/omarchy/themes")  # omacom/omarchy@quattro themes/
+SRC = Path(sys.argv[2] if len(sys.argv) > 2 else "/tmp/skriv-design-research/omarchy/themes")  # omacom/omarchy@quattro themes/
 THEMES = ["tokyo-night", "catppuccin-latte", "catppuccin", "gruvbox", "rose-pine",
           "flexoki-light", "matte-black", "nord", "everforest", "kanagawa", "ristretto", "white",
           "solitude", "lumon", "vantablack", "retro-82", "ethereal", "miasma"]

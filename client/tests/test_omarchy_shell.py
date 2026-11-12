@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 
 OMARCHY = Path(__file__).parents[2] / "packaging" / "omarchy"
 MODEL = OMARCHY / "skriv.shell" / "Model.js"
-TOKENS = Path(__file__).parents[2] / "design" / "tokens" / "omarchy-hark-tokens.json"
+TOKENS = Path(__file__).parents[2] / "design" / "tokens" / "omarchy-skriv-tokens.json"
 NODE = shutil.which("node")
 
 needs_node = pytest.mark.skipif(NODE is None, reason="Node runs the shell model")
@@ -111,7 +111,7 @@ def test_the_shell_reads_the_real_daemons_lines_and_history(
     )
     assert [o[0] for o in out] == ["idle", "recording", "idle"]
     assert out[2][1] == cast("dict[str, object]", c.report.json()["last"])["utterance_id"]
-    assert out[2][2].startswith("skriv · ready · ")
+    assert out[2][2].startswith("Skriv · ready · ")
     last = model(
         "M.lastView(M.parseHistory(d.h), M.parseStatus(d.l), d.now)",
         h=json.dumps(records), l=lines[2], now=time.time() * 1000,
@@ -135,22 +135,22 @@ def test_status_lines_the_shell_does_not_understand_are_dropped():
 @pytest.mark.parametrize(
     ("over", "online", "glyph", "problem", "sentence"),
     [
-        ({}, True, "idle", None, "skriv · ready · desktop 38 ms"),
-        ({}, False, "off", "Not running", "skriv · Not running"),
-        ({"paused": True, "mic": {"status": "off"}}, True, "paused", None, "skriv · paused"),
+        ({}, True, "idle", None, "Skriv · ready · desktop 38 ms"),
+        ({}, False, "off", "Not running", "Skriv · Not running"),
+        ({"paused": True, "mic": {"status": "off"}}, True, "paused", None, "Skriv · paused"),
         ({"phase": "recording", "state": "recording"}, True, "recording", None,
-         "skriv · recording"),
-        ({"phase": "finishing", "finishing": 1}, True, "working", None, "skriv · working"),
+         "Skriv · recording"),
+        ({"phase": "finishing", "finishing": 1}, True, "working", None, "Skriv · working"),
         # problems: the first that applies
         ({"mic": {"status": "lost"}, "server": {"name": "desktop", "state": "down"}}, True,
-         "idle", "Mic lost", "skriv · Mic lost"),
+         "idle", "Mic lost", "Skriv · Mic lost"),
         ({"server": {"name": "desktop", "state": "down", "rtt_ms": None},
           "config": {"changed": True, "restart_needed": ["audio"]}}, True,
-         "idle", "Server down", "skriv · Server down"),
+         "idle", "Server down", "Skriv · Server down"),
         ({"config": {"changed": True, "restart_needed": ["audio"]}}, True, "idle",
-         "Restart needed", "skriv · Restart needed"),
+         "Restart needed", "Skriv · Restart needed"),
         ({"config": {"changed": True, "restart_needed": []}}, True, "idle", "Config changed",
-         "skriv · Config changed"),
+         "Skriv · Config changed"),
     ],
 )  # fmt: skip
 def test_bar_glyph_problem_line_and_sentence(
@@ -183,11 +183,11 @@ def test_problem_verbs_run_the_right_command():
 @pytest.mark.parametrize(
     ("last", "sentence"),
     [
-        ({"status": "error", "failure": "other"}, "skriv · last dictation failed"),
+        ({"status": "error", "failure": "other"}, "Skriv · last dictation failed"),
         ({"status": "error", "failure": "degenerate_output"},
-         "skriv · last dictation failed · garbled transcript"),
-        ({"status": "paste_failed"}, "skriv · paste failed, text in clipboard"),
-        ({"status": "no_speech", "flat_signal": True}, "skriv · no audio from mic"),
+         "Skriv · last dictation failed · garbled transcript"),
+        ({"status": "paste_failed"}, "Skriv · paste failed, text in clipboard"),
+        ({"status": "no_speech", "flat_signal": True}, "Skriv · no audio from mic"),
     ],
 )  # fmt: skip
 def test_a_failure_draws_attention_until_the_panel_has_shown_it(
@@ -202,7 +202,7 @@ def test_a_failure_draws_attention_until_the_panel_has_shown_it(
 def test_quiet_no_speech_is_no_failure():
     s = status(last={"utterance_id": "u1", "status": "no_speech", "flat_signal": False})
     assert model("[M.attention(d.s, true, ''), M.sentence(d.s, true, '')]", s=s) == [
-        False, "skriv · ready · desktop 38 ms",
+        False, "Skriv · ready · desktop 38 ms",
     ]  # fmt: skip
 
 

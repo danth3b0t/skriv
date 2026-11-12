@@ -404,7 +404,7 @@ _store_lock = threading.Lock()
 
 
 def store(data_dir: str | None = None) -> VocabStore:
-    """The process-wide store in ``data_dir`` (default: hark's data dir)."""
+    """The process-wide store in ``data_dir`` (default: skriv's data dir)."""
     global _store  # noqa: PLW0603 - one store per process
     path = Path(data_dir or default_data_dir()).expanduser() / STORE_NAME
     with _store_lock:

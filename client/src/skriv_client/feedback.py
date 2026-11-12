@@ -67,7 +67,7 @@ class Feedback:
         if self.player and Path(path).exists():
             _spawn([*self.player, path])
 
-    def notify(self, body: str, title: str = "hark") -> None:
+    def notify(self, body: str, title: str = "Skriv") -> None:
         log.info("%s", body)
         if not self.cfg.notify:
             return
@@ -75,7 +75,7 @@ class Feedback:
             script = f"display notification {_applescript_str(body)} with title {_applescript_str(title)}"
             _spawn(["osascript", "-e", script])
         elif shutil.which("notify-send"):
-            _spawn(["notify-send", "--app-name=hark", title, body])
+            _spawn(["notify-send", "--app-name=Skriv", title, body])
 
 
 def _applescript_str(s: str) -> str:

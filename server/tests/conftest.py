@@ -1,4 +1,4 @@
-"""In-process hark server (mock backend) + client helpers."""
+"""In-process skriv server (mock backend) + client helpers."""
 
 from __future__ import annotations
 

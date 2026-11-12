@@ -1,7 +1,7 @@
-"""Recovery ring: the last ``retry.keep`` dictations' audio, kept so `hark retry` can re-run one.
+"""Recovery ring: the last ``retry.keep`` dictations' audio, kept so `skriv retry` can re-run one.
 
 Layout: ``<history.dir>/retry/<utterance_id>/{audio.wav, context.json, meta.json}`` (directories
-0700, files 0600); hark's only audio store (`hark eval add` copies from it). Older entries are
+0700, files 0600); skriv's only audio store (`skriv eval add` copies from it). Older entries are
 deleted after each save. ``context.json`` is the snapshot taken at key-down (without the selection,
 agent reply and window title), so a retry is biased and targeted like the original: it pastes
 only if that window is focused again, else copies.
@@ -110,7 +110,7 @@ def entries(base: Path) -> list[Entry]:
 
 def find(base: Path, query: str) -> Entry:
     """``last`` (or "") = newest; else a full id or a unique part of one (e.g. its last 8
-    characters, as `hark history` shows). Raises LookupError with a message for the user."""
+    characters, as `skriv history` shows). Raises LookupError with a message for the user."""
     kept = entries(base)
     if not kept:
         raise LookupError(f"no kept recordings in {base / RING} (retry.keep = 0, or none yet)")
@@ -120,7 +120,7 @@ def find(base: Path, query: str) -> Entry:
     if len(matches) == 1:
         return matches[0]
     if not matches:
-        raise LookupError(f"no kept recording matches {query!r} (see `hark history`)")
+        raise LookupError(f"no kept recording matches {query!r} (see `skriv history`)")
     raise LookupError(f"{query!r} matches {len(matches)} recordings; give more characters")
 
 

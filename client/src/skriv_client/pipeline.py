@@ -67,7 +67,7 @@ class Services:
     router: Router
     injector: Injector
     feedback: Feedback
-    out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
+    out: Callable[[str], None] | None = None  # per-stage report (`skriv once`)
     on_stage: Callable[[str, str], None] | None = None  # (utterance id, "cleaning"): indicator
 
 
@@ -141,7 +141,7 @@ class Utterance:
         *,
         profile: str | None = None,
         preroll: bytes = b"",
-        replay: ContextSnapshot | None = None,  # `hark retry`: the original key-down context
+        replay: ContextSnapshot | None = None,  # `skriv retry`: the original key-down context
     ) -> None:
         self.svc = svc
         self.replay = replay
@@ -361,7 +361,7 @@ class Utterance:
                     return result
         self._report("asr", f"FAILED: {e}")
         self.svc.feedback.sound("error")
-        hint = "; `hark retry` re-runs it" if self.svc.cfg.retry.keep > 0 else ""
+        hint = "; `skriv retry` re-runs it" if self.svc.cfg.retry.keep > 0 else ""
         self.svc.feedback.notify(f"Transcription failed: {e}{hint}")
         return Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
 
@@ -462,7 +462,7 @@ class Utterance:
         if bad:  # not text: never pasted; the kept audio can be retried
             self._report("asr", f"REFUSED: degenerate output ({bad})")
             svc.feedback.sound("error")
-            hint = "; `hark retry` re-runs it" if cfg.retry.keep > 0 else ""
+            hint = "; `skriv retry` re-runs it" if cfg.retry.keep > 0 else ""
             svc.feedback.notify(f"Transcription failed: unusable recognizer output{hint}")
             res.status, res.error = "error", f"asr: degenerate output ({bad})"
             return res

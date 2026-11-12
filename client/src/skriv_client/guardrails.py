@@ -8,7 +8,7 @@
 
 `degenerate` recognizes recognizer output that is not text at all (a run of `<unk>`
 tokens, one character or a short pattern repeated many times); the pipeline refuses it
-right after recognition, as a failed transcription that `hark retry` can re-run.
+right after recognition, as a failed transcription that `skriv retry` can re-run.
 """
 
 from __future__ import annotations

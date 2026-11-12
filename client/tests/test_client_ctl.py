@@ -1,4 +1,4 @@
-"""Control socket protocol (`hark ctl`)."""
+"""Control socket protocol (`skriv ctl`)."""
 
 from __future__ import annotations
 
@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 @pytest.fixture
 def sock_path() -> Iterator[Path]:
     # AF_UNIX paths are limited to ~104 bytes; pytest's tmp_path on macOS is too long.
-    d = Path(tempfile.mkdtemp(prefix="hark-", dir="/tmp"))
+    d = Path(tempfile.mkdtemp(prefix="skriv-", dir="/tmp"))
     yield d / "run" / "ctl.sock"
     shutil.rmtree(d)
 
@@ -202,7 +202,7 @@ def test_subscribe_sends_the_status_now_and_on_every_change(
         server.close()
 
 
-def test_hark_ctl_json_flag(
+def test_skriv_ctl_json_flag(
     sock_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     monkeypatch.setattr(ctl, "socket_path", lambda: sock_path)
@@ -240,10 +240,10 @@ def test_stale_socket_is_replaced(sock_path: Path):
         server.close()
 
 
-def test_hark_ctl_exit_codes(
+def test_skriv_ctl_exit_codes(
     sock_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    monkeypatch.setenv("SKRIV_CTL_SOCKET", str(sock_path))  # the override Hark.app tests use
+    monkeypatch.setenv("SKRIV_CTL_SOCKET", str(sock_path))  # the override Skriv.app tests use
     assert main(["ctl", "start"]) == 2  # no daemon
     assert "skriv run" in capsys.readouterr().err
     server = ctl.CtlServer(

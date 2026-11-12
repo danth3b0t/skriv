@@ -1,4 +1,4 @@
-"""`hark eval`: scoring rules, and add -> run -> accept against the in-process mock server."""
+"""`skriv eval`: scoring rules, and add -> run -> accept against the in-process mock server."""
 
 from __future__ import annotations
 

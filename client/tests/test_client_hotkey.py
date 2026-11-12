@@ -106,7 +106,7 @@ def test_recordings_ended_or_started_elsewhere_reset_the_tap_state():
     ptt._press(K.alt_r)  # a fresh start, not a stop
     clock.t += 1
     ptt._release(K.alt_r)
-    ptt.recording(True)  # `hark ctl start`
+    ptt.recording(True)  # `skriv ctl start`
     ptt._press(K.alt_r)  # stops it
     ptt._release(K.alt_r)
     ptt.recording(False)
@@ -124,7 +124,7 @@ def test_esc_cancels_any_recording_once_and_a_dictation_until_it_is_pasted():
     ptt._press(K.esc)  # held
     ptt._release(K.alt_r)  # nothing left to stop
     ptt.recording(True)
-    ptt._press(K.esc)  # started by `hark ctl`
+    ptt._press(K.esc)  # started by `skriv ctl`
     ptt._press(K.esc)  # nothing left to cancel
     ptt.finishing(True)  # stopped, being transcribed
     ptt._press(K.esc)
@@ -164,7 +164,7 @@ def test_only_the_esc_that_cancels_a_recording_is_swallowed():
     assert not delivered(ptt, K.esc, down=False)  # its release
     assert delivered(ptt, K.esc)  # the next Esc, idle again
     assert delivered(ptt, K.esc, down=False)
-    ptt.recording(True)  # `hark ctl start`
+    ptt.recording(True)  # `skriv ctl start`
     assert not delivered(ptt, K.esc)
     esc = KeyPress("esc")
     assert events == [esc, "down", KeyPress("space"), "cancel", esc, "cancel"]

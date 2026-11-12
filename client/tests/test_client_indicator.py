@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from .conftest import FakeContext
 
-TOKENS = Path(__file__).parents[2] / "design" / "tokens" / "omarchy-hark-tokens.json"
+TOKENS = Path(__file__).parents[2] / "design" / "tokens" / "omarchy-skriv-tokens.json"
 KEY = "Super Alt D"
 
 
@@ -117,9 +117,9 @@ def pill(view: View) -> tuple[str, str, str, str, str]:
         (None, False, ("alert", "live", "Failed", "", KEY), 4.0),  # the finish itself crashed
         (Result("u", "no_speech"), True, ("cross", "dim", "No speech", "", ""), 0.6),
         (Result("u", "no_speech", input_device="USB Mic"), True,
-         ("cross", "dim", "No speech", "USB Mic", "hark doctor"), 1.5),  # quiet: not an error
+         ("cross", "dim", "No speech", "USB Mic", "skriv doctor"), 1.5),  # quiet: not an error
         (Result("u", "no_speech", input_device="USB Mic", flat_signal=True), True,
-         ("mic-off", "live", "No audio from mic", "USB Mic", "hark doctor"), 4.0),
+         ("mic-off", "live", "No audio from mic", "USB Mic", "skriv doctor"), 4.0),
         (Result("u", "too_short"), True, ("cross", "dim", "Too short", "", ""), 0.6),
         (Result("u", "cancelled"), True, ("cross", "dim", "Cancelled", "", ""), 0.6),
     ],
@@ -132,9 +132,9 @@ def test_each_outcome_has_its_pill_and_linger(
     assert view.name  # every pill has its sentence (accessibility, macOS)
 
 
-def test_without_a_panel_key_a_failure_names_hark_retry_when_audio_is_kept():
+def test_without_a_panel_key_a_failure_names_skriv_retry_when_audio_is_kept():
     failed = Result("u", "error", error="boom")
-    assert outcome_view(failed, cleanup_expected=False, retry_hint=True)[0].hint == "hark retry"
+    assert outcome_view(failed, cleanup_expected=False, retry_hint=True)[0].hint == "skriv retry"
     assert outcome_view(failed, cleanup_expected=False)[0].hint == ""
     pasted = Result("u", "paste_failed", delivery="copied")
     assert outcome_view(pasted, cleanup_expected=False, retry_hint=True)[0].hint == ""

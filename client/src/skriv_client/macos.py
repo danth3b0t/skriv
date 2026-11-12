@@ -1,4 +1,4 @@
-"""Typed wrapper around the pyobjc calls hark needs (macOS only).
+"""Typed wrapper around the pyobjc calls skriv needs (macOS only).
 
 pyobjc ships no type information and its modules are populated dynamically, so the
 frameworks are bound as `Any` here; everything this module exports has precise

@@ -1,4 +1,4 @@
-"""`hark history` (table, show, --json) and `hark last`."""
+"""`skriv history` (table, show, --json) and `skriv last`."""
 
 from __future__ import annotations
 
@@ -57,7 +57,7 @@ def test_table_previews_one_line_per_dictation():
         "[asr: no FinalResult within 5.0 s]"
     )
     assert lines[3].endswith("no_speech            -  [no audio from USB Mic]")
-    assert lines[4] == "* = audio kept: `hark retry ID` re-runs it"
+    assert lines[4] == "* = audio kept: `skriv retry ID` re-runs it"
 
 
 def test_show_lists_every_stage():
@@ -82,7 +82,7 @@ def test_show_lists_every_stage():
         route=[{"name": "desktop", "state": "down"}, {"name": "laptop-cpu", "state": "ok"}],
     )
     out = historyview.show(rec, kept=True).splitlines()
-    assert out[0] == f"id         {ID_A}  (audio kept: hark retry 000000a1)"
+    assert out[0] == f"id         {ID_A}  (audio kept: skriv retry 000000a1)"
     for expected in (
         "raw        'cube control get pods'",
         "             'cube control' -> 'kubectl' (alias)",

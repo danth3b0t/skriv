@@ -1,4 +1,4 @@
-"""hark ErrorDetail <-> gRPC status mapping.
+"""skriv ErrorDetail <-> gRPC status mapping.
 
 Messages in SkrivError MUST NOT contain user text or context (they reach logs
 and the wire); use sizes, ids and counts only.
@@ -17,7 +17,7 @@ from skriv.v1 import skriv_pb2 as pb
 
 E = pb.ErrorCode
 
-# ErrorCode -> canonical gRPC status (proto comments in hark.proto).
+# ErrorCode -> canonical gRPC status (proto comments in skriv.proto).
 _GRPC_CODE = {
     E.ERROR_CODE_MODEL_NOT_FOUND: grpc.StatusCode.NOT_FOUND,
     E.ERROR_CODE_MODEL_NOT_READY: grpc.StatusCode.UNAVAILABLE,

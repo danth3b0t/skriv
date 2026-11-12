@@ -1,4 +1,4 @@
-"""`hark once` end to end: WAV -> in-process mock server (+ fake cleanup LLM) -> dry-run paste."""
+"""`skriv once` end to end: WAV -> in-process mock server (+ fake cleanup LLM) -> dry-run paste."""
 
 from __future__ import annotations
 
@@ -207,8 +207,8 @@ def test_dictionary_words_bias_the_recognizer_without_any_context(
 
 
 # The mock server writes a term's canonical wherever one of its aliases was "heard", so
-# with "get" as an alias of "Hark" the biased result says "Hark" where the anchor says "get".
-HARK = Term("Hark", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
+# with "get" as an alias of "Skriv" the biased result says "Skriv" where the anchor says "get".
+SKRIV = Term("Skriv", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
 
 
 @pytest.mark.parametrize(
@@ -218,9 +218,9 @@ HARK = Term("Hark", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
             True,
             "please run kubectl get",
             # adjacent hits form one region, judged against every combination of their forms
-            [("kubectl Hark", "cube control get", "reverted", "in_anchor")],
+            [("kubectl Skriv", "cube control get", "reverted", "in_anchor")],
         ),
-        (False, "please run kubectl Hark", None),
+        (False, "please run kubectl Skriv", None),
     ],
 )
 def test_anchor_gate_restores_the_anchor_words_and_records_why(
@@ -231,13 +231,13 @@ def test_anchor_gate_restores_the_anchor_words_and_records_why(
     canonical: str,
     decisions: list[tuple[str, str, str, str]] | None,
 ):
-    fake_context.snapshots = [snapshot("com.apple.Notes", terms=(KUBECTL, HARK))]
+    fake_context.snapshots = [snapshot("com.apple.Notes", terms=(KUBECTL, SKRIV))]
     _, rec = run_once(
         tmp_path, skriv_server.target, config=f"[gate]\nenabled = {str(enabled).lower()}\n"
     )
-    assert rec["raw_text"] == "please run kubectl Hark"
+    assert rec["raw_text"] == "please run kubectl Skriv"
     # gate on: both regions go back to the anchor's words; canonicalization then
-    # writes kubectl (multi-word alias) but not Hark (single plain word)
+    # writes kubectl (multi-word alias) but not Skriv (single plain word)
     assert rec["canonical_text"] == canonical
     record = cast("dict[str, object]", rec["gate"])
     if decisions is None:

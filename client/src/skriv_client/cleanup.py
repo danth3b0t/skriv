@@ -61,7 +61,7 @@ def protected(text: str, terms: Sequence[Term]) -> set[str]:
 
 def restore_case(text: str, rewrite: str, keep: set[str]) -> str:
     """Put back protected strings the rewrite only re-cased ("skriv-server should" ->
-    "Hark-server should" -> "skriv-server should"): same count ignoring case, fewer exact."""
+    "Skriv-server should" -> "skriv-server should"): same count ignoring case, fewer exact."""
     for p in keep:
         if fidelity.count(p, rewrite) < fidelity.count(p, text) and fidelity.count(
             p, rewrite, re.IGNORECASE

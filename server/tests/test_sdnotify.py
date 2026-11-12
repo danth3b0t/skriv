@@ -35,7 +35,7 @@ def health_status(target: str) -> int:
 def test_ready_after_serving_then_watchdog_then_stopping():
     # AF_UNIX paths are short (104 bytes on macOS): keep them out of pytest's long tmp dirs.
     with tempfile.TemporaryDirectory(dir="/tmp") as d:
-        notify_path, listen = Path(d, "notify"), Path(d, "hark.sock")
+        notify_path, listen = Path(d, "notify"), Path(d, "skriv.sock")
         sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         sock.bind(str(notify_path))
         sock.settimeout(20)

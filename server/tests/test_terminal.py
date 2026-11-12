@@ -82,9 +82,9 @@ CASES: dict[str, Case] = {
         ["privacy.allow_eval_capture", "privacy.allow_replay_cache"],
     ),
     "required features": (
-        utterance(PCM, required_features=["bias", "free_text", "hark.opus", "result.anchor"]),
+        utterance(PCM, required_features=["bias", "free_text", "skriv.opus", "result.anchor"]),
         None, REJECTED, C.FAILED_PRECONDITION, E.ERROR_CODE_REQUIRED_FEATURE_UNAVAILABLE,
-        ["free_text", "hark.opus"],
+        ["free_text", "skriv.opus"],
     ),
     "bias weight out of range": (
         utterance(PCM, context=pb.RecognitionContext(
