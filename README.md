@@ -1,61 +1,111 @@
-# hark (working name)
+# hark
 
-Context-aware, local-first dictation: hold a key, speak, and the text is pasted into the focused app.
-Before decoding, hark looks at what you are working on (focused app, terminal working directory,
-git repo vocabulary, the coding agent's recent turns read from its session files) and biases the
-speech recognizer toward those identifiers and names; a small local model ("S1-mini" by "Superwhisper") then
-tidies the text under strict guardrails. **This is a proof of concept.**
+Dictation for people who talk to coding agents. Hold a key, speak, let go: the text is pasted into the focused
+terminal or chat box. hark is built for prompts to Claude Code, pi and Codex, in terminals and IDE chats, on
+Omarchy (Hyprland) first and macOS second.
 
-## Try the POC on macOS (Apple Silicon)
+## How it differs
+
+- **It knows what you are working on.** At key-down hark reads the focused terminal's git repository (files,
+  branch, recent changes), the coding agent's session for that directory (your prompts, its replies, the paths
+  its tools touched) and the text on screen, and gives the recognizer a short list of those identifiers before
+  it decodes. `parse_config`, `kubectl`, `Hyprland` come out spelled right. An unbiased decode of the same audio
+  keeps the list honest: a biased word the audio does not support is reverted.
+- **Cleanup that does not change what you said.** A small local model (S1-mini) removes fillers, applies
+  "no wait, Wednesday" self-corrections and punctuates. The client keeps its rewrite only if every identifier,
+  number and negation survives and only a few content words changed; otherwise you get the uncleaned text.
+- **Terminal-aware delivery.** In a terminal the text is one line, spoken symbols are written
+  ("dash dash verbose" → `--verbose`), and Enter is never sent.
+- **Local.** Recognition (Parakeet) and cleanup run on your machines: the laptop, or a GPU desktop over
+  Tailscale with mTLS, with the laptop's CPU as the fallback.
+
+## Quickstart: Omarchy
+
+```sh
+git clone <this repository> ~/projects/hark
+cd ~/projects/hark/packaging/aur/hark-git
+HARK_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
+omarchy-install-dictation-hark     # hark.service, Omarchy's dictation keys, bar glyph, panel on Super Alt D
+```
+
+hark needs a recognition server. On a GPU desktop: [docs/linux.md §3–4](docs/linux.md#3-the-desktop-gpu-server--cleanup-llm).
+On the laptop's CPU (no cleanup there): [§5](docs/linux.md#5-laptop-fallback-local-cpu-engine), then list it in
+`~/.config/hark/config.toml`:
+
+```toml
+[[providers]]
+address = "127.0.0.1:50052"
+```
+
+`hark doctor` checks server, mic, paste tools and the daemon. Hold **Right Alt** to talk, or **Alt+Space** to
+start and stop.
+
+## Quickstart: macOS (Apple Silicon)
 
 ```sh
 uv sync
-scripts/poc-up          # downloads llama.cpp + S1-mini on first run, starts llama-server + hark-server
-# in another terminal (the one you grant permissions to):
-uv run hark doctor      # checks server, mic, permissions, paste, context
-uv run hark run         # hold Right Option to dictate, release to paste; Esc while holding cancels
+scripts/fetch-llama && scripts/fetch-models   # llama.cpp and S1-mini into models/
+scripts/llama-up &                             # cleanup model on 127.0.0.1:8080
+uv run hark-server --backend parakeet_mlx --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model s1-mini-q4_k_m &
+uv run hark doctor
+uv run hark run                                # hold Right Option to talk; tap it for hands-free; Esc cancels
 ```
 
-Grant the terminal app that runs `hark run` **Microphone**, **Accessibility** and **Input Monitoring**
-(System Settings → Privacy & Security). Without Accessibility the hotkey and Cmd+V paste don't work.
+The terminal running `hark run` needs Microphone, Accessibility and Input Monitoring. Or build **Hark.app**
+(`scripts/build-macos-app`): a menu-bar app that holds those permissions itself
+([packaging/macos](packaging/macos/README.md)).
 
-### Hark.app: always there, with its own permissions
+> Known issue: `scripts/poc-up` and `hark service install` on macOS still pass the removed `--cleanup-engine` flag,
+> so hark-server refuses to start with cleanup. Start it by hand as above until they are fixed.
+
+## The daily loop
+
+**Dictate.** Hold the key, speak, release. A small pill at the bottom of the screen shows the level while you
+talk, then ✓ once the text is sent. Speak your corrections ("three seconds, sorry, five seconds"); they are applied.
+A dictation can be up to 5 minutes.
+
+**Recover.** If the pill says *Copied*, *Paste failed* or *Failed*, nothing is lost:
+
+| | |
+|---|---|
+| **Super Alt D** (Omarchy) | the panel: copy the last dictation, paste it again, retry it |
+| the menu-bar item (Hark.app) | copy or retry the last dictation |
+| `hark last` | print the last text; `--copy` puts it on the clipboard |
+| `hark last --raw --copy` | the text before cleanup, when the cleanup changed too much |
+| `hark retry` | re-run the last recording through the server (kept for the last 10 dictations) |
+| `hark ctl paste-last` | paste the last text again into the focused window (bind it to a key) |
+
+**Fix a word.** When a name keeps coming out wrong and no context will supply it:
 
 ```sh
-scripts/build-macos-app     # dist/Hark.app: menu-bar app running this checkout's .venv in-process
-open dist/Hark.app          # setup window: Microphone, Accessibility, Input Monitoring, mic level, hotkey, servers
-uv run hark service install  # llama-server + hark-server as launchd agents (stop scripts/poc-up first)
+hark words add "hyper land" Hyprland     # how you say it, how it is spelled; the daemon reloads
+hark words add pie pi --repo             # only in this git repository (.hark/words.toml)
 ```
 
-The permissions then belong to Hark (bundle id `dev.hark.Hark`), not to your terminal. The menu-bar item shows the
-state and offers the last dictation, Copy/Retry last, Pause, a profile override, history, settings, doctor and
-Launch at Login. Python edits need no rebuild. Signing (rebuilds keep the grants), TCC attribution and future
-notarization: [packaging/macos/README.md](packaging/macos/README.md).
+**Check.** `hark history` lists recent dictations with their latency; `hark history show ID` shows every stage
+(recognized, corrected, cleaned, pasted). `hark ctl pause` releases the mic until `hark ctl resume`.
 
-Try it without a mic: `uv run hark once --wav some.wav --dry-run --profile terminal --cwd ~/some/repo`.
+## Read more
 
-Linux (Arch/Omarchy): [docs/linux.md](docs/linux.md): the `hark-git` AUR package, always-on systemd user services
-(`hark service install`), Omarchy/Hyprland keys, and a GPU desktop running `hark-server` for a laptop over
-Tailscale with mTLS. Client details: [client/README.md](client/README.md) (`hark ctl start|stop` bound with
-`bind`/`bindr`). On Linux without a Mac-class GPU, run `hark-server` on another machine and list it in
-`[[providers]]`, with the laptop's own CPU server as the offline fallback: `scripts/fetch-transcribe &&
-scripts/cpu-server-up` (transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of speech on 4 cores of an M5 Pro, see
-[the bench](docs/bench/2026-11-12-transcribe-cpp-cpu.md)). Each dictation goes to the first healthy provider; see
-[client/README.md](client/README.md#providers-and-the-offline-fallback).
-
-## Layout
-
-| Path | What |
+| | |
 |---|---|
-| `proto/hark/v1/hark.proto` | client ↔ inference-server protocol (gRPC), see `docs/protocol/ADR-001-protocol.md` |
-| `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, transcribe_cpp CPU/Metal/Vulkan) + TextCleanup proxy |
-| `client/` | `hark`: hotkey, audio, context engine, streaming, canonicalization, cleanup, guardrails, paste |
-| `proto-py/` | generated Python stubs (`proto-py/gen-proto`) |
-| `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up`, `build-macos-app`, `hark-certs` (mTLS) |
-| `packaging/` | `macos/` (Hark.app launcher), AUR `hark-git`, `systemd/` user units, `omarchy/` dictation adapter |
-| `docs/` | context, research-driven decisions, protocol, eval set, benchmarks |
+| [docs/architecture.md](docs/architecture.md) | the pipeline, which module owns each step, the daemon/UI contract, tests and eval |
+| [client/README.md](client/README.md) | every command, config key and behaviour of the `hark` client |
+| [server/README.md](server/README.md) | `hark-server`: backends, cleanup, configuration |
+| [docs/linux.md](docs/linux.md) | Arch/Omarchy install, services, the Omarchy pill, bar and panel, GPU desktop over Tailscale + mTLS |
+| [docs/context-engine.md](docs/context-engine.md) | what context is read and how terms are ranked |
+| [docs/eval.md](docs/eval.md) | `hark eval` and the shared set `eval/dev-v1` |
+| [docs/protocol/](docs/protocol/) | the gRPC protocol (ADR-001, CHANGES) and the control socket ([ctl-v1](docs/protocol/ctl-v1.md)) |
+| [design/SPEC.md](design/SPEC.md) | the Omarchy UI specification |
+| [docs/bench/](docs/bench/) | measurements; [docs/archive/](docs/archive/README.md) holds superseded ones and the research |
 
 ## Development
 
-uv workspace; hooks via lefthook (`uv run lefthook install`): ruff, basedpyright (strict), ty, Conventional
-Commits (commitizen), pytest on push. Never bypass the hooks.
+A uv workspace (Python 3.12): `client/` (`hark`), `server/` (`hark-server`), `proto/` and `proto-py/` (the
+gRPC protocol and its generated stubs), `scripts/`, `packaging/`, `eval/`. Hooks via lefthook
+(`uv run lefthook install`): ruff, basedpyright (strict), ty, Conventional Commits, pytest on push.
+
+```sh
+uv sync
+uv run pytest -q
+```
