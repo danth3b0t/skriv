@@ -81,9 +81,9 @@ Accessibility worker, so it cannot make a key-down query skip. A second thread l
 At key-down `collect()` uses a warm entry validated within 6 s and only reads focus, selection and screen text:
 one run on this Mac: 38 ms warm vs 375 ms cold.
 
-**Wiring for the client core (not done here):** call `context.start_prefetch(cfg.history.dir)` when the daemon
-starts and `context.stop_prefetch()` on exit; lower `ContextConfig.max_terms` (60) to 30 or drop it; add
-`snap.provenance` to the history record (recordings already include it via `asdict(snapshot)`).
+The daemon starts it (`daemon.py`) with `cfg.history.dir`; `ContextConfig.max_terms` is 30 and history records
+carry `snap.provenance`. Hand-written `[[words]]` from the config and promoted corrections (`[learn]`) are merged in
+front of the ranked terms by the client (`pipeline.py`), not by the engine.
 
 ## Offline replay (the experiment harness, same cutoff and splits)
 

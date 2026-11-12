@@ -130,7 +130,7 @@ final_timeout_ms = 5000
 
 [context]
 deadline_ms = 150             # SessionStart waits at most this long for context
-max_terms = 60
+max_terms = 30
 
 [gate]                        # anchor gate: biased words the unbiased decode does not support are reverted
 enabled = true
@@ -139,7 +139,7 @@ confident_anchor = 0.97       # ...and been less sure than this of its own word 
 
 [cleanup]
 enabled = true                # profiles opt in individually
-deadline_ms = 600             # timeout/failure => uncleaned text
+deadline_ms = 1000            # timeout/failure => uncleaned text
 
 [audio]
 device = ""                   # PortAudio name or index
@@ -166,6 +166,10 @@ smart_spacing = true          # leading/trailing space + mid-sentence lower case
 join_space = true             # older name; false also turns smart spacing off
 join_window_ms = 60000        # shadow buffer (no readable caret) forgets after this long without input
 verify = true                 # read the field back after pasting: landed | missing | not_text | unknown (recorded)
+
+[[words]]                     # spellings the recognizer needs help with; in every shortlist, first
+word = "Hyprland"
+spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
 
 [learn]                       # correction learning, see below; off unless enabled
 enabled = false
@@ -197,8 +201,8 @@ sticky = false                # `hark ctl profile set NAME` lasts one dictation;
 [profiles.terminal]           # built-ins: terminal, chat, prose (fallback); table order = match order
 apps = ["com.mitchellh.ghostty", "kitty", "*terminal*"]   # globs on app id / name, case-insensitive
 terminal = true               # single line, Ctrl+Shift+V on Linux, never Enter
-cleanup = false
-cleanup_profile = "prose"     # server CleanupProfile.id
+cleanup = true
+cleanup_profile = "terminal"  # server CleanupProfile.id
 ```
 
 A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`,
@@ -392,6 +396,9 @@ Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). Histor
 permission, terminal, secure field, empty read-back, > 64 KiB). The verdict is only recorded for now (web/Electron
 fields can expose stale values); acting on `missing` waits until its false-positive rate is measured. Secure and
 password fields are never read.
+
+For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
+instead: every dictation gets them, ahead of the context terms, through the same gate and canonicalization rules.
 
 With `[learn] enabled = true`, the same read-back watches the pasted text for up to `window_ms` (≤ 30 s), only while
 the same window stays focused, until the next dictation, or until the text around it changes (e.g. the message was
