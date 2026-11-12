@@ -6,7 +6,7 @@ differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.
 
 Services:
 - `skriv.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance).
-- `skriv.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` where "S1-mini" by "Superwhisper" rewrites the text; the response carries the rewrite (`text`) and the client decides whether to keep it. Only registered when `[cleanup] base_url` is set.
+- `skriv.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` where "S1-mini" by "Superwhisper" (default) or an instruct model rewrites the text; the response carries the rewrite (`text`) and the client decides whether to keep it. A `prime` request at key-down warms the instruct model's prompt cache. Only registered when `[cleanup] base_url` is set.
 - `grpc.health.v1.Health`: services `""` and `skriv.v1.Asr` are SERVING once the model is READY; `skriv.v1.TextCleanup` is SERVING when cleanup is configured.
 
 ## Run
@@ -46,6 +46,16 @@ Apache 2.0 plus a term that it keep that name). Current measurements:
 [cleanup fidelity](../docs/bench/2026-11-13-cleanup-fidelity.md); why S1-mini over Qwen3:
 [archived bench](../docs/archive/bench/2026-11-11-cleanup-s1.md).
 
+Opt-in: Qwen3-4B-Instruct-2507, which also gets the context shortlist. On eval/dev-v1 it fails fewer clips (9 vs 14)
+and keeps more identifiers (91% vs 85%), but it accepts a few meaning changes that S1-mini does not make, and it adds
+~125 ms at key-up and 2.5 GB of memory: [docs/bench/2026-11-13-w4-cleanup-llm.md](../docs/bench/2026-11-13-w4-cleanup-llm.md).
+
+```sh
+scripts/fetch-models qwen3-4b-instruct-2507-q4_k_m
+scripts/llama-up qwen3-4b-instruct-2507-q4_k_m &
+(cd server && uv run skriv-server --cleanup-url http://127.0.0.1:8080/v1 --cleanup-model qwen3-4b-instruct-2507-q4_k_m)
+```
+
 `skriv-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
 
@@ -70,7 +80,7 @@ See [`skriv-server.example.toml`](skriv-server.example.toml). Unknown keys are e
 | `backend.model` / `backend.model_id` | `--model` / `--model-id` | backend default | model to load / id advertised to clients |
 | `backend.options` | | `{}` | backend constructor kwargs (checked at startup) |
 | `cleanup.base_url` | `--cleanup-url` | `""` (off) | OpenAI-compatible base, e.g. `http://127.0.0.1:8080/v1` |
-| `cleanup.model` | `--cleanup-model` | | model name sent upstream |
+| `cleanup.model` | `--cleanup-model` | | model name sent upstream; it picks the prompt: "instruct" in the name gets the instruct prompt with the shortlist, anything else S1-mini's |
 | `cleanup.api_key_env` | | | env var holding the upstream bearer token |
 | `cleanup.default_budget_ms` | | 400 | used when a request sets no budget |
 | `cleanup.max_input_bytes` | | 4000 | longer input is refused (`PROTOCOL_VIOLATION`; the client keeps its text) |
@@ -113,7 +123,8 @@ eager finalize are handled by the server (`session.py`), not by backends.
 - Cleanup profiles: `terminal` (terminal or coding-agent prompt, single line, no final period added), `chat` (single line, the writer's final punctuation kept) and `prose` (email/documents; the default).
 - Language guard: text that looks non-English (more foreign than English stopwords, or over a quarter of the words with non-ASCII letters), or a `language` other than `en*`, gets no LLM call and no rewrite (`skipped = "not_english"`).
 - Cleanup is "S1-mini" by "Superwhisper": its exact system prompt and the control line `[Styling: semi-formal] [Structure: prose] [Context: general]` for every profile (ASR output arrives cased and punctuated, and `casual`/`semi-casual` lowercase sentence starts and drop final periods), with `chat_template_kwargs.enable_thinking = false`, temperature 0. The model card warns that any other prompt can make it hallucinate, so the tuning happens around it: single-line profiles turn line breaks into spaces; hesitations it keeps (`eh`, an occasional `um`) and a `you know` set off by commas or opening a sentence are removed; a final period the input did not have is dropped in `terminal` and `chat`; a final `!` it flattened to `.` is restored. The response carries the rewrite in `text`. A rewrite cut off by `max_tokens` is not returned (`skipped = "max_tokens"`); if the budget runs out, the response is `truncated`.
-- The server does not judge the rewrite. The client checks it (`skriv_client.fidelity`) and keeps its input when the rewrite changes a protected identifier, a negation, a number, or more than a few content words.
+- An instruct model (`skriv_server/instruct.py`) gets rules (be faithful, fillers, self-corrections, code as typed, the shortlist's exact spellings, digits), 12 few-shots about an invented project, then `App: <profile>`, the request's `terms` (spoken forms with spaces only, at most three) and the transcript; temperature 0, the same deterministic touches. A `prime` request (no text) sends the same prompt with an empty transcript and `max_tokens 1`, so at key-up llama.cpp only processes the transcript; it answers `skipped = "primed"` (with S1-mini there is nothing to prime). `scripts/llama-up` keeps one slot with `-c 4096` for the ~2.1k-token prompt.
+- The server does not judge the rewrite. The client checks it (`skriv_client.fidelity`) and keeps its input when the rewrite changes a protected identifier, a negation, a number or a question, drops a sentence, invents an identifier, path or flag, or changes more than a few content words; a shortlist term written in place of words that sound like it counts as a repair.
 
 ## Tests
 
@@ -135,5 +146,5 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 - parakeet_mlx: N-best is 1 (beam result + greedy anchor), boosting costs ~2.3× greedy finalize latency, `detected_language` is not reported, and confidence is uncalibrated.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, gRPC reflection and server-side session expiry. Partials, Opus, hit scores and `bias_diagnostics` were removed from the proto (no client or server used them).
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.
-- Cleanup: no in-budget retry, non-streaming upstream call. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).
+- Cleanup: no in-budget retry, non-streaming upstream call. The instruct model follows some dictated instructions ("reply with OK"); the client's check refuses those rewrites. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).
 - grpcio's *Python* client replaces the server's status with `INTERNAL` if it is still writing when the server ends the call. Clients should rely on the in-band `session_ended`/`final_result` and stop writing after it (tonic does not have this problem).

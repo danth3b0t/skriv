@@ -45,9 +45,9 @@ and `skriv eval`. Its `_finish` reads top to bottom in this order.
 |---|---|
 | `symbols.py` | terminal profile only: "dash dash verbose" → `--verbose` |
 | `corrections.py` | explicit self-corrections ("three seconds, sorry, five seconds") resolved before the model |
-| `cleanup.py` | the `Cleanup` RPC under `cleanup.deadline_ms`; any failure keeps the uncleaned text |
-| server `cleanup.py` | S1-mini through an OpenAI-compatible endpoint (llama-server), small per-profile touches; returns the rewrite, judges nothing |
-| `fidelity.py` | the one definition of a faithful rewrite: identifiers, numbers and negations kept, few content words changed. A rewrite that fails it is discarded (`rejected`). `skriv eval` scores with the same module. |
+| `cleanup.py` | the `Cleanup` RPC under `cleanup.deadline_ms` (with the shortlist); any failure keeps the uncleaned text. `prime` at key-down warms the model's prompt cache |
+| server `cleanup.py`, `instruct.py` | S1-mini (default) or an instruct model with the shortlist in its prompt, through an OpenAI-compatible endpoint (llama-server), small per-profile touches; returns the rewrite, judges nothing |
+| `fidelity.py` | the one definition of a faithful rewrite: identifiers, numbers, negations, questions and sentences kept, nothing invented, few content words changed; a shortlist term in place of words that sound like it is a repair. A rewrite that fails it is discarded (`rejected`). `skriv eval` scores with the same module. |
 
 ## Deliver
 

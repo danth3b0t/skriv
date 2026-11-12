@@ -38,6 +38,7 @@ history, but not only failures. One person owns the set: adds clips when somethi
 skriv eval run                 # exit 1 on a missing critical / forbidden string / lost negation
 skriv eval run --set DIR       # another set
 skriv eval run --report r.json # also every clip's stages (raw, gated, canonical, uncleaned, final), score, timings
+skriv eval run --realtime      # audio at its own speed, key-up at its end: latency (and key-down priming) as dictated
 skriv --config no-context.toml eval run   # ablation: [context] max_terms = 0 replays without the shortlist
 ```
 

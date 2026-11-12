@@ -1,0 +1,184 @@
+{
+ "model": "s1-mini-q4_k_m",
+ "summary": {
+  "cases": 9,
+  "exact": 9,
+  "words": 9,
+  "baseline_exact_no_cleanup": 3,
+  "clean_cases": 3,
+  "clean_damaged": 0,
+  "protected_leaked": 0,
+  "status": {
+   "applied": 7,
+   "no_edits": 2
+  },
+  "rejected_by_reason": {},
+  "latency_ms_p50": 22,
+  "latency_ms_p95": 146,
+  "within_400ms": 9,
+  "groups": {
+   "category:self_correction": {
+    "n": 5,
+    "exact": 5,
+    "words": 5
+   },
+   "profile:terminal": {
+    "n": 8,
+    "exact": 8,
+    "words": 8
+   },
+   "category:identifier": {
+    "n": 1,
+    "exact": 1,
+    "words": 1
+   },
+   "category:negation": {
+    "n": 3,
+    "exact": 3,
+    "words": 3
+   },
+   "profile:chat": {
+    "n": 1,
+    "exact": 1,
+    "words": 1
+   }
+  }
+ },
+ "results": [
+  {
+   "id": "g-c-rust",
+   "category": "self_correction",
+   "profile": "terminal",
+   "text": "I want it written in C, uh no, in Rust.",
+   "output": "I want it written in Rust.",
+   "rewrite": "I want it written in Rust.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 40.3381249634549
+  },
+  {
+   "id": "g-david",
+   "category": "self_correction",
+   "profile": "terminal",
+   "text": "Um my name is David. Uh no, uh my name is Dan.",
+   "output": "My name is Dan.",
+   "rewrite": "My name is Dan.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 20.959292072802782
+  },
+  {
+   "id": "g-superwhisper",
+   "category": "identifier",
+   "profile": "terminal",
+   "text": "Those two dictations you can see up there are actually real dictations. The first one is from Hark, and the second one is from Super Whisper. So you can clearly see and compare that the first one did not clear and like clean what I meant to say, but it kept what I actually said. It's a good transcription. But when I said the same thing to Super Whisper, it actually cleared the uh no and kept only in Rust.",
+   "output": "Those two dictations you can see up there are actually real dictations. The first one is from Hark, and the second one is from Superwhisper. So you can clearly see and compare that the first one did not clear and like clean what I meant to say, but it kept what I actually said. It's a good transcription. But when I said the same thing to Superwhisper, it actually cleared the no and kept only in Rust.",
+   "rewrite": "Those two dictations you can see up there are actually real dictations. The first one is from Hark, and the second one is from Superwhisper. So you can clearly see and compare that the first one did not clear and like clean what I meant to say, but it kept what I actually said. It's a good transcription. But when I said the same thing to Superwhisper, it actually cleared the no and kept only in Rust.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 146.07050002086908
+  },
+  {
+   "id": "g-no-c",
+   "category": "negation",
+   "profile": "terminal",
+   "text": "No, I don't want C.",
+   "output": "No, I don't want C.",
+   "rewrite": "",
+   "status": "no_edits",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": true,
+   "leaked": [],
+   "latency_ms": 24.17037496343255
+  },
+  {
+   "id": "g-no-wait-time",
+   "category": "negation",
+   "profile": "terminal",
+   "text": "There is no wait time for the build.",
+   "output": "There is no wait time for the build.",
+   "rewrite": "",
+   "status": "no_edits",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": true,
+   "leaked": [],
+   "latency_ms": 21.804334013722837
+  },
+  {
+   "id": "g-c-not-rust",
+   "category": "negation",
+   "profile": "terminal",
+   "text": "Use C not Rust.",
+   "output": "Use C, not Rust.",
+   "rewrite": "Use C, not Rust.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": true,
+   "leaked": [],
+   "latency_ms": 19.339833059348166
+  },
+  {
+   "id": "g-tuesday",
+   "category": "self_correction",
+   "profile": "chat",
+   "text": "Let's meet on Tuesday, no, on Wednesday.",
+   "output": "Let's meet on Wednesday.",
+   "rewrite": "Let's meet on Wednesday.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 20.804458064958453
+  },
+  {
+   "id": "g-sorry",
+   "category": "self_correction",
+   "profile": "terminal",
+   "text": "Send it to Bob, sorry, to Alice.",
+   "output": "Send it to Alice.",
+   "rewrite": "Send it to Alice.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 21.799458074383438
+  },
+  {
+   "id": "g-make-that",
+   "category": "self_correction",
+   "profile": "terminal",
+   "text": "Give me two tickets, make that three tickets.",
+   "output": "Give me three tickets.",
+   "rewrite": "Give me three tickets.",
+   "status": "applied",
+   "reason": "",
+   "exact": true,
+   "words": true,
+   "clean": false,
+   "leaked": [],
+   "latency_ms": 22.19191601034254
+  }
+ ]
+}

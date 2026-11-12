@@ -383,11 +383,14 @@ clip's `timings_ms`.
   "src slash main dot rs" → `src/main.rs`, "cd slash tmp" → `cd /tmp`. A single "slash" between ordinary words
   ("the slash command") and "dash" after a non-command stay words.
 - Cleanup: the server returns a rewrite of the whole text (S1-mini: fillers out, casing, punctuation, light
-  rewording, spoken numbers as digits). Only the text is sent; the shortlist stays here. The rewrite replaces the text
+  rewording, spoken numbers as digits; or the opt-in instruct model, which also writes shortlist spellings). The
+  shortlist goes with the text when the provider has `send_context` (S1-mini ignores it), and once at key-down so an
+  instruct model has its prompt cached by key-up. The rewrite replaces the text
   only if it passes one fidelity check (`skriv_client/fidelity.py`, also used by `skriv eval`): shortlist identifiers and
   code-like tokens keep their spelling and count (a re-cased one is put back first), the same number of negations and
-  numbers (`seven` = `7`), no content words added or dropped beyond about one in eight, no new line break in a
-  terminal profile. A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds") is checked
+  numbers (`seven` = `7`), no lost `?`, no dropped sentence, no invented identifier, path or flag, no content words
+  added or dropped beyond about one in eight, no new line break in a terminal profile. A shortlist term written in
+  place of words that sound like it ("XDG runtime di" -> `$XDG_RUNTIME_DIR`) is a repair, not an addition. A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds") is checked
   against the corrected text. Status `applied`, `no_edits` (the rewrite equals the text) or `rejected` (the text
   stays; `reason` names the failed rule, `rewrite` keeps the rejected text in the history). Timeouts and RPC errors
   fall back to the uncleaned text. `server.language` other than `en*`, or text the server finds non-English, is not
