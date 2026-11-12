@@ -41,7 +41,7 @@ makedepends=(
 )
 optdepends=(
   'gtk4-layer-shell: recording indicator overlay (Hyprland, sway, KDE)'
-  'at-spi2-core: caret context and paste verification through AT-SPI'
+  'at-spi2-core: caret context through AT-SPI'
   'libnotify: desktop notifications'
   'pipewire: start/stop sounds (pw-play)'
   'wtype: paste fallback outside Hyprland'
