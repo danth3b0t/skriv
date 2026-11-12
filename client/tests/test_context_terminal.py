@@ -1,3 +1,4 @@
+import shutil
 import subprocess
 import sys
 import time
@@ -53,8 +54,13 @@ def test_parse_hyprctl_nothing_focused():
 
 
 def test_resolve_finds_agent_and_cwd_under_a_terminal_process(tmp_path: Path):
-    # "terminal" -> sh -> process whose argv[0] is "pi", running in tmp_path
-    script = f"cd {tmp_path} && exec -a pi sleep 30"
+    # "terminal" -> sh -> process whose argv[0] is "pi", running in tmp_path. A program file
+    # named pi, not `exec -a pi`: binfmt emulation (an amd64 container on arm64) replaces
+    # argv[0] with the path it executed.
+    sleep = shutil.which("sleep")
+    assert sleep is not None
+    (tmp_path / "pi").symlink_to(sleep)
+    script = f"cd {tmp_path} && exec ./pi 30"
     term = subprocess.Popen(  # noqa: S603 - test-controlled argv
         [sys.executable, "-c", f"import subprocess; subprocess.run(['bash', '-c', {script!r}])"]
     )

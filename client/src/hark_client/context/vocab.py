@@ -261,29 +261,39 @@ def from_json(raw: object) -> Vocab:
     return Vocab(scopes, _table(d.get("user")), marks)
 
 
+type _Stamp = tuple[int, int, int]
+
+
+def _stamp(path: Path) -> _Stamp | None:
+    try:
+        st = path.stat()
+    except FileNotFoundError:
+        return None
+    return (st.st_mtime_ns, st.st_size, st.st_ino)
+
+
 class VocabStore:
-    """:class:`Vocab` in a file; thread-safe. Reads are cached by file mtime."""
+    """:class:`Vocab` in a file; thread-safe. Reads are cached by the file's stat signature
+    (mtime, size, inode: Linux mtimes advance only every kernel tick, so a rewrite right after a
+    save can keep the same mtime)."""
 
     def __init__(self, path: Path) -> None:
         self.path = path
         self._lock = threading.Lock()
         self._vocab = Vocab()
-        self._mtime: float | None = None
-        self._cache: dict[tuple[float | None, str | None, int], list[Candidate]] = {}
+        self._stamp: _Stamp | None = None
+        self._cache: dict[tuple[_Stamp | None, str | None, int], list[Candidate]] = {}
 
     def _load(self) -> Vocab:
-        try:
-            mtime = self.path.stat().st_mtime
-        except FileNotFoundError:
-            mtime = None
-        if mtime != self._mtime:
+        stamp = _stamp(self.path)
+        if stamp != self._stamp:
             raw: object = {}
-            if mtime is not None:
+            if stamp is not None:
                 try:
                     raw = cast("object", json.loads(self.path.read_text(encoding="utf-8")))
                 except (OSError, ValueError) as e:
                     log.warning("ignoring unreadable %s: %s", self.path, e)
-            self._vocab, self._mtime, self._cache = from_json(raw), mtime, {}
+            self._vocab, self._stamp, self._cache = from_json(raw), stamp, {}
         return self._vocab
 
     def vocab(self) -> Vocab:
@@ -295,7 +305,7 @@ class VocabStore:
         now = time.time() if now is None else now
         with self._lock:
             vocab = self._load()
-            key = (self._mtime, repo, int(now // 3600))
+            key = (self._stamp, repo, int(now // 3600))
             if key not in self._cache:
                 self._cache = {key: vocab.candidates(repo, now)}
             return self._cache[key]
@@ -356,12 +366,12 @@ class VocabStore:
             with os.fdopen(fd, "w", encoding="utf-8") as f:
                 f.write(payload)
             tmp.replace(self.path)
-            self._mtime, self._cache = self.path.stat().st_mtime, {}
+            self._stamp, self._cache = _stamp(self.path), {}
 
     def clear(self) -> None:
         with self._lock:
             self.path.unlink(missing_ok=True)
-            self._vocab, self._mtime, self._cache = Vocab(), None, {}
+            self._vocab, self._stamp, self._cache = Vocab(), None, {}
 
 
 def _ordered_files(priority_cwd: str | None) -> list[tuple[str, Path]]:
