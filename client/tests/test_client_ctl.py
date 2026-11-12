@@ -150,6 +150,10 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
         assert (picked["ok"], picked["result"]) == (True, "prose (next dictation)")
         assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "prose"
         assert ctl.send("profile   auto", sock_path) == "ok auto"  # text: words are arguments
+        paused = _json(sock_path, {"version": 1, "command": "pause"})
+        assert (paused["ok"], paused["result"]) == (True, "paused")
+        assert _json(sock_path, {"version": 1, "command": "status"})["paused"] is True
+        assert ctl.send("resume", sock_path) == "ok resumed"
 
         for request, code in [
             ({"version": 1, "command": "profile", "args": "next"}, "bad_args"),

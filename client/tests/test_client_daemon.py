@@ -195,15 +195,17 @@ def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
     c.on_recording = hotkey_told.append
     c.handle("start")
     c.on_pcm(pcm(0.4))
-    c.set_paused(True)
+    assert c.handle("pause") == "ok paused"
     assert c.status() == "ok idle finishing=0"  # the recording was cancelled
     assert c.handle("start") == "error paused"
     assert c.handle("toggle") == "error paused"
     # a refused hotkey press must not leave the listener in hold/hands-free (Esc swallowed)
     assert hotkey_told == [True, False, False, False]
-    c.set_paused(True)  # no-op
+    assert c.handle("pause") == "ok paused"  # idempotent
+    assert c.status_json()["paused"] is True
     assert mic.calls == ["stop"]  # keep_open: the always-open stream is released
-    c.set_paused(False)
+    assert c.handle("resume") == "ok resumed"
+    assert c.handle("resume") == "ok resumed"
     assert mic.calls == ["stop", "start"]
     dictate(c)
     assert injector.pasted == [("please run", True)]

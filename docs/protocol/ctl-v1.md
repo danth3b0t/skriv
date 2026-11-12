@@ -6,9 +6,9 @@ the daemon closes the connection. Requests are at most 512 bytes.
 
 Two protocols share the socket, chosen by the first byte of the line:
 
-- **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last |
-  profile [auto | set NAME] | reload` → `ok[ <detail>]` or `error <message>`; words after the command are
-  its arguments. Unchanged since the POC except the added `paste-last` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
+- **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last | pause |
+  resume | profile [auto | set NAME] | reload` → `ok[ <detail>]` or `error <message>`; words after the command are
+  its arguments. Unchanged since the POC except the added `paste-last`, `pause`, `resume` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
 - **JSON v1** (status bars, panels, scripts): a line starting with `{`. `hark ctl --json <cmd>` sends one and prints
   the reply.
 
@@ -23,7 +23,7 @@ command's arguments (`{"version": 1, "command": "profile", "args": ["set", "pros
 
 ## Replies
 
-Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `profile`):
+Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `pause`, `resume`, `profile`):
 
 ```json
 {"version": 1, "ok": true, "command": "start", "result": "recording"}
@@ -32,7 +32,9 @@ Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `pro
 `result` is the text protocol's detail: `start` → `recording | already recording`; `stop` → `stopped | idle`;
 `cancel` → `cancelled | idle`; `toggle` → one of those; `ping` → `pong`; `paste-last` → `pasted <n> chars` (pastes
 the newest dictated text again into the focused window; never echoes the text) or `failed` with `nothing to paste
-yet` / `paste failed: …`. `profile` → the override for
+yet` / `paste failed: …`; `pause` → `paused` (a recording in progress is cancelled, an always-open mic is
+released, `start` is refused with `paused` until `resume`); `resume` → `resumed`. Both are idempotent: pausing
+while paused (or resuming while not) changes nothing and gives the same reply. `profile` → the override for
 the next dictation: `auto` (chosen by app again) or `<name> (next dictation)`; no arguments reports the current
 override.
 

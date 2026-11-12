@@ -108,7 +108,7 @@ worked is remembered. Unknown target: an untargeted shortcut; neither syntax wor
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
 `HARK_CTL_SOCKET` overrides the socket path (e.g. a second, test daemon). Control protocol: one line in
-(`start|stop|toggle|cancel|status|ping|paste-last|profile …|reload`), one line out (`ok …` or `error …`).
+(`start|stop|toggle|cancel|status|ping|paste-last|pause|resume|profile …|reload`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
 the last dictation's status/delivery/latency (never its text) and the profile override.

@@ -369,6 +369,11 @@ class Controller:
         self.touch()
         log.info("dictation %s", "paused" if paused else "resumed")
 
+    def _pause(self, *, paused: bool) -> str:
+        """`pause` / `resume`: idempotent."""
+        self.set_paused(paused)
+        return "ok paused" if paused else "ok resumed"
+
     def _meta(self, utt: Utterance, res: Result | None) -> dict[str, object]:
         focus = utt.snapshot_at_start.focus
         return {
@@ -568,6 +573,8 @@ class Controller:
             "status": self.status,
             "ping": lambda: "ok pong",
             "paste-last": self.paste_last,
+            "pause": lambda: self._pause(paused=True),
+            "resume": lambda: self._pause(paused=False),
             "reload": self.reload,
         }
         action = actions.get(verb)
