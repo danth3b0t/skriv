@@ -7,6 +7,7 @@ version, so `subscribe` can wait for the next one.
 
 from __future__ import annotations
 
+import re
 import threading
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -19,6 +20,23 @@ if TYPE_CHECKING:
 
     from hark_client.daemon import Controller
     from hark_client.pipeline import Result
+
+
+_TIMEOUT = re.compile(r"within|deadline|timeout|timed out", re.IGNORECASE)
+_DOWN = re.compile(r"unavailable|refused|no stream|closed", re.IGNORECASE)
+
+
+def failure(error: str) -> str:
+    """The category of a failed dictation's Result.error (`last.failure`): degenerate_output
+    (the recognizer returned no text, guardrails.degenerate), server_timeout, server_down or
+    other."""
+    if error.startswith("asr: degenerate output"):
+        return "degenerate_output"
+    if _TIMEOUT.search(error):
+        return "server_timeout"
+    if _DOWN.search(error):
+        return "server_down"
+    return "other"
 
 
 @dataclass(frozen=True, slots=True)
@@ -123,6 +141,8 @@ class Report:
             "status": res.status,
             "profile": res.profile,
             "keyup_to_paste_ms": res.timings.get("keyup_to_paste_ms"),
+            "release_to_paste_ms": res.timings.get("release_to_paste_ms"),
+            "failure": failure(res.error) if res.status == "error" else None,
             "stop_reason": res.stop_reason or None,
             "provider": res.provider or None,
             "fallback": res.fallback,
@@ -130,6 +150,8 @@ class Report:
             "delivery": res.delivery,
             "retry_available": self._retry_available(res),
             "mic_interrupted": res.mic_interrupted,
+            "input_device": res.input_device or None,
+            "flat_signal": res.flat_signal,
         }
 
     def _retry_available(self, res: Result) -> bool:

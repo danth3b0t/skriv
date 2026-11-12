@@ -213,6 +213,7 @@ def test_nothing_heard_names_the_mic_and_only_a_flat_signal_is_a_mic_problem(
     feedback = c.svc.feedback
     assert isinstance(feedback, RecordingFeedback)
     results: list[Result] = []
+    reported: list[tuple[object, ...]] = []
     for audio in (
         bytes(32000),  # a muted input: digital silence
         pcm16(noise(1000, -60)),  # a quiet room, nothing said
@@ -224,12 +225,15 @@ def test_nothing_heard_names_the_mic_and_only_a_flat_signal_is_a_mic_problem(
         wait_idle(c)
         assert c.last_result is not None
         results.append(c.last_result[1])
+        last = cast("dict[str, object]", c.report.json()["last"])
+        reported.append((last["status"], last["input_device"], last["flat_signal"]))
     facts = [(r.status, r.input_device, r.flat_signal) for r in results]
     assert facts == [
         ("no_speech", "fake", True),
         ("no_speech", "fake", False),
         ("pasted", "fake", False),
     ]
+    assert reported == facts  # `status` reports them (docs/protocol/ctl-v1.md)
     assert len(injector.pasted) == 1
     assert feedback.notifications == [
         "No audio from fake: it sends a flat signal (muted, or the wrong input?); run `hark doctor`"

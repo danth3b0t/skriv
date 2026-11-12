@@ -44,15 +44,17 @@ override.
 {"version": 1, "ok": true, "command": "status",
  "state": "idle", "finishing": 0,
  "last": {"at": 1762950000.123, "utterance_id": "0199…", "status": "pasted", "profile": "prose",
-          "keyup_to_paste_ms": 412.5},
+          "keyup_to_paste_ms": 412.5, "release_to_paste_ms": 431.6},
  "profile_override": null}
 ```
 
 - `state`: `idle | recording`. `finishing`: dictations still being transcribed/pasted.
 - `last`: the most recent finished dictation of this daemon, or `null`. `status` is the history status (`pasted`,
-  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `keyup_to_paste_ms` may be
-  `null`. **Never** contains dictated text,
-  window titles or app content, so a bar module may log it.
+  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `cancelled`, `error`).
+  `release_to_paste_ms`: from the key release (or `stop`) to the text sent, what the user waits;
+  `keyup_to_paste_ms`: from the end of the audio stream to the text sent. Both are `null` when the dictation
+  never reached the paste step. **Never** contains dictated text, window titles or app content, so a bar
+  module may log it.
 - `profile_override`: the profile picked with `profile` for the next dictation, or `null` (by app).
 
 Additional `status` fields (facts only; labels, colours and which one wins on a three-word pill belong to
@@ -64,7 +66,8 @@ the UI):
  "server": {"name": "desktop", "state": "ok", "rtt_ms": 38.0, "fallback": false},
  "config": {"changed": false, "restart_needed": []},
  "last": {"...": "as above", "stop_reason": "key_up", "provider": "desktop", "fallback": false,
-          "cleanup": "applied", "delivery": "sent", "retry_available": true, "mic_interrupted": false}}
+          "cleanup": "applied", "delivery": "sent", "retry_available": true, "mic_interrupted": false,
+          "failure": null, "input_device": "USB Mic", "flat_signal": false}}
 ```
 
 - `phase`: `idle | recording | finishing` (`state` keeps its two values).
@@ -78,12 +81,21 @@ the UI):
   tables a `reload` could not apply (`audio`, `hotkey`, `providers`, ...).
 - `last.stop_reason`: `key_up` (release, tap, `stop`) or `limit` (`audio.max_ms`); `null` when the dictation
   never got that far. `last.provider` / `last.fallback`: which provider transcribed it and whether that was
-  not the first one (a failover counts). `last.cleanup`: the cleanup outcome (`applied`, `skipped`,
-  `rejected`, `timeout`, `error`, ...; `null` before cleanup). `last.delivery`: `sent` (paste shortcut sent;
-  hark does not read the field back), `copied` (left in the
+  not the first one (a failover counts). `last.cleanup`: the cleanup outcome, `null` before cleanup:
+  `applied` (the rewrite passed the fidelity check and replaced the text), `no_edits` (the server returned
+  the text unchanged), `rejected` (the rewrite failed the fidelity check; the text stayed), `skipped` (off
+  for the profile, empty or non-English text, or the server gave no rewrite), `timeout`, `error`.
+  `last.delivery`: `sent` (paste shortcut sent; hark does not read the field back), `copied` (left in the
   clipboard: focus moved, paste failed after the copy, or clipboard mode), `failed`, `none` (nothing to
   deliver). `last.retry_available`: its audio is kept for `hark retry`. `last.mic_interrupted`: the mic
   dropped out during the recording (words may be missing).
+- `last.failure`: why a `status: error` dictation failed, `null` otherwise: `server_timeout` (no result within
+  `server.final_timeout_ms`), `server_down` (connection refused, stream closed), `degenerate_output` (the
+  recognizer's output is not text, e.g. a run of `<unk>` tokens; never pasted, `hark retry` re-runs it), `other`.
+- `last.input_device`: the name of the microphone it was recorded from, or `null` (not a live recording, or
+  unknown). A device name, not content. `last.flat_signal`: with `status: no_speech`, the input sent no signal
+  at all (muted, or the wrong input): a mic problem. `no_speech` without it is silence or quiet speech, which is
+  no error.
 
 ## Dictation lifecycle
 
@@ -93,7 +105,9 @@ the UI):
   dropped unless it has passed the point of no return, just before the clipboard write / paste, then the reply
   is `error too late: already pasting`. A dictation cancelled while finishing stays available to `hark retry`
   (its audio is kept before it is transcribed).
-- **Length limit**: reaching `audio.max_ms` stops that dictation only (`stop_reason: limit`), never a later one.
+- **Length limit**: reaching `audio.max_ms` (pre-roll included) stops that dictation only (`stop_reason:
+  limit`), never a later one. `status` carries no recording clock; the daemon's own indicator counts down the
+  last 30 s.
 - **Failover**: when the chosen provider fails before returning any result (connection refused, stream
   broken), the buffered audio goes once to the next healthy provider, within the same
   `server.final_timeout_ms` budget counted from key-up. Never after a result, during cleanup, or after a
@@ -131,6 +145,7 @@ e.g. a text `error …` reply), `internal` (exception in the daemon).
 New fields may be added to replies within v1; clients must ignore unknown fields. Retyping a field or changing a
 `code` needs `version: 2`. hark is a personal tool with clients in this repository only, so fields of features
 that were removed are dropped within v1 (removed so far: the `learning` field; the `undo` and `swap-raw`
-commands; `last.paste_verdict` and the `confirmed` value of `last.delivery`; `profile next`). The shapes above
+commands; `last.paste_verdict` and the `confirmed` value of `last.delivery`; the `partial` value of
+`last.cleanup`; `profile next`). The shapes above
 are pinned by `client/tests/test_client_ctl.py` (`test_json_v1_contract`), which runs against the real daemon
 controller.

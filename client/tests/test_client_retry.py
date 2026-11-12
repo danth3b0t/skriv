@@ -144,6 +144,8 @@ def test_degenerate_recognizer_output_fails_and_is_kept_for_retry(
     res = c.last_result[1]
     assert (res.status, res.final_text) == ("error", "")
     assert res.error.startswith("asr: degenerate output")
+    last = cast("dict[str, object]", c.report.json()["last"])
+    assert (last["failure"], last["retry_available"]) == ("degenerate_output", True)
     assert [e.meta["status"] for e in retry.entries(tmp_path)] == ["error"]
     feedback = cast("RecordingFeedback", c.svc.feedback)
     assert any("`hark retry`" in n for n in feedback.notifications)

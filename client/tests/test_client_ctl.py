@@ -86,6 +86,8 @@ V1_LAST = {
     "status": "str",
     "profile": "str",
     "keyup_to_paste_ms": "float",
+    "release_to_paste_ms": "float",
+    "failure": "NoneType",
     "stop_reason": "str",
     "provider": "str",
     "fallback": "bool",
@@ -93,6 +95,8 @@ V1_LAST = {
     "delivery": "str",
     "retry_available": "bool",
     "mic_interrupted": "bool",
+    "input_device": "NoneType",
+    "flat_signal": "bool",
 }
 
 
@@ -157,7 +161,7 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
 
         for request, code in [
             ({"version": 1, "command": "profile", "args": "next"}, "bad_args"),
-            ({"version": 1, "command": "profile", "args": ["set chat"]}, "bad_args"),
+            ({"version": 1, "command": "profile", "args": ["set prose"]}, "bad_args"),
             ({"version": 1, "command": "profile", "args": ["set", "nope"]}, "failed"),
             (b"{not json", "bad_json"),
             ({"command": "status"}, "unsupported_version"),
@@ -208,7 +212,7 @@ def test_hark_ctl_json_flag(
     server.start()
     try:
         assert main(["ctl", "--json", "ping"]) == 0
-        assert main(["ctl", "--json", "profile", "set", "chat"]) == 1
+        assert main(["ctl", "--json", "profile", "set", "prose"]) == 1
         assert main(["ctl", "profile", "next"]) == 1
         out = capsys.readouterr().out.splitlines()
         assert [json.loads(line) for line in out[:2]] == [
@@ -216,7 +220,7 @@ def test_hark_ctl_json_flag(
             {
                 "version": 1,
                 "ok": False,
-                "error": {"code": "failed", "message": "nope: profile set chat"},
+                "error": {"code": "failed", "message": "nope: profile set prose"},
             },
         ]
         assert out[2] == "error nope: profile next"
