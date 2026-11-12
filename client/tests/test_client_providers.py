@@ -158,11 +158,11 @@ def test_a_provider_that_stops_answering_fails_over_at_once_and_is_skipped_next_
     assert cast("list[dict[str, str]]", records[2]["route"])[0]["state"] == "down"
 
 
-def test_server_table_alone_is_one_provider_and_providers_are_validated(tmp_path: Path):
+def test_the_default_is_one_local_provider_and_providers_are_validated(tmp_path: Path):
     path = tmp_path / "config.toml"
-    path.write_text('[server]\naddress = "desk:50051"\nmodel_id = "m"\n')
-    (p,) = load(path).provider_configs()
-    assert (p.address, p.model_id, p.send_context) == ("desk:50051", "m", True)
+    path.write_text("")
+    (p,) = load(path).providers
+    assert (p.address, p.model_id, p.send_context) == ("127.0.0.1:50051", "", True)
 
     path.write_text('[[providers]]\nname = "x"\n')
     with pytest.raises(ConfigError, match=r"providers\[0\]\.address is required"):

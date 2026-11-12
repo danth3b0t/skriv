@@ -37,14 +37,13 @@ def default_data_dir() -> str:
     return str(Path(base) / "hark")
 
 
+DEFAULT_ADDRESS = "127.0.0.1:50051"
+
+
 @dataclass
 class ServerConfig:
-    address: str = "127.0.0.1:50051"  # host:port or unix:/path
-    tls_ca: str = ""  # CA bundle; set => TLS
-    tls_cert: str = ""  # client cert (mTLS)
-    tls_key: str = ""
-    tls_server_name: str = ""  # override the expected server name
-    model_id: str = ""  # "" => server default
+    """Per-dictation settings for whichever provider serves it (servers: `[[providers]]`)."""
+
     language: str = ""  # BCP-47; "" => server detects
     finalize_budget_ms: int = 0  # 0 => server default
     final_timeout_ms: int = 5000  # key-up -> FinalResult, client-side give-up
@@ -65,10 +64,10 @@ class ProviderConfig:
     # A health check slower than this skips the provider for this dictation (and bounds the
     # time spent finding out).
     max_latency_ms: int = 300
-    tls_ca: str = ""
-    tls_cert: str = ""
+    tls_ca: str = ""  # CA bundle; set => TLS
+    tls_cert: str = ""  # client cert (mTLS)
     tls_key: str = ""
-    tls_server_name: str = ""
+    tls_server_name: str = ""  # override the expected server name
     model_id: str = ""  # "" => server default
 
     @property
@@ -247,21 +246,12 @@ class Config:
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
     profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
-    providers: list[ProviderConfig] = field(default_factory=list[ProviderConfig])
+    # `[[providers]]` replaces this default: one local server
+    providers: list[ProviderConfig] = field(
+        default_factory=lambda: [ProviderConfig(address=DEFAULT_ADDRESS)]
+    )
     words: list[WordConfig] = field(default_factory=list[WordConfig])
     log_level: str = "INFO"
-
-    def provider_configs(self) -> list[ProviderConfig]:
-        """`[[providers]]`, else the single `[server]` (the configuration before providers)."""
-        if self.providers:
-            return list(self.providers)
-        s = self.server
-        return [
-            ProviderConfig(
-                address=s.address, tls_ca=s.tls_ca, tls_cert=s.tls_cert, tls_key=s.tls_key,
-                tls_server_name=s.tls_server_name, model_id=s.model_id,
-            )
-        ]  # fmt: skip
 
     def profile_for(self, focus: FocusInfo) -> str:
         """First profile (in table order) whose `apps` glob matches the focused app id or
@@ -317,7 +307,7 @@ def _apply(obj: DataclassInstance, data: Mapping[str, object], where: str) -> No
         if key == "profiles" and not where:
             _apply_profiles(cast("Config", obj), value)
         elif key == "providers" and not where:
-            cast("Config", obj).providers.extend(_tables(value, "providers", ProviderConfig))
+            cast("Config", obj).providers = _tables(value, "providers", ProviderConfig)
         elif key == "words" and not where:
             cast("Config", obj).words.extend(_tables(value, "words", WordConfig))
         elif dataclasses.is_dataclass(current):
@@ -369,6 +359,8 @@ def _validate_tls(where: str, ca: str, cert: str, key: str) -> None:
 
 
 def _validate_providers(providers: list[ProviderConfig]) -> None:
+    if not providers:
+        raise ConfigError("providers: at least one [[providers]] entry is required")
     labels: set[str] = set()
     for i, p in enumerate(providers):
         if not p.address:
@@ -423,7 +415,6 @@ def validate(cfg: Config) -> None:
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
-    _validate_tls("server.", cfg.server.tls_ca, cfg.server.tls_cert, cfg.server.tls_key)
     _validate_providers(cfg.providers)
     _validate_words(cfg.words, cfg.context.max_terms)
     if not 0 <= cfg.gate.max_distance <= 1:

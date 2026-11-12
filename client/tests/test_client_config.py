@@ -12,7 +12,7 @@ if TYPE_CHECKING:
 
 FULL = """
 log_level = "DEBUG"
-[server]
+[[providers]]
 address = "desktop.tailnet:50051"
 tls_ca = "~/ca.pem"
 tls_cert = "~/me.pem"
@@ -42,7 +42,7 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     p = tmp_path / "c.toml"
     p.write_text(FULL)
     cfg = load(p)
-    assert cfg.server.address == "desktop.tailnet:50051"
+    assert [p.address for p in cfg.providers] == ["desktop.tailnet:50051"]  # replaces the default
     assert (cfg.cleanup.enabled, cfg.cleanup.deadline_ms) == (False, 300)
     assert (cfg.audio.preroll_ms, cfg.audio.keep_open, cfg.paste.method) == (0, False, "wtype")
     # floats accept TOML integers
@@ -80,7 +80,9 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[paste]\nmethod = 'xdotool'\n", "paste.method must be one of"),
         ("[gate]\nmax_distance = 'near'\n", "gate.max_distance: expected float, got str"),
         ("[gate]\nmax_distance = 1.5\n", "gate.max_distance must be in"),
-        ("[server]\ntls_cert = 'a'\n", "tls_cert and server.tls_key"),
+        ("[server]\naddress = 'a:1'\n", "unknown config key 'server.address'"),
+        ("[[providers]]\naddress = 'a:1'\ntls_cert = 'a'\n", "].tls_key must be set together"),
+        ("providers = []\n", "providers: at least one"),
         ("server = 1\n", "server: expected a table"),
         ("words = 'Hyprland'\n", "words: expected an array of tables"),
         ("[[words]]\nspoken = ['hyper land']\n", "word is required"),

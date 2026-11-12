@@ -115,14 +115,12 @@ the last dictation's status/delivery/latency (never its text) and the profile ov
 
 ## Configuration
 
-`~/.config/hark/config.toml` (or `--config FILE`; `--server ADDRESS` uses only that server). All keys are optional;
+`~/.config/hark/config.toml` (or `--config FILE`; `--server ADDRESS` = one provider at that address instead of
+`[[providers]]`). All keys are optional;
 unknown keys and wrong types are errors.
 
 ```toml
-[server]                      # one server; [[providers]] (below) replaces address/tls_*/model_id
-address = "127.0.0.1:50051"   # or "desktop.tailnet:50051", "unix:/run/hark.sock"
-tls_ca = ""                   # set => TLS; tls_cert + tls_key => mTLS
-model_id = ""                 # "" => server default
+[server]                      # per dictation, whichever provider serves it; servers: [[providers]] (below)
 language = ""                 # BCP-47; "" => detect
 finalize_budget_ms = 0        # 0 => server default
 final_timeout_ms = 5000
@@ -224,14 +222,16 @@ unless one was picked by hand (below).
 
 ## Providers and the offline fallback
 
-With `[[providers]]`, every dictation goes to the first healthy server in `priority` order (lower first, then file
-order), e.g. the desktop GPU over Tailscale, then the laptop's own CPU server:
+Without `[[providers]]` there is one provider, `127.0.0.1:50051` (`address` also takes `unix:/path`). With them,
+every dictation goes to the first healthy server in `priority` order (lower first, then file order), e.g. the desktop GPU over Tailscale, then the laptop's own CPU server:
 
 ```toml
 [[providers]]
 name = "desktop"
 address = "desktop.tailnet:50051"
-tls_ca = "~/.config/hark/ca.pem"     # tls_cert/tls_key/tls_server_name/model_id as in [server]
+tls_ca = "~/.config/hark/ca.pem"     # set => TLS; tls_cert + tls_key => mTLS
+tls_server_name = ""                 # override the expected server name
+model_id = ""                        # "" => server default
 priority = 0
 max_latency_ms = 300                 # health check slower than this: skipped for this dictation
 send_context = true                  # send the context shortlist (bias terms)

@@ -214,7 +214,8 @@ rm ~/.config/hark/pki/laptop.key      # the laptop's key now lives only on the l
 On the laptop, `~/.config/hark/config.toml`:
 
 ```toml
-[server]
+[[providers]]
+name = "desktop"
 address = "desktop.tail1234.ts.net:50051"     # or "desktop:50051" with MagicDNS
 tls_ca = "~/.config/hark/pki/ca.crt"
 tls_cert = "~/.config/hark/pki/laptop.crt"
@@ -240,8 +241,8 @@ hark service install server
 ```
 
 How the client chooses between the desktop and the local engine (health-checked fallback) is part of the CPU
-engine work; until it lands, switch by hand: `hark --server 127.0.0.1:50051 run`, or point `server.address` at
-`127.0.0.1:50051` and drop the `tls_*` keys.
+engine work; until it lands, switch by hand: `hark --server 127.0.0.1:50051 run` (one provider at that address), or
+list the local server as a second `[[providers]]` entry (client/README.md, "Providers and the offline fallback").
 
 ## Troubleshooting
 

@@ -1,6 +1,6 @@
 """ASR provider routing: which hark server takes this dictation.
 
-`[[providers]]` (or the single `[server]`) lists servers, e.g. the desktop GPU first and the
+`[[providers]]` lists servers (default: one at 127.0.0.1:50051), e.g. the desktop GPU first and the
 laptop's own CPU server (scripts/cpu-server-up) last. At the start of every dictation,
 `Router.pick()` walks them in priority order and takes the first that is healthy:
 

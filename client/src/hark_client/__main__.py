@@ -64,7 +64,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
     p = argparse.ArgumentParser(prog="hark", description="context-aware dictation (POC client)")
     p.add_argument("--config", help="config TOML (default: ~/.config/hark/config.toml)")
     p.add_argument(
-        "--server", help="use only this server (host:port or unix:/path), not [[providers]]"
+        "--server", help="one provider at this address (host:port or unix:/path), not [[providers]]"
     )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
@@ -242,8 +242,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"hark: config error: {e}", file=sys.stderr)
         return 2
     if args.server:
-        cfg.server.address = args.server
-        cfg.providers = []
+        cfg.providers = [config.ProviderConfig(address=args.server)]
     logging.basicConfig(
         level=logging.DEBUG
         if args.verbose
@@ -301,7 +300,7 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
     cfg.retry.keep = 0
     # nothing is pasted: the window and caret of today are not the clip's
     cfg.paste.check_focus = cfg.paste.smart_spacing = False
-    router = Router(cfg.provider_configs())
+    router = Router(cfg.providers)
     try:
         router.refresh()
         svc = Services(
@@ -393,7 +392,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
     from hark_client.pipeline import Services  # noqa: PLC0415
     from hark_client.providers import Router  # noqa: PLC0415
 
-    router = Router(cfg.provider_configs())
+    router = Router(cfg.providers)
     try:
         if args.command in ("once", "retry"):
             if args.command == "once":

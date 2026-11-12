@@ -15,7 +15,7 @@ import pytest
 from grpc_health.v1 import health_pb2
 
 from hark_client import asr
-from hark_client.config import ServerConfig
+from hark_client.config import ProviderConfig
 from hark_server.backends.mock import MockBackend
 from hark_server.config import Config
 from hark_server.server import start
@@ -38,7 +38,7 @@ def certs(pki: Path, *args: str) -> subprocess.CompletedProcess[str]:
     )  # fmt: skip
 
 
-def health(cfg: ServerConfig) -> int:
+def health(cfg: ProviderConfig) -> int:
     with asr.open_channel(cfg) as channel:
         check = channel.unary_unary(
             "/grpc.health.v1.Health/Check",
@@ -73,7 +73,7 @@ def mtls_server(tmp_path: Path) -> Iterator[tuple[str, Path]]:
 
 def test_client_cert_from_the_ca_gets_through(mtls_server: tuple[str, Path]):
     address, pki = mtls_server
-    cfg = ServerConfig(
+    cfg = ProviderConfig(
         address=address,
         tls_ca=str(pki / "ca.crt"),
         tls_cert=str(pki / "laptop.crt"),
@@ -87,13 +87,13 @@ def test_clients_without_a_cert_from_the_ca_are_refused(
 ):
     address, pki = mtls_server
     with pytest.raises(grpc.RpcError):
-        health(ServerConfig(address=address, tls_ca=str(pki / "ca.crt")))
+        health(ProviderConfig(address=address, tls_ca=str(pki / "ca.crt")))
     other = tmp_path / "other"
     assert certs(other, "ca").returncode == 0
     assert certs(other, "client", "intruder").returncode == 0
     with pytest.raises(grpc.RpcError):
         health(
-            ServerConfig(
+            ProviderConfig(
                 address=address,
                 tls_ca=str(pki / "ca.crt"),
                 tls_cert=str(other / "intruder.crt"),

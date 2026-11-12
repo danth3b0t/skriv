@@ -41,7 +41,7 @@ class Report:
 def check_providers(r: Report, cfg: Config) -> None:
     """Every provider's health and capabilities, and which one a dictation would use now."""
     try:
-        router = Router(cfg.provider_configs())
+        router = Router(cfg.providers)
     except OSError as e:
         print("providers")
         r.fail("TLS files", str(e))
