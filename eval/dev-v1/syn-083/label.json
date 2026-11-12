@@ -1,0 +1,7 @@
+{
+  "said": "okay, uh, so the eval set should have, you know, about a hundred clips, mostly terminal prompts, and it should never include anything from my real history without asking first",
+  "critical": [],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_ZA): macOS say Tessa 222 wpm; level -21 dBFS, office at SNR 10 dB; app Ghostty (com.mitchellh.ghostty); context full: 15 terms (0 for this clip, 15 distractors from hark); tags long, filler, negation"
+}

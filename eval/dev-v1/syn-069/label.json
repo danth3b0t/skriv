@@ -1,0 +1,9 @@
+{
+  "said": "run it on the GPU server, no, on the CPU fallback",
+  "critical": [],
+  "forbidden": [
+    "GPU"
+  ],
+  "accepted": [],
+  "note": "synthetic (en_IE): macOS say Moira 177 wpm; level -21 dBFS, fan at SNR 20 dB; app Ghostty (com.mitchellh.ghostty); context full: 23 terms (0 for this clip, 23 distractors from hark); tags correction"
+}

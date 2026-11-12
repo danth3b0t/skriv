@@ -1,0 +1,10 @@
+{
+  "said": "in the redis config set max memory policy to all keys LRU and don't enable persistence",
+  "critical": [
+    "maxmemory-policy",
+    "allkeys-lru"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): macOS say Samantha 200 wpm; level -22 dBFS, laptop mic, keyboard at SNR 15 dB; app Ghostty (com.mitchellh.ghostty); context full: 18 terms (3 for this clip, 15 distractors from ops); tags identifier, negation; TTS read \"in the redis config set max memory policy to all keys L R U and don't enable persistence\""
+}

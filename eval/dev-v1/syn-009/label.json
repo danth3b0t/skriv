@@ -1,0 +1,9 @@
+{
+  "said": "show me the diff for pipeline dot py",
+  "critical": [
+    "pipeline.py"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bf_lily speed 1.0; level -20 dBFS, reverb RT60 0.50 s, quiet room (tone -63 dBFS); app Alacritty (Alacritty); context full: 21 terms (2 for this clip, 19 distractors from hark); tags short, path"
+}

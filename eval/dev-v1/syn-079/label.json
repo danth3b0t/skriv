@@ -1,0 +1,10 @@
+{
+  "said": "the ctl socket should live in dollar XDG runtime dir, not in slash tmp",
+  "critical": [
+    "$XDG_RUNTIME_DIR",
+    "/tmp"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bm_lewis speed 1.13; level -23 dBFS, reverb RT60 0.56 s, laptop mic, keyboard + office at SNR 11 dB; app Ghostty (com.mitchellh.ghostty); context full: 26 terms (3 for this clip, 23 distractors from hark); tags negation, identifier, path; TTS read 'the C T L socket should live in dollar X D G runtime dir, not in slash temp'"
+}

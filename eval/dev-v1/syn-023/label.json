@@ -1,0 +1,9 @@
+{
+  "said": "the transcribe stream class leaks a thread when cancel is called twice",
+  "critical": [
+    "TranscribeStream"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M am_puck speed 0.87; level -22 dBFS, quiet room (tone -60 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 25 terms (2 for this clip, 23 distractors from hark); tags identifier"
+}

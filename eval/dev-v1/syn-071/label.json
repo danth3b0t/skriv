@@ -1,0 +1,11 @@
+{
+  "said": "add it to the readme, scratch that, add it to docs slash eval dot md",
+  "critical": [
+    "docs/eval.md"
+  ],
+  "forbidden": [
+    "README"
+  ],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_sarah speed 1.17; level -30 dBFS, fan at SNR 9 dB; app Ghostty (com.mitchellh.ghostty); context full: 23 terms (2 for this clip, 21 distractors from hark); tags correction, path"
+}

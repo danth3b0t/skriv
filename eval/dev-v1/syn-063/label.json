@@ -1,0 +1,10 @@
+{
+  "said": "it's not Hyprland, it's the quickshell bar that crashes",
+  "critical": [
+    "Hyprland",
+    "QuickShell"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_AU): macOS say Karen 194 wpm; level -31 dBFS, reverb RT60 0.24 s, fan at SNR 15 dB; app Ghostty (com.mitchellh.ghostty); context full: 29 terms (3 for this clip, 26 distractors from hark); tags negation; TTS read \"it's not hyper land, it's the quick shell bar that crashes\""
+}

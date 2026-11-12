@@ -1,0 +1,10 @@
+{
+  "said": "pass dash dash no dash history to hark once",
+  "critical": [
+    "--no-history",
+    "hark once"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_sarah speed 1.24; level -22 dBFS, keyboard + office at SNR 19 dB; app Ghostty (com.mitchellh.ghostty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags flag"
+}

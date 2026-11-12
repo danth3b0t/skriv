@@ -1,0 +1,10 @@
+{
+  "said": "replace requests dot get with httpx dot async client",
+  "critical": [
+    "requests.get",
+    "httpx.AsyncClient"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): macOS say Tara 183 wpm; level -31 dBFS, laptop mic, office at SNR 21 dB; app Ghostty (com.mitchellh.ghostty); context full: 23 terms (2 for this clip, 21 distractors from ml); tags identifier; TTS read 'replace requests dot get with h t t p x dot async client'"
+}

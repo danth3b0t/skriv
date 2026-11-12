@@ -1,0 +1,10 @@
+{
+  "said": "run hark eval run dash dash set eval slash dev dash v one",
+  "critical": [
+    "--set",
+    "eval/dev-v1"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bf_isabella speed 0.97; level -24 dBFS, reverb RT60 0.22 s, laptop mic, living room at SNR 19 dB; app kitty (kitty); context full: 28 terms (2 for this clip, 26 distractors from hark); tags path, flag, command"
+}

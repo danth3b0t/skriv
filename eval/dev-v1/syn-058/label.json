@@ -1,0 +1,7 @@
+{
+  "said": "this should not retry when the user cancels",
+  "critical": [],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_heart speed 0.86; level -23 dBFS, cafeteria at SNR 14 dB; app kitty (kitty); context full: 26 terms (0 for this clip, 26 distractors from hark); tags negation"
+}

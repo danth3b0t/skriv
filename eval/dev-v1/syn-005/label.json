@@ -1,0 +1,9 @@
+{
+  "said": "git status",
+  "critical": [
+    "git status"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bm_fable speed 1.1; level -30 dBFS, reverb RT60 0.34 s, quiet room (tone -55 dBFS); app kitty (kitty); context full: 21 terms (0 for this clip, 21 distractors from hark); tags short, command"
+}

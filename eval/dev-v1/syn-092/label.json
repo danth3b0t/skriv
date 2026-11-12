@@ -1,0 +1,10 @@
+{
+  "said": "show me the last text you generated, and keep it to one line",
+  "critical": [],
+  "forbidden": [
+    "last_text",
+    "one_line"
+  ],
+  "accepted": [],
+  "note": "synthetic (en_ZA): macOS say Tessa 194 wpm; level -26 dBFS, reverb RT60 0.65 s, laptop mic, keyboard at SNR 18 dB; app Ghostty (com.mitchellh.ghostty); context full: 21 terms (2 for this clip, 19 distractors from hark); tags trap"
+}

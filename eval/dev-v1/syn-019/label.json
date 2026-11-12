@@ -1,0 +1,10 @@
+{
+  "said": "rename the is terminal flag on focus info to, uh, terminal like",
+  "critical": [
+    "is_terminal",
+    "FocusInfo"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hm_omega speed 1.07; level -25 dBFS, fan at SNR 19 dB; app Ghostty (com.mitchellh.ghostty); context full: 29 terms (2 for this clip, 27 distractors from hark); tags identifier, filler"
+}

@@ -1,0 +1,1 @@
+{"agent": "pi", "branch": "main", "collected_ms": 22.7, "cwd": "/home/dev/src/hark", "errors": [], "focus": {"app": "Ghostty", "app_id": "com.mitchellh.ghostty", "is_terminal": true, "pid": 21417, "title": "", "window_id": "21417:68744"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/hark", "terms": []}

@@ -1,0 +1,9 @@
+{
+  "said": "Highland Park is where the offsite is, so don't book anything downtown",
+  "critical": [],
+  "forbidden": [
+    "Hyprland"
+  ],
+  "accepted": [],
+  "note": "synthetic (en_AU): macOS say Karen 163 wpm; level -27 dBFS, reverb RT60 0.30 s, laptop mic, office at SNR 13 dB; app Slack (Slack); context full: 28 terms (1 for this clip, 27 distractors from hark); tags trap, negation"
+}

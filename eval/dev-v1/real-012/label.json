@@ -1,0 +1,9 @@
+{
+  "said": "you know the last time i heard a guy sing so men sing amongst yourselves when when you're with your bros you you can sing together but when you're outside yeah you play cool",
+  "critical": [],
+  "forbidden": [
+    "last_time"
+  ],
+  "accepted": [],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00005 row group 0 row 29; speaker EDACC-C35-A, Kenyan English, L1 Kenyan English, female); license CC-BY-SA-4.0; app Slack (Slack); context full: 16 terms (1 for this clip, 15 distractors from hark); trap terms on the list: last_time"
+}

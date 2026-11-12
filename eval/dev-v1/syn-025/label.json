@@ -1,0 +1,9 @@
+{
+  "said": "is interesting identifier returns true for single letters, that's wrong",
+  "critical": [
+    "is_interesting_identifier"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): macOS say Tara 224 wpm; level -30 dBFS, reverb RT60 0.66 s, laptop mic, quiet room (tone -59 dBFS); app Code (code); context full: 26 terms (2 for this clip, 24 distractors from hark); tags identifier"
+}

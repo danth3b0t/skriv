@@ -1,0 +1,10 @@
+{
+  "said": "add a dash dash json flag to hark history list",
+  "critical": [
+    "--json",
+    "hark history"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M am_liam speed 1.12; level -22 dBFS, laptop mic, office at SNR 14 dB; app Ghostty (com.mitchellh.ghostty); context full: 22 terms (2 for this clip, 20 distractors from hark); tags flag"
+}

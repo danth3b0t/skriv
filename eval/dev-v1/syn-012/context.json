@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "fix/paste-focus", "collected_ms": 41.2, "cwd": "/home/dev/src/hark", "errors": [], "focus": {"app": "Ghostty", "app_id": "com.mitchellh.ghostty", "is_terminal": true, "pid": 3366, "title": "", "window_id": "3366:63198"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/hark", "terms": []}

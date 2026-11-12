@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "eval-set", "collected_ms": 18.2, "cwd": "/home/dev/src/hark", "errors": [], "focus": {"app": "kitty", "app_id": "kitty", "is_terminal": true, "pid": 17132, "title": "", "window_id": "17132:24403"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/hark", "terms": []}

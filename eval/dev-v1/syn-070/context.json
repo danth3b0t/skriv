@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "fix/paste-focus", "collected_ms": 26.2, "cwd": "/home/dev/src/hark", "errors": [], "focus": {"app": "Alacritty", "app_id": "Alacritty", "is_terminal": true, "pid": 33376, "title": "", "window_id": "33376:96899"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/hark", "terms": []}

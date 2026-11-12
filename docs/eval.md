@@ -37,8 +37,24 @@ history, but not only failures. One person owns the set: adds clips when somethi
 ```sh
 hark eval run                 # exit 1 on a missing critical / forbidden string / lost negation
 hark eval run --set DIR       # another set
+hark eval run --report r.json # also every clip's stages (raw, gated, canonical, uncleaned, final), score, timings
+hark --config no-context.toml eval run   # ablation: [context] max_terms = 0 replays without the shortlist
 ```
 
 Each clip keeps its last outcome in `last.json` (raw, canonicalized and final text, cleanup status, provider).
 Nothing is pasted and nothing is written to the history. The audio is private: the set lives in the history
-directory, not in the repository.
+directory, not in the repository. The replayed shortlist is cut to `context.max_terms`, so a config with
+`max_terms = 0` measures what the context adds; `[cleanup] enabled = false` and `[gate] enabled = false` are the
+other ablations.
+
+## The shared development set: `eval/dev-v1`
+
+Until the per-person sets exist, `eval/dev-v1/` (in the repository, 122 clips, 24 MB) stands in: 96 developer
+prompts to coding agents synthesized with many voices, accents, rates, rooms and noises, and 26 clips of real
+speech (EdACC conversational English in ten accents, LibriSpeech) paired with a dense hark shortlist whose
+identifiers collide with ordinary words (`wait for` / `wait_for`). `scripts/make-eval-set` rebuilds it
+reproducibly (macOS: `say`, `afconvert`; downloads are pinned and cached in `models/eval-cache`); the prompts and
+their labels are in `scripts/eval_prompts.py`, and each clip's `note` records its voice, noise, context and, for
+real speech, the source and license. Regenerating keeps the reviewed texts of unchanged clips. Synthetic speech
+is cleaner and more regular than a person at a desk: use it to find failure classes, not to quote accuracy.
+Baseline and ablations: `docs/bench/2026-11-13-eval-baseline.md`.

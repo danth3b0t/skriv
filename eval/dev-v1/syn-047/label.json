@@ -1,0 +1,10 @@
+{
+  "said": "docker compose up dash d, then curl localhost colon eight thousand slash health",
+  "critical": [
+    "docker compose up -d",
+    "localhost:8000/health"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M am_fenrir speed 1.04; level -24 dBFS, reverb RT60 0.66 s, quiet room (tone -62 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 23 terms (2 for this clip, 21 distractors from ops); tags command, flag, number"
+}

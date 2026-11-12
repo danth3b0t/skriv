@@ -1,0 +1,1 @@
+{"agent": "codex", "branch": "main", "collected_ms": 39.7, "cwd": "/home/dev/src/infra", "errors": [], "focus": {"app": "Alacritty", "app_id": "Alacritty", "is_terminal": true, "pid": 84680, "title": "", "window_id": "84680:75710"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/infra", "terms": []}

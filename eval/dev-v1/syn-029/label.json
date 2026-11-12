@@ -1,0 +1,11 @@
+{
+  "said": "can you add type hints to read wav and write wav? basedpyright complains about the numpy arrays",
+  "critical": [
+    "read_wav",
+    "write_wav",
+    "basedpyright"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_ZA): macOS say Tessa 195 wpm; level -22 dBFS, office at SNR 19 dB; app Ghostty (com.mitchellh.ghostty); context full: 24 terms (4 for this clip, 20 distractors from hark); tags identifier; TTS read 'can you add type hints to read wave and write wave? based pie right complains about the numpy arrays'"
+}

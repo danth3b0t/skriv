@@ -1,0 +1,11 @@
+{
+  "said": "in the PyTorch training loop, uh, move the optimizer zero grad call before the backward pass, and don't forget to call model dot train at the start of each epoch",
+  "critical": [
+    "PyTorch",
+    "zero_grad",
+    "model.train"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IE): macOS say Moira 212 wpm; level -31 dBFS, keyboard + office at SNR 14 dB; app Ghostty (com.mitchellh.ghostty); context full: 26 terms (4 for this clip, 22 distractors from ml); tags long, filler, negation, identifier; TTS read \"in the pie torch training loop, uh, move the optimizer zero grad call before the backward pass, and don't forget to call model dot train at the start of each epoch\""
+}

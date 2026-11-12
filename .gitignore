@@ -7,3 +7,6 @@ target/
 /build/
 /dist/
 .DS_Store
+
+# hark eval run output (per clip, per machine)
+/eval/**/last.json

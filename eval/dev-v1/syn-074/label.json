@@ -1,0 +1,12 @@
+{
+  "said": "so basically the problem is that the cleanup model sometimes rewrites dash dash dry run into dry run without the dashes. can you add flags to the protected spans in cleanup dot py and add a test with, you know, three or four flags, like dash dash force, dash dash verbose and dash v",
+  "critical": [
+    "--dry-run",
+    "cleanup.py",
+    "--force",
+    "--verbose"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hm_psi speed 1.15; level -29 dBFS, reverb RT60 0.65 s, laptop mic, keyboard at SNR 21 dB; app Ghostty (com.mitchellh.ghostty); context full: 29 terms (4 for this clip, 25 distractors from hark); tags long, filler, flag"
+}

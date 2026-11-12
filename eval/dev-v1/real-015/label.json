@@ -1,0 +1,9 @@
+{
+  "said": "mm no not yet after after i've done after we're done speaking with each other i can then get me a pizza",
+  "critical": [],
+  "forbidden": [
+    "each_other"
+  ],
+  "accepted": [],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00007 row group 1 row 24; speaker EDACC-C42-B, Southern British English, L1 Southern British English, male); license CC-BY-SA-4.0; app Ghostty (com.mitchellh.ghostty); context full: 18 terms (1 for this clip, 17 distractors from hark); trap terms on the list: each_other"
+}

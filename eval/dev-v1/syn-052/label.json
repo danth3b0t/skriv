@@ -1,0 +1,10 @@
+{
+  "said": "set final timeout ms to fifteen hundred",
+  "critical": [
+    "final_timeout_ms",
+    "1500"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IE): macOS say Moira 212 wpm; level -27 dBFS, living room at SNR 10 dB; app kitty (kitty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags identifier, number; TTS read 'set final timeout M S to fifteen hundred'"
+}

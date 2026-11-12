@@ -1,0 +1,11 @@
+{
+  "said": "I think the canonicalizer is too eager. when the shortlist has wait for and the user says wait for the build, we must not write it with an underscore",
+  "critical": [
+    "wait for the build"
+  ],
+  "forbidden": [
+    "wait_for the"
+  ],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bm_fable speed 1.04; level -27 dBFS, keyboard + office at SNR 19 dB; app Ghostty (com.mitchellh.ghostty); context full: 30 terms (2 for this clip, 28 distractors from hark); tags long, negation, trap"
+}

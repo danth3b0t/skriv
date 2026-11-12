@@ -1,0 +1,10 @@
+{
+  "said": "run ruff check with dash dash fix and then basedpyright",
+  "critical": [
+    "--fix",
+    "basedpyright"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_heart speed 1.12; level -20 dBFS, reverb RT60 0.53 s, quiet room (tone -60 dBFS); app kitty (kitty); context full: 28 terms (2 for this clip, 26 distractors from hark); tags flag, command; TTS read 'run ruff check with dash dash fix and then based pie right'"
+}

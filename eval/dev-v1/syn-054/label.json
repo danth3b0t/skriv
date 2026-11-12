@@ -1,0 +1,9 @@
+{
+  "said": "the model is parakeet tdt zero point six b v three",
+  "critical": [
+    "parakeet-tdt-0.6b-v3"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hm_psi speed 1.02; level -29 dBFS, reverb RT60 0.29 s, quiet room (tone -61 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 28 terms (1 for this clip, 27 distractors from hark); tags identifier, number; TTS read 'the model is parakeet T D T zero point six B V three'"
+}
