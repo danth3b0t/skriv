@@ -55,6 +55,7 @@ METER_BARS = 8  # the newest samples, one bar each
 RECOVERY_KEY = "Super Alt D"  # hark-panel on Omarchy (packaging/omarchy)
 OMARCHY_THEME = Path.home() / ".local/state/omarchy/current/theme"  # where Omarchy's shell reads it
 LONG_S = 60  # a recording longer than this shows its elapsed time
+COUNTDOWN_S = 30  # this close to audio.max_ms the time left shows instead
 CLEANUP_APPLIED = frozenset({"applied", "partial", "no_edits"})  # cleanup ran and was kept
 # linger (s) per outcome, design/SPEC.md §4
 LINGER_SENT = 0.5
@@ -120,11 +121,21 @@ def clock_text(seconds: float) -> str:
 
 
 def recording_view(
-    *, hands_free: bool, pinned: str, levels: tuple[float, ...], elapsed_s: float
+    *,
+    hands_free: bool,
+    pinned: str,
+    levels: tuple[float, ...],
+    elapsed_s: float,
+    limit_s: float = 0.0,
 ) -> View:
-    """Red dot (lock when hands-free) and the meter; the pinned profile; m:ss after a minute."""
+    """Red dot (lock when hands-free) and the meter; the pinned profile; m:ss after a minute,
+    "m:ss left" in the last COUNTDOWN_S before ``limit_s`` (audio.max_ms; 0: none)."""
     mode = "Hands-free" if hands_free else "Recording"
-    elapsed = clock_text(elapsed_s) if elapsed_s > LONG_S else ""
+    left = limit_s - elapsed_s
+    if limit_s and left <= COUNTDOWN_S:
+        elapsed = f"{clock_text(max(0.0, left))} left"
+    else:
+        elapsed = clock_text(elapsed_s) if elapsed_s > LONG_S else ""
     name = " · ".join(x for x in (mode, pinned, elapsed) if x)
     return View(
         "recording", "lock" if hands_free else "dot", "live", name,
@@ -141,6 +152,22 @@ def status_view(status: str) -> tuple[View, float] | None:
     if label is None:
         return None
     return View("cancelled", "cross", "dim", label, label), LINGER_CANCELLED
+
+
+def no_speech_view(res: Result) -> tuple[View, float]:
+    """Nothing heard: which mic it listened to and `hark doctor`. Quiet is not an error (a
+    press with nothing said); a flat signal from the mic is."""
+    hint = "hark doctor"
+    if res.flat_signal:
+        label = "No audio from mic"
+        name = _join(label, res.input_device, hint)
+        return (
+            View("error", "mic-off", "live", name, label, detail=res.input_device, hint=hint),
+            LINGER_PROBLEM,
+        )
+    name = _join("No speech", res.input_device, hint)
+    view = View("cancelled", "cross", "dim", name, "No speech", detail=res.input_device, hint=hint)
+    return view, LINGER_LONG_TAG
 
 
 def failure_reason(error: str) -> str:
@@ -162,7 +189,10 @@ def outcome_view(
     ``recovery``: the key that opens the panel (failures name it); ``retry_hint``: name
     `hark retry` on a failure instead when there is no such key."""
     status = "error" if res is None else res.status
-    simple = status_view(status)
+    if res is not None and status == "no_speech" and res.input_device:
+        simple = no_speech_view(res)
+    else:
+        simple = status_view(status)
     if simple is not None:
         return simple
     if res is None or status not in ("pasted", "copied", "focus_changed", "paste_failed"):
@@ -234,9 +264,11 @@ class Indicator:
         *,
         recovery: str = "",
         retry_hint: bool = False,
+        limit_s: float = 0.0,
         clock: Callable[[], float] = time.monotonic,
     ) -> None:
         self.backend = backend
+        self.limit_s = limit_s  # audio.max_ms: the recording counts down to it
         self.recovery = recovery
         self.retry_hint = retry_hint
         self.clock = clock
@@ -281,7 +313,7 @@ class Indicator:
     def _recording_view(self, *, hands_free: bool, pinned: str) -> View:
         return recording_view(
             hands_free=hands_free, pinned=pinned, levels=tuple(self._levels),
-            elapsed_s=self.clock() - self._started_at,
+            elapsed_s=self.clock() - self._started_at, limit_s=self.limit_s,
         )  # fmt: skip
 
     def level(self, pcm16: bytes) -> None:
@@ -367,7 +399,9 @@ class Indicator:
         self.backend.run(stop, tick)
 
 
-def make(cfg: IndicatorConfig, *, retry_hint: bool = False) -> Indicator | None:
+def make(
+    cfg: IndicatorConfig, *, retry_hint: bool = False, limit_s: float = 0.0
+) -> Indicator | None:
     """The platform's indicator, or None (disabled, or no usable toolkit). Main thread only.
     On Omarchy failure pills name the key that opens hark's panel (``hark-panel``, bound by
     omarchy-install-dictation-hark)."""
@@ -389,4 +423,4 @@ def make(cfg: IndicatorConfig, *, retry_hint: bool = False) -> Indicator | None:
     if backend is None:
         return None
     recovery = RECOVERY_KEY if OMARCHY_THEME.is_dir() else ""
-    return Indicator(backend, recovery=recovery, retry_hint=retry_hint)
+    return Indicator(backend, recovery=recovery, retry_hint=retry_hint, limit_s=limit_s)

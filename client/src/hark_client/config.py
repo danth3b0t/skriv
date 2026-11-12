@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import dataclasses
 import fnmatch
+import json
 import os
+import re
 import tomllib
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -122,7 +124,7 @@ class AudioConfig:
     keep_open: bool = True  # keep the mic stream running between dictations
     min_ms: int = 300  # shorter presses are cancelled
     min_speech_ms: int = 300  # less speech energy than this: discarded (0: off)
-    max_ms: int = 120_000
+    max_ms: int = 300_000  # 5 min, the server's limit too (server.max_audio_ms)
 
 
 @dataclass
@@ -158,11 +160,10 @@ class PasteConfig:
 class FeedbackConfig:
     sounds: bool = True
     notify: bool = True
-    # The start sound would be recorded: auto plays it only when no recording indicator is
-    # shown; when it plays, this much audio after key-down is replaced by silence and left out
-    # of the speech gate.
-    start_cue: str = "auto"  # auto | always | never
-    cue_mask_ms: int = 250
+    # The start sound plays once the recording's first audio arrives (it is recorded, never
+    # masked: speech is never cut). Off by default: the indicator is the signal; auto plays it
+    # only when no recording indicator is shown.
+    start_cue: str = "never"  # never | auto | always
 
 
 @dataclass
@@ -354,8 +355,13 @@ def _validate_providers(providers: list[ProviderConfig]) -> None:
         labels.add(p.label)
 
 
+def words_limit(max_terms: int) -> int:
+    """At most this many `[[words]]` (yours and a repository's together) join a dictation."""
+    return max(1, max_terms // 3)
+
+
 def _validate_words(words: list[WordConfig], max_terms: int) -> None:
-    limit = max(1, max_terms // 3)
+    limit = words_limit(max_terms)
     if len(words) > limit:
         raise ConfigError(
             f"words: {len(words)} entries, at most {limit} (a third of context.max_terms, so the"
@@ -392,7 +398,6 @@ def validate(cfg: Config) -> None:
         ("audio.min_speech_ms", cfg.audio.min_speech_ms),
         ("retry.keep", cfg.retry.keep),
         ("hotkey.tap_ms", cfg.hotkey.tap_ms),
-        ("feedback.cue_mask_ms", cfg.feedback.cue_mask_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
@@ -419,6 +424,80 @@ def load(path: str | Path | None = None) -> Config:
         raise ConfigError(f"{p}: no such file")
     validate(cfg)
     return cfg
+
+
+REPO_WORDS = Path(".hark") / "words.toml"  # a repository's own [[words]], under its root
+
+
+def load_words(path: Path, max_terms: int) -> list[WordConfig]:
+    """A repository's `[[words]]` (REPO_WORDS under its root); [] without the file."""
+    try:
+        text = path.read_text()
+    except FileNotFoundError:
+        return []
+    except OSError as e:
+        raise ConfigError(f"{path}: {e}") from e
+    try:
+        data = tomllib.loads(text)
+        if set(data) - {"words"}:
+            raise ConfigError("only [[words]] tables belong in this file")
+        words = _tables(cast("object", data.get("words", [])), "words", WordConfig)
+        _validate_words(words, max_terms)
+    except (tomllib.TOMLDecodeError, ConfigError) as e:
+        raise ConfigError(f"{path}: {e}") from e
+    return words
+
+
+# `hark words add/remove` edit the file as text, so comments and layout stay as written.
+_HEADER_RE = re.compile(r"""^\s*\[\[?\s*[\w.\-"' ]+\s*\]\]?\s*(#.*)?$""")
+_WORDS_HEADER_RE = re.compile(r"^\s*\[\[\s*words\s*\]\]\s*(#.*)?$")
+
+
+def _toml_str(s: str) -> str:
+    return json.dumps(s, ensure_ascii=False)  # a JSON string is a TOML basic string
+
+
+def word_block(word: str, spoken: list[str]) -> str:
+    """One `[[words]]` table as TOML text."""
+    out = f"[[words]]\nword = {_toml_str(word)}\n"
+    if spoken:
+        out += f"spoken = [{', '.join(map(_toml_str, spoken))}]\n"
+    return out
+
+
+def append_block(text: str, block: str) -> str:
+    """``block`` at the end of ``text``, after one blank line."""
+    if not text.strip():
+        return block
+    return text.rstrip("\n") + "\n\n" + block
+
+
+def remove_word(text: str, word: str) -> tuple[str, bool]:
+    """``text`` without the `[[words]]` tables whose ``word`` is ``word`` (each from its header
+    to the next table header, less the blank and comment lines just before that header: those
+    introduce what follows); and whether any was found."""
+    lines = text.splitlines(keepends=True)
+    keep = [True] * len(lines)
+    found = False
+    for i, line in enumerate(lines):
+        if not _WORDS_HEADER_RE.match(line):
+            continue
+        end = i + 1
+        while end < len(lines) and not _HEADER_RE.match(lines[end]):
+            end += 1
+        while end > i + 1 and (
+            not lines[end - 1].strip() or lines[end - 1].lstrip().startswith("#")
+        ):
+            end -= 1
+        try:
+            table = cast("list[dict[str, object]]", tomllib.loads("".join(lines[i:end]))["words"])
+        except (tomllib.TOMLDecodeError, KeyError):
+            continue
+        if table and table[0].get("word") == word:
+            found = True
+            start = i - 1 if i > 0 and not lines[i - 1].strip() else i  # its blank line too
+            keep[start:end] = [False] * (end - start)
+    return "".join(line for line, k in zip(lines, keep, strict=True) if k), found
 
 
 def expand(path: str) -> Path:

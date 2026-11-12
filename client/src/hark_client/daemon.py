@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 
 from hark.v1 import hark_pb2 as pb
 from hark_client import config, context, guardrails, history, indicator, retry
-from hark_client.asr import unix_us
+from hark_client.asr import SAMPLE_RATE, unix_us
 from hark_client.audio import PreRoll
 from hark_client.config import ConfigError, expand
 from hark_client.continuation import ShadowBuffer
@@ -73,6 +73,7 @@ class Controller:
         self.current: Utterance | None = None
         self.busy = 0  # utterances still finishing
         self._max_hit = False
+        self._cue_pending = False  # the start sound waits for the recording's first audio
         # hark's pastes + the keys typed since: the caret when the app does not expose it
         self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
@@ -98,10 +99,15 @@ class Controller:
             if utt is None:
                 self.preroll.push(pcm)
                 return
-            utt.feed(pcm)
-            over = utt.audio_ms - utt.preroll_ms >= self.svc.cfg.audio.max_ms and not self._max_hit
+            # never more than audio.max_ms (pre-roll included): the server refuses longer audio
+            room = SAMPLE_RATE * self.svc.cfg.audio.max_ms // 1000 * 2 - len(utt.pcm)
+            utt.feed(pcm[: max(0, room)])
+            over = room <= len(pcm) and not self._max_hit
             if over:
                 self._max_hit = True
+            cue, self._cue_pending = self._cue_pending, False
+        if cue:  # capture is live: what is said after the sound is recorded
+            self.svc.feedback.sound("start")
         if self.indicator is not None:
             self.indicator.level(pcm)
         if over:
@@ -137,20 +143,16 @@ class Controller:
         with self._lock:
             if self.current is not None or self.finishing is not None:
                 return self._refuse("error busy", "busy")
-            cue = self._start_cue()
-            mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
             profile, self.profile_override = self.profile_override, None  # used up by it
-            self.current = utt = Utterance(
-                self.svc, profile=profile, preroll=self.preroll.take(), mask_ms=mask_ms
-            )
+            self.current = utt = Utterance(self.svc, profile=profile, preroll=self.preroll.take())
+            utt.input_device = self.mic.device_name if self.mic is not None else ""
             self._max_hit = False
+            self._cue_pending = self._start_cue()
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
             self.started += 1
         if self.indicator is not None:
             self.indicator.recording(utt.id, _label("Listening", utt))
-        if cue:
-            self.svc.feedback.sound("start")
         log.info("recording...")
         self.report.touch()
         return "ok recording"
@@ -227,7 +229,8 @@ class Controller:
             log.info("mic reopened: %s @ %d Hz", mic.device_name, mic.rate)
 
     def _start_cue(self) -> bool:
-        """Play the start sound? (``auto``: not when the indicator already shows it.)"""
+        """Play the start sound (on the recording's first audio)? ``auto``: not when the
+        indicator already shows it. Off by default: the indicator is the signal."""
         cfg = self.svc.cfg.feedback
         mode = cfg.start_cue
         return cfg.sounds and (mode == "always" or (mode == "auto" and self.indicator is None))
@@ -265,7 +268,7 @@ class Controller:
 
     def stop(self, reason: str = "key_up", only: Utterance | None = None) -> str:
         """``reason``: key_up (release, tap, `stop`) or limit (`audio.max_ms`, for ``only``)."""
-        keyup = unix_us()
+        keyup, released = unix_us(), time.perf_counter()  # release_to_paste_ms starts here
         utt = self._detach(finishing=True, only=only)
         if utt is None:
             return "ok idle"
@@ -282,17 +285,26 @@ class Controller:
                 utt.wait_started()  # bounded; the key-down context goes with the audio
                 kept = self._keep(utt, None)  # before transcribing: a crash keeps the audio
                 res = utt.finish(
-                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow,
-                    reason=end,
+                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, released=released,
+                    shadow=self.shadow, reason=end,
                 )  # fmt: skip
                 self.last_result = (time.time(), res)
+                if res.flat_signal:
+                    self.svc.feedback.notify(
+                        f"No audio from {res.input_device or 'the microphone'}: it sends a flat"
+                        " signal (muted, or the wrong input?); run `hark doctor`"
+                    )
+                elif res.status == "no_speech":
+                    log.info(
+                        "no speech heard from %s; `hark doctor` tests the mic", res.input_device
+                    )
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
                 self._kept(kept, utt, res)
-                timing = res.timings.get("keyup_to_paste_ms")
+                timing = res.timings.get("release_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
-                    f" ({timing:.0f} ms key-up->paste)" if timing is not None else "",
+                    f" ({timing:.0f} ms release->paste)" if timing is not None else "",
                 )  # fmt: skip
             finally:
                 if self.indicator is not None:
@@ -622,7 +634,9 @@ def run(
     controller.mic = mic
     # Warm per-window term pools in the background so key-down only refreshes cheap sources.
     context.start_prefetch(str(expand(svc.cfg.history.dir)))
-    ui = indicator.make(svc.cfg.indicator, retry_hint=svc.cfg.retry.keep > 0)
+    ui = indicator.make(
+        svc.cfg.indicator, retry_hint=svc.cfg.retry.keep > 0, limit_s=svc.cfg.audio.max_ms / 1000
+    )
     if ui is not None:
         controller.indicator = ui
         svc.on_stage = ui.stage

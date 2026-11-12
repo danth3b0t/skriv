@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import socket
 import time
+from dataclasses import replace
 from typing import TYPE_CHECKING, cast
 
 import pytest
@@ -74,6 +75,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
         "cleanup_ms",
         "paste_ms",
         "keyup_to_paste_ms",
+        "release_to_paste_ms",
     ):
         assert stage in timings
 
@@ -186,12 +188,18 @@ def test_unreachable_server_fails_without_pasting(
     assert "[dry-run]" not in capsys.readouterr().out
 
 
+@pytest.mark.parametrize("where", ["config", "repo"])
 def test_dictionary_words_bias_the_recognizer_without_any_context(
-    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext
+    tmp_path: Path, hark_server: HarkServer, fake_context: FakeContext, where: str
 ):
-    fake_context.snapshots = [snapshot("com.apple.Notes", terms=())]
     words = '[[words]]\nword = "kubectl"\nspoken = ["Cube Control!"]\n'
-    _, rec = run_once(tmp_path, hark_server.target, config=words)
+    repo = tmp_path / "repo"
+    (repo / ".hark").mkdir(parents=True)
+    if where == "repo":  # the focused terminal's repository has its own list
+        (repo / ".hark" / "words.toml").write_text(words)
+    snap = replace(snapshot("com.apple.Notes", terms=()), repo_root=str(repo))
+    fake_context.snapshots = [snap]
+    _, rec = run_once(tmp_path, hark_server.target, config=words if where == "config" else "")
     # The mock server only rewrites "cube control" when the bias term reached it.
     assert (rec["raw_text"], rec["bias_terms_sent"]) == ("please run kubectl get", 1)
 

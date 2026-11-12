@@ -23,7 +23,7 @@ if TYPE_CHECKING:
     import threading
     from collections.abc import Callable
 
-    from hark_client.config import Config
+    from hark_client.config import Config, WordConfig
     from hark_client.context import ContextSnapshot
     from hark_client.daemon import AppUi, Controller
     from hark_client.pipeline import Services
@@ -46,6 +46,7 @@ class Args(argparse.Namespace):
     json: bool
     id: str | None
     copy: bool
+    raw: bool
     history_action: str
     n: int
     service_action: str
@@ -59,6 +60,9 @@ class Args(argparse.Namespace):
     eval_action: str
     set_dir: str | None
     report: str | None
+    words_action: str
+    terms: list[str]
+    repo: bool
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -120,7 +124,19 @@ def parse_args(argv: list[str] | None = None) -> Args:
     h.add_argument("--json", action="store_true", help="list: the full records as a JSON array")
     la = sub.add_parser("last", help="print the last dictated text")
     la.add_argument("--copy", action="store_true", help="copy it to the clipboard instead")
+    la.add_argument(
+        "--raw", action="store_true", help="the text before cleanup (what was said, uncleaned)"
+    )
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
+    w = sub.add_parser("words", help="spellings the recognizer needs help with ([[words]])")
+    w.add_argument("words_action", nargs="?", default="list", choices=["list", "add", "remove"])
+    w.add_argument(
+        "terms", nargs="*", help='add: [SPOKEN] WORD, e.g. "hyper land" Hyprland; remove: WORD'
+    )
+    w.add_argument(
+        "--repo", action="store_true",
+        help="this git repository's list (<repo>/.hark/words.toml), not your config",
+    )  # fmt: skip
     ev = sub.add_parser("eval", help="regression set of real dictations (docs/eval.md)")
     ev.add_argument("eval_action", choices=["add", "run", "accept"])
     ev.add_argument(
@@ -261,7 +277,7 @@ def main(argv: list[str] | None = None) -> int:
         return doctor.run(
             cfg, config_path if Path(config_path).exists() else f"{config_path} (absent; defaults)"
         )
-    offline = {"history": cmd_history, "last": cmd_last, "eval": cmd_eval}
+    offline = {"history": cmd_history, "last": cmd_last, "eval": cmd_eval, "words": cmd_words}
     return offline.get(args.command, cmd_pipeline)(args, cfg)
 
 
@@ -312,6 +328,7 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
         )  # fmt: skip
         scores: list[evalset.Score] = []
         records: list[dict[str, object]] = []
+        latency: list[float] = []  # release_to_paste_ms of the clips that reached the paste
         for clip in found:
             res = evalset.run_clip(svc, clip)
             s = evalset.score(
@@ -320,6 +337,8 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
             )  # fmt: skip
             scores.append(s)
             records.append(evalset.report(s, res))
+            if "release_to_paste_ms" in res.timings:
+                latency.append(res.timings["release_to_paste_ms"])
             print(evalset.line(s, res.status, res.final_text))
     finally:
         router.close()
@@ -332,6 +351,13 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
     wers = [s.wer for s in scores if s.wer is not None]
     mean = f"{sum(wers) / len(wers):.1%}" if wers else "n/a"
     print(f"{len(scores)} clips: {failed} failed, {unreviewed} unreviewed, recognition WER {mean}")
+    if latency:
+        import statistics  # noqa: PLC0415
+
+        print(
+            f"release->paste median {statistics.median(latency):.0f} ms, max {max(latency):.0f} ms"
+            f" ({len(latency)} clips)"
+        )
     return 1 if failed else 0
 
 
@@ -373,9 +399,12 @@ def cmd_last(args: Args, cfg: Config) -> int:
     from hark_client import history  # noqa: PLC0415
     from hark_client.config import expand  # noqa: PLC0415
 
-    text = history.last_text(expand(cfg.history.dir))
+    text = history.last_text(
+        expand(cfg.history.dir), key="uncleaned_text" if args.raw else "final_text"
+    )
     if not text:
-        print("hark last: no dictated text in the history", file=sys.stderr)
+        what = "uncleaned text" if args.raw else "dictated text"
+        print(f"hark last: no {what} in the history", file=sys.stderr)
         return 1
     if not args.copy:
         print(text)
@@ -387,6 +416,125 @@ def cmd_last(args: Args, cfg: Config) -> int:
         return 1
     print(f"copied {len(text)} characters")
     return 0
+
+
+def _git_root() -> Path | None:
+    """The git repository around the working directory (what the context engine reports)."""
+    import subprocess  # noqa: PLC0415
+
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--show-toplevel"],  # noqa: S607 - git from PATH
+            capture_output=True, text=True, timeout=5, check=False,
+        )  # fmt: skip
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    return Path(out.stdout.strip()) if out.returncode == 0 and out.stdout.strip() else None
+
+
+def _show_words(words: list[WordConfig], where: Path) -> None:
+    print(f"{where} ({len(words)}):")
+    for w in words:
+        spoken = f"  <- {', '.join(repr(s) for s in w.spoken)}" if w.spoken else ""
+        print(f"  {w.word}{spoken}")
+
+
+def cmd_words(args: Args, cfg: Config) -> int:  # noqa: PLR0911 - one return per outcome
+    """List, add or remove a `[[words]]` entry: your config, or with --repo the repository's
+    list. Files are edited as text (comments stay), then re-read; the daemon reloads."""
+    from hark_client import config  # noqa: PLC0415
+
+    config_path = Path(args.config) if args.config else config.default_config_path()
+    root = _git_root()
+    if args.repo and root is None:
+        print("hark words --repo: not inside a git repository", file=sys.stderr)
+        return 2
+    limit = config.words_limit(cfg.context.max_terms)
+    try:
+        repo = config.load_words(root / config.REPO_WORDS, cfg.context.max_terms) if root else []
+    except config.ConfigError as e:
+        print(f"hark words: {e}", file=sys.stderr)
+        return 2
+    if args.words_action == "list":
+        _show_words(cfg.words, config_path)
+        if root is not None:
+            _show_words(repo, root / config.REPO_WORDS)
+        print(f"at most {limit} reach a dictation (a third of context.max_terms)")
+        return 0
+    path = root / config.REPO_WORDS if args.repo and root else config_path
+    current = repo if args.repo else cfg.words
+    terms = args.terms
+    if args.words_action == "remove":
+        if len(terms) != 1:
+            print("hark words remove: give the WORD", file=sys.stderr)
+            return 2
+        text, found = config.remove_word(_read(path), terms[0])
+        if not found:
+            print(f"hark words: {terms[0]!r} is not in {path}", file=sys.stderr)
+            return 1
+        return _save_words(path, text, cfg, f"removed {terms[0]!r} from {path}", repo=args.repo)
+    if len(terms) not in (1, 2) or not all(t.strip() for t in terms):
+        print('hark words add: give [SPOKEN] WORD, e.g. "hyper land" Hyprland', file=sys.stderr)
+        return 2
+    word, spoken = terms[-1].strip(), [t.strip() for t in terms[:-1]]
+    old = next((w for w in current if w.word == word), None)
+    if old is not None:
+        merged = list(dict.fromkeys([*old.spoken, *spoken]))
+        if merged == old.spoken:
+            print(f"{word!r} is already in {path}")
+            return 0
+        spoken = merged
+    taken = {w.word for w in (*cfg.words, *repo)} if args.repo else {w.word for w in cfg.words}
+    if old is None and len(taken) >= limit:
+        print(
+            f"hark words: the list is full ({len(taken)} of {limit}, a third of"
+            " context.max_terms, yours and this repository's together); `hark words remove"
+            " WORD` one that context now supplies, then add again",
+            file=sys.stderr,
+        )
+        return 1
+    text, _ = config.remove_word(_read(path), word)
+    text = config.append_block(text, config.word_block(word, spoken))
+    return _save_words(path, text, cfg, f"added {word!r} to {path}", repo=args.repo)
+
+
+def _read(path: Path) -> str:
+    try:
+        return path.read_text()
+    except FileNotFoundError:
+        return ""
+
+
+def _save_words(path: Path, text: str, cfg: Config, done: str, *, repo: bool) -> int:
+    """Write ``text``, re-read the file (restored if it no longer loads), reload the daemon."""
+    from hark_client import config, ctl  # noqa: PLC0415
+
+    before = path.read_text() if path.exists() else None
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(text)
+    try:
+        if repo:
+            config.load_words(path, cfg.context.max_terms)
+        else:
+            config.load(path)
+    except config.ConfigError as e:
+        if before is None:
+            path.unlink()
+        else:
+            path.write_text(before)
+        print(f"hark words: not changed: {e}", file=sys.stderr)
+        return 1
+    print(done)
+    if repo:
+        print("used from the next dictation in this repository")
+        return 0
+    try:
+        reply = ctl.send("reload")
+    except OSError:
+        print("no daemon running; `hark run` reads it")
+        return 0
+    print(f"daemon: {reply}")
+    return 0 if reply.startswith("ok") else 1
 
 
 def cmd_pipeline(args: Args, cfg: Config) -> int:

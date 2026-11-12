@@ -9,12 +9,13 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 
-from hark_client import retry
+from hark_client import history, retry
 from hark_client.audio import speech_ms
 from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
@@ -29,12 +30,12 @@ from .test_client_indicator import FakeBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
     import numpy.typing as npt
 
     from hark_client.daemon import Controller
     from hark_client.mic import Mic
+    from hark_client.pipeline import Result
 
     from .conftest import FakeContext
 
@@ -51,6 +52,25 @@ def test_toggle_streams_preroll_and_speech_then_pastes(
     wait_idle(c)
     # 200 ms pre-roll + 800 ms = 5 mock words; 1.2 s would have produced 6.
     assert injector.pasted == [("please run kubectl get", True)]
+
+
+def test_latency_runs_from_the_key_release_including_the_wait_for_context(
+    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
+):
+    c, _ = controller
+    fake_context.delay_s = 0.3  # the key-down context is still being collected at release
+    c.handle("start")
+    c.on_pcm(pcm(0.4))
+    c.handle("stop")
+    wait_idle(c)
+    assert c.last_result is not None
+    t = c.last_result[1].timings
+    assert t["release_to_paste_ms"] >= t["keyup_to_paste_ms"] + 100  # the context deadline
+    (rec,) = history.recent(Path(c.svc.cfg.history.dir), 1)
+    assert (
+        cast("dict[str, float]", rec["timings_ms"])["release_to_paste_ms"]
+        == t["release_to_paste_ms"]
+    )
 
 
 def dictate(c: Controller) -> None:
@@ -185,6 +205,39 @@ class FakeMic:
         self.delivering = True
 
 
+def test_nothing_heard_names_the_mic_and_only_a_flat_signal_is_a_mic_problem(
+    controller: tuple[Controller, DryRunInjector], tmp_path: Path
+):
+    c, injector = controller
+    c.mic = cast("Mic", FakeMic())
+    feedback = c.svc.feedback
+    assert isinstance(feedback, RecordingFeedback)
+    results: list[Result] = []
+    for audio in (
+        bytes(32000),  # a muted input: digital silence
+        pcm16(noise(1000, -60)),  # a quiet room, nothing said
+        pcm(0.2) + bytes(64000) + pcm(0.2),  # speech, a long pause to think, speech
+    ):
+        c.handle("start")
+        c.on_pcm(audio)
+        c.handle("stop")
+        wait_idle(c)
+        assert c.last_result is not None
+        results.append(c.last_result[1])
+    facts = [(r.status, r.input_device, r.flat_signal) for r in results]
+    assert facts == [
+        ("no_speech", "fake", True),
+        ("no_speech", "fake", False),
+        ("pasted", "fake", False),
+    ]
+    assert len(injector.pasted) == 1
+    assert feedback.notifications == [
+        "No audio from fake: it sends a flat signal (muted, or the wrong input?); run `hark doctor`"
+    ]
+    (flat, *_) = history.recent(tmp_path, 3)
+    assert (flat["input_device"], flat["flat_signal"]) == ("fake", True)
+
+
 def test_pause_cancels_refuses_new_dictations_and_releases_the_mic(
     controller: tuple[Controller, DryRunInjector],
 ):
@@ -239,35 +292,27 @@ def pcm16(signal: npt.NDArray[np.float64]) -> bytes:
     return (signal * 32768).astype("<i2").tobytes()
 
 
-@pytest.mark.parametrize("start_cue", ["always", "never"])
-def test_the_start_cue_is_masked_out_of_the_audio_and_the_speech_gate(
-    controller: tuple[Controller, DryRunInjector], start_cue: str
+def test_the_start_cue_waits_for_live_audio_and_never_cuts_speech(
+    controller: tuple[Controller, DryRunInjector],
 ):
     c, _ = controller
-    c.svc.cfg.feedback.start_cue = start_cue
-    c.svc.cfg.feedback.cue_mask_ms = 250
-    cue = tone(200, -10) + noise(200, -60)  # the start sound, picked up by the mic
-    speech = tone(150, -20) + noise(150, -60)  # too little speech on its own
-    room = noise(50, -60), noise(600, -60)
+    c.svc.cfg.feedback.start_cue = "always"
+    feedback = c.svc.feedback
+    assert isinstance(feedback, RecordingFeedback)
+    first = pcm16(tone(400, -20) + noise(400, -60))  # speech from the first chunk on
+    rest = pcm16(noise(600, -60))
     c.handle("start")
+    assert feedback.sounds_played == []  # no audio yet: capture is not live
+    c.on_pcm(first)
+    assert feedback.sounds_played == ["start"]
+    c.on_pcm(rest)
     assert c.current is not None
-    for part in (cue, room[0], speech, room[1]):
-        c.on_pcm(pcm16(part))
-    heard = np.frombuffer(bytes(c.current.pcm), "<i2")
+    assert bytes(c.current.pcm) == first + rest  # recorded as captured
+    assert feedback.sounds_played == ["start"]  # once per recording
     c.handle("stop")
     wait_idle(c)
     assert c.last_result is not None
-    status = c.last_result[1].status
-    feedback = c.svc.feedback
-    assert isinstance(feedback, RecordingFeedback)
-    if start_cue == "always":
-        assert feedback.sounds_played[0] == "start"
-        assert not heard[: 250 * 16].any()  # the server never hears the cue
-        assert heard[250 * 16 :].any()
-        assert status == "no_speech"  # 150 ms of speech; the cue would have made it 350
-    else:
-        assert "start" not in feedback.sounds_played
-        assert status != "no_speech"
+    assert c.last_result[1].status != "no_speech"
 
 
 def test_auto_start_cue_only_without_the_indicator(
@@ -275,11 +320,11 @@ def test_auto_start_cue_only_without_the_indicator(
 ):
     c, _ = controller
     c.svc.cfg.feedback.start_cue = "auto"
-    c.handle("start")
-    c.handle("cancel")
-    c.indicator = Indicator(FakeBackend())
-    c.handle("start")
-    c.handle("cancel")
+    for indicator in (None, Indicator(FakeBackend())):
+        c.indicator = indicator
+        c.handle("start")
+        c.on_pcm(pcm16(noise(40, -60)))
+        c.handle("cancel")
     feedback = c.svc.feedback
     assert isinstance(feedback, RecordingFeedback)
     assert feedback.sounds_played == ["start", "error", "error"]
@@ -405,12 +450,14 @@ def test_the_length_limit_stops_only_its_own_recording(
 ):
     c, _ = controller
     c.svc.cfg.audio.max_ms = 400
+    c.on_pcm(pcm(0.3))  # 200 ms of it become the pre-roll
     c.handle("start")
     first = c.current
     c.on_pcm(pcm(0.6))  # over the limit: stopped in the background
     wait_idle(c)
     assert c.last_result is not None
     assert c.last_result[1].stop_reason == "limit"
+    assert c.last_result[1].timings["audio_ms"] == 400  # pre-roll included, never more
     c.handle("start")
     assert c.stop(reason="limit", only=first) == "ok idle"  # a late stop of the first one
     assert c.status() == "ok recording finishing=0"

@@ -232,7 +232,6 @@ def make_controller[I: DryRunInjector](
     cfg = Config()
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0
-    cfg.feedback.start_cue = "never"  # audio fed right after start is not masked
     return Controller(Services(cfg, router, injector, RecordingFeedback()), None), injector
 
 

@@ -144,7 +144,7 @@ preroll_ms = 200              # needs keep_open
 keep_open = true              # mic stream stays open between dictations
 min_ms = 300                  # shorter presses are cancelled (short "cancel" sound, nothing pasted)
 min_speech_ms = 300           # less speech energy than this is discarded too (status no_speech); 0 = off
-max_ms = 120000
+max_ms = 300000               # 5 min, pre-roll included (the server's limit); the pill counts down the last 30 s
 
 [hotkey]
 key = "alt_r"                 # pynput Key name (alt_r = Right Option, cmd_r, f13, ...) or one character
@@ -169,8 +169,7 @@ spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
 notify = true
-start_cue = "auto"            # start sound: auto (only without the indicator) | always | never
-cue_mask_ms = 250             # with a start sound: this much audio after key-down becomes silence (see below)
+start_cue = "never"           # start sound: never | auto (only without the indicator) | always (see below)
 
 [history]
 dir = "~/.local/share/hark"
@@ -206,10 +205,9 @@ unless one was picked by hand (below).
   typing is never held up. X11: a passive grab of Esc exists only while recording or finishing (**untested on
   real hardware**).
   Wayland: a compositor submap, see the Hyprland example above.
-- **Start sound**: the mic would record it. By default it plays only when no recording indicator is shown (the
-  pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`
-  of audio after key-down is sent as silence and left out of the speech gate (silence would lower its noise
-  floor). Speech in those 250 ms is lost; the pre-roll before key-down is kept.
+- **Start sound**: off by default; the indicator (Listening) is the signal. With `start_cue = "always"` (or
+  `"auto"` and no indicator) it plays when the recording's first audio arrives, so anything said after it is
+  captured. The sound is recorded like everything else; no audio is ever replaced or dropped.
 - **Profile**: `hark ctl profile set NAME` picks the profile of the next dictation only; `hark ctl profile auto`
   goes back to choosing by app. The indicator shows **Profile: prose** briefly (never over a recording) and the
   recording as **Listening · prose**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
@@ -266,9 +264,14 @@ systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server
 ## Recording indicator
 
 While `hark run` works, a small pill shows its state (design/SPEC.md §4): a red dot (a lock when hands-free, plus a
-hand-picked profile) with the live input level, three dots while working, then the outcome for a moment: ✓ (sent,
-with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 2:00*), **Copied**, **Paste
-failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. A press that starts nothing says why:
+hand-picked profile) with the live input level and, after a minute, the elapsed time (**0:25 left** in the last 30 s
+before `audio.max_ms`), three dots while working, then the outcome for a moment: ✓ (sent,
+with at most one tag: *mic dropped*, *cleanup skipped*, *via laptop*; or *Stopped at 5:00*), **Copied**, **Paste
+failed · copied**, **Failed · server timeout**, **No speech**, **Cancelled**. **No speech** names the input it
+listened to and `hark doctor`; it is not an error (a press with nothing said, a pause to think: silence inside a
+dictation never discards it, only too little speech in all of it). When every sample was the same value (a muted or
+dead input) it says **No audio from mic** instead, and a notification says which device and to run `hark doctor`
+(which flags a flat signal too); history records `input_device` and `flat_signal`. A press that starts nothing says why:
 **Paused**, **Mic lost**, or the working dots while the previous dictation finishes. On Omarchy, failure pills name
 the key that opens hark's panel (**Super Alt D**); elsewhere a failure names `hark retry` when its audio is kept.
 It never takes focus or clicks, so the paste still goes to the window you dictated into.
@@ -303,11 +306,14 @@ again; otherwise the text goes to the clipboard (also when the window is unknown
 It is a new history entry; the kept audio stays.
 
 ```sh
-hark history                  # last 20: time, id, app, status, key-up->paste latency, text preview
+hark history                  # last 20: time, id, app, status, release->paste latency, text preview
 hark history -n 100 --json    # the full records
 hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup status/reason,
-                              # gate decisions (if recorded), final, spacing decision, paste, timings
+                              # gate decisions (if recorded), final, spacing decision, paste,
+                              # latency (key release -> text sent), timings
 hark last                     # print the last dictated text; --copy puts it on the clipboard
+hark last --raw --copy        # its text before cleanup (spoken symbols, self-corrections and guardrails
+                              # applied, no LLM rewrite), e.g. when the cleanup changed too much
 hark ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
 ```
 
@@ -316,7 +322,8 @@ newlines); its reply gives only the length, never the text.
 
 Accuracy regressions: `hark eval add` puts a kept dictation into a private set of real clips, `hark eval run`
 re-runs them all and fails on a lost identifier, a false substitution or a lost negation
-([docs/eval.md](../docs/eval.md)).
+([docs/eval.md](../docs/eval.md)). It ends with the median and max release->paste latency; `--report` has every
+clip's `timings_ms`.
 
 ## Guardrails
 
@@ -380,7 +387,20 @@ characters in tmux rows are mapped to columns approximately.
 
 For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
 (`hark_client/context/words.py`): every dictation gets them, ahead of the context terms, through the same gate and
-canonicalization rules.
+canonicalization rules. One command fixes a spelling:
+
+```sh
+hark words add "hyper land" Hyprland        # [SPOKEN] WORD into your config; a running daemon reloads
+hark words add "pie" pi --repo              # this git repository only: <repo>/.hark/words.toml
+hark words                                  # your list, and this repository's
+hark words remove Hyprland                  # (--repo: from the repository's list)
+```
+
+Adding a word that is already listed adds the spoken form to it. The file is edited as text (the new `[[words]]`
+table goes at the end, a removed one goes with its blank line before it; your comments and layout stay), then
+re-read: if it no longer loads it is put back as it was. A repository's list (only `[[words]]` tables) is read at
+each dictation whose context engine reports that repository, after yours. Yours and the repository's together are
+capped at a third of `context.max_terms` (10); `hark words add` refuses past it and says so.
 
 ## Anchor gate
 
@@ -397,7 +417,9 @@ including any change outside a hit, goes back to the anchor's words. `history.js
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
-`keyup_to_paste_ms`), the smart-spacing decision (`spacing`, see above),
+`keyup_to_paste_ms`, and `release_to_paste_ms`: from the key release, monotonic clock, to the text sent; this is
+what you wait, including the recovery copy and the wait for the key-down context that the other stage timings
+start after), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
@@ -418,7 +440,7 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
 AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
-events, the start-cue mask on a synthetic tone, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
+events, the start cue on live audio, release->paste latency, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
 (launchd plists, install/status/restart/uninstall against a fake launchctl, the login-item LaunchAgent fallback).
 
 ## Limitations

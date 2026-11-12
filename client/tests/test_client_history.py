@@ -75,7 +75,7 @@ def test_show_lists_every_stage():
         },
         gate={"decision": "accept"},
         spacing={"source": "ax", "leading": True},
-        timings_ms={"keyup_to_paste_ms": 400.0},
+        timings_ms={"keyup_to_paste_ms": 400.0, "release_to_paste_ms": 431.6},
         provider={"name": "laptop-cpu", "address": "127.0.0.1:50052", "send_context": False},
         route=[{"name": "desktop", "state": "down"}, {"name": "laptop-cpu", "state": "ok"}],
     )
@@ -90,7 +90,8 @@ def test_show_lists_every_stage():
         'gate       {"decision": "accept"}',
         "spacing    source=ax, leading=True",
         "status     pasted",
-        "timings    keyup_to_paste=400.0",
+        "latency    release->paste 432 ms",
+        "timings    keyup_to_paste=400.0, release_to_paste=431.6",
         "provider   laptop-cpu (127.0.0.1:50052, audio only)  route desktop:down -> laptop-cpu:ok",
     ):
         assert expected in out
@@ -103,7 +104,12 @@ def test_history_and_last_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert main([*base, "last"]) == 1  # no history yet
     assert main([*base, "history"]) == 0
     assert "no history" in capsys.readouterr().out
-    history.append(tmp_path, record(ID_A, "2026-11-10T08:30:00Z", final_text="hello there"))
+    history.append(
+        tmp_path,
+        record(
+            ID_A, "2026-11-10T08:30:00Z", final_text="hello there", uncleaned_text="uh hello there"
+        ),
+    )
     history.append(tmp_path, record(ID_B, "2026-11-10T08:31:00Z", status="error", final_text=""))
 
     assert main([*base, "history", "-n", "1", "--json"]) == 0
@@ -119,3 +125,5 @@ def test_history_and_last_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert capsys.readouterr().out == "hello there\n"
     assert main([*base, "last", "--copy"]) == 0
     assert "[dry-run] would copy: 'hello there'" in capsys.readouterr().out
+    assert main([*base, "last", "--raw", "--copy"]) == 0
+    assert "[dry-run] would copy: 'uh hello there'" in capsys.readouterr().out

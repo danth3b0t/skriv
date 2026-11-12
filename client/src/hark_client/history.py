@@ -70,10 +70,11 @@ def find(dir_: Path, query: str) -> list[Record]:
     return out
 
 
-def last_text(dir_: Path, scan: int = 200) -> str:
-    """final_text of the newest record that has one ("" if none in the last ``scan``)."""
+def last_text(dir_: Path, scan: int = 200, key: str = "final_text") -> str:
+    """``key`` (final_text, or uncleaned_text: before cleanup) of the newest record that has
+    one ("" if none in the last ``scan``)."""
     for r in reversed(recent(dir_, scan)):
-        text = r.get("final_text")
+        text = r.get(key)
         if isinstance(text, str) and text:
             return text
     return ""

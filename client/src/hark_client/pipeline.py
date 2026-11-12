@@ -37,11 +37,11 @@ from hark_client import (
     symbols,
 )
 from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
-from hark_client.audio import speech_ms
+from hark_client.audio import flat, speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
-from hark_client.context.words import dictionary_terms, merge_terms
+from hark_client.context.words import dictionary, dictionary_terms, merge_terms
 from hark_client.inject import PasteResult
 
 if TYPE_CHECKING:
@@ -92,6 +92,8 @@ class Result:
     provider: str = ""  # the provider that transcribed it
     fallback: bool = False  # ... was not the first in priority order (a failover counts)
     mic_interrupted: bool = False  # the mic dropped out while recording
+    input_device: str = ""  # the microphone it was recorded from ("" = not a live recording)
+    flat_signal: bool = False  # no_speech because the input sent no signal at all (a mic problem)
     delivery: str = "none"  # sent | copied | failed | none (docs/protocol/ctl-v1.md)
 
 
@@ -135,7 +137,6 @@ class Utterance:
         profile: str | None = None,
         preroll: bytes = b"",
         replay: ContextSnapshot | None = None,  # `hark retry`: the original key-down context
-        mask_ms: int = 0,  # audio after the pre-roll replaced by silence (the start cue)
     ) -> None:
         self.svc = svc
         self.replay = replay
@@ -157,18 +158,16 @@ class Utterance:
         self._cancelled = False
         self._committed = False  # past the point of no return (clipboard write / paste)
         self.keyup_unix_us = 0
+        self.t_release = 0.0  # time.perf_counter() at key release (set by finish)
         self.stop_reason = ""
         self.mic_interrupted = False  # set by the daemon's mic watchdog
+        self.input_device = ""  # set by the daemon: the mic's name
         self.failed_over = False
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
         self._starter.start()
-        self._mask_left = self._masked = self._mask_from = 0
         if preroll:
             self.feed(preroll)
-        self._mask_from = len(preroll)
-        self._mask_left = SAMPLE_RATE * mask_ms // 1000 * 2
-        self._masked = 0  # bytes of silence fed in place of audio so far
 
     # -- hotkey down ---------------------------------------------------------------
 
@@ -180,8 +179,9 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
-        if self.svc.cfg.words:  # hand-written spellings go first
-            words = dictionary_terms(self.svc.cfg.words)
+        user_words = dictionary(self.svc.cfg.words, snap.repo_root, cfg.max_terms)
+        if user_words:  # hand-written spellings go first
+            words = dictionary_terms(user_words)
             snap = replace(snap, terms=merge_terms(snap.terms, words, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)
@@ -236,19 +236,9 @@ class Utterance:
         with self._lock:
             if self._done:
                 return
-            if self._mask_left:
-                n = min(self._mask_left, len(pcm16))
-                pcm16 = bytes(n) + pcm16[n:]
-                self._mask_left -= n
-                self._masked += n
             self.pcm += pcm16
             if self.stream is not None:
                 self.stream.feed(pcm16)
-
-    def _unmasked(self) -> bytes:
-        """The audio without the masked span: what the speech gate measures (caller holds the
-        lock). Silence there would lower the noise floor the gate's threshold comes from."""
-        return bytes(self.pcm[: self._mask_from] + self.pcm[self._mask_from + self._masked :])
 
     @property
     def audio_ms(self) -> int:
@@ -294,17 +284,18 @@ class Utterance:
         min_ms: int = 0,
         reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
         keyup_unix_us: int | None = None,
+        released: float | None = None,
         shadow: ShadowBuffer | None = None,
     ) -> Result:
-        """keyup_unix_us: when the key was released, if earlier than this call.
+        """keyup_unix_us: when the key was released, if earlier than this call; released: the
+        same moment on the time.perf_counter() clock (release_to_paste_ms starts there).
         shadow: the daemon's record of its pastes and later keys (spacing fallback)."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
+        self.t_release = time.perf_counter() if released is None else released
         self.stop_reason = "limit" if reason == pb.END_REASON_MAX_DURATION else "key_up"
         held_ms = _ms(self.t0)
         with self._lock:
-            speech = speech_ms(self._unmasked())
-            if self._masked:
-                self.timings["cue_masked_ms"] = self._masked // 2 * 1000 / SAMPLE_RATE
+            speech = speech_ms(bytes(self.pcm))
         if held_ms < min_ms or speech < self.svc.cfg.audio.min_speech_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
             self.svc.feedback.sound("cancel")
@@ -313,6 +304,8 @@ class Utterance:
                 "too_short" if held_ms < min_ms else "no_speech",
                 timings={"held_ms": held_ms, "audio_ms": self.audio_ms, "speech_ms": speech},
             )
+            with self._lock:  # quiet speech or a silent pause is no_speech; this is the mic
+                res.flat_signal = res.status == "no_speech" and flat(bytes(self.pcm))
             self._report("gate", f"{res.status}: {res.timings}")
             if res.status == "no_speech":
                 self._record(self._stamp(res))
@@ -406,6 +399,7 @@ class Utterance:
         """The facts every result carries (docs/protocol/ctl-v1.md `last`)."""
         res.stop_reason = self.stop_reason
         res.mic_interrupted = self.mic_interrupted
+        res.input_device = self.input_device
         provider = self.provider
         if provider is not None and res.status not in ("too_short", "no_speech", "cancelled"):
             res.provider = provider.name
@@ -567,11 +561,16 @@ class Utterance:
                 shadow.forget()
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
+        t["release_to_paste_ms"] = _ms(self.t_release)  # what the user waits: key up -> text sent
         self._report(
             "paste",
             f"{res.status} via {res.paste.method}: {res.paste.detail} ({t['paste_ms']:.1f} ms)",
         )
-        self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
+        self._report(
+            "total",
+            f"release->paste {t['release_to_paste_ms']:.1f} ms"
+            f" (key-up->paste {t['keyup_to_paste_ms']:.1f} ms)",
+        )
         svc.feedback.sound("done" if res.paste.ok else "error")
         return res
 
@@ -699,6 +698,8 @@ class Utterance:
             "stop_reason": res.stop_reason,
             "fallback": res.fallback,
             "mic_interrupted": res.mic_interrupted,
+            "input_device": res.input_device,
+            "flat_signal": res.flat_signal,
             "timings_ms": res.timings,
             "client_unix_us": {
                 "keyup": self.keyup_unix_us,

@@ -114,6 +114,13 @@ def rms_dbfs(pcm16: bytes) -> float:
     return 20 * math.log10(rms) if rms > 0 else float("-inf")
 
 
+def flat(pcm16: bytes) -> bool:
+    """No signal at all: every sample the same value (a muted or dead input sends digital
+    silence or a stuck level; a real room never does), or no samples."""
+    x: npt.NDArray[np.int16] = np.frombuffer(pcm16[: len(pcm16) // 2 * 2], "<i2")
+    return x.size == 0 or int(np.ptp(x)) == 0
+
+
 SPEECH_FRAME_MS = 20
 SPEECH_OVER_FLOOR_DB = 12.0
 SPEECH_THRESHOLD_DBFS = (-55.0, -40.0)  # louder than -40 always counts, -55 or less never
