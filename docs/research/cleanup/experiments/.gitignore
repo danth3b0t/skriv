@@ -1,0 +1,7 @@
+private-*
+__pycache__/
+# Outputs and eval data can contain the user's real dictations: keep local.
+*.json
+*.jsonl
+*.log
+pilot/
