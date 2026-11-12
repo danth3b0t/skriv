@@ -1,12 +1,12 @@
 # systemd user unit for the local CPU ASR server (offline fallback; scripts/cpu-server-up).
-# Install with @REPO@ replaced by the absolute path of the hark checkout (after `uv sync` and
+# Install with @REPO@ replaced by the absolute path of the skriv checkout (after `uv sync` and
 # `scripts/fetch-transcribe` there):
-#   sed "s|@REPO@|$PWD|g" packaging/systemd/hark-cpu-server.service \
-#     > ~/.config/systemd/user/hark-cpu-server.service
-#   systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server
+#   sed "s|@REPO@|$PWD|g" packaging/systemd/skriv-cpu-server.service \
+#     > ~/.config/systemd/user/skriv-cpu-server.service
+#   systemctl --user daemon-reload && systemctl --user enable --now skriv-cpu-server
 # It listens on 127.0.0.1:50052; list it last in the client's [[providers]].
 [Unit]
-Description=hark local CPU ASR server (transcribe.cpp, offline fallback)
+Description=skriv local CPU ASR server (transcribe.cpp, offline fallback)
 
 [Service]
 ExecStart=@REPO@/scripts/cpu-server-up

@@ -1,4 +1,4 @@
-"""The hark.shell plugin (packaging/omarchy/hark.shell): its Model.js under Node, fed by the real
+"""The skriv.shell plugin (packaging/omarchy/skriv.shell): its Model.js under Node, fed by the real
 daemon's subscribe lines and history records. The QML itself needs Omarchy's shell and is
 untested here; the install/remove scripts are in test_omarchy_adapter.py."""
 # pyright: reportAny=false, reportExplicitAny=false
@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from .conftest import FakeContext
 
 OMARCHY = Path(__file__).parents[2] / "packaging" / "omarchy"
-MODEL = OMARCHY / "hark.shell" / "Model.js"
+MODEL = OMARCHY / "skriv.shell" / "Model.js"
 TOKENS = Path(__file__).parents[2] / "design" / "tokens" / "omarchy-hark-tokens.json"
 NODE = shutil.which("node")
 
@@ -65,7 +65,7 @@ def status(**over: object) -> dict[str, object]:
 def ctl_socket(controller: tuple[Controller, DryRunInjector]) -> Iterator[Path]:
     """The real control socket of ``controller`` (a short path: AF_UNIX limits its length)."""
     c, _ = controller
-    path = Path(tempfile.mkdtemp(prefix="hark-", dir="/tmp")) / "ctl.sock"
+    path = Path(tempfile.mkdtemp(prefix="skriv-", dir="/tmp")) / "ctl.sock"
     server = ctl.CtlServer(path, c.handle, c.report.json, c.report.wait_change)
     server.start()
     yield path
@@ -103,7 +103,7 @@ def test_the_shell_reads_the_real_daemons_lines_and_history(
     c.handle("stop")
     wait_idle(c)
     lines.append(subscribe_line(ctl_socket, request))
-    records = history.recent(Path(c.svc.cfg.history.dir), 1)  # = `hark history -n 1 --json`
+    records = history.recent(Path(c.svc.cfg.history.dir), 1)  # = `skriv history -n 1 --json`
     out = model(
         "d.l.map(M.parseStatus).map(s => [M.glyphState(s, true), M.lastId(s),"
         " M.sentence(s, true, M.lastId(s))])",
@@ -111,7 +111,7 @@ def test_the_shell_reads_the_real_daemons_lines_and_history(
     )
     assert [o[0] for o in out] == ["idle", "recording", "idle"]
     assert out[2][1] == cast("dict[str, object]", c.report.json()["last"])["utterance_id"]
-    assert out[2][2].startswith("hark · ready · ")
+    assert out[2][2].startswith("skriv · ready · ")
     last = model(
         "M.lastView(M.parseHistory(d.h), M.parseStatus(d.l), d.now)",
         h=json.dumps(records), l=lines[2], now=time.time() * 1000,
@@ -135,22 +135,22 @@ def test_status_lines_the_shell_does_not_understand_are_dropped():
 @pytest.mark.parametrize(
     ("over", "online", "glyph", "problem", "sentence"),
     [
-        ({}, True, "idle", None, "hark · ready · desktop 38 ms"),
-        ({}, False, "off", "Not running", "hark · Not running"),
-        ({"paused": True, "mic": {"status": "off"}}, True, "paused", None, "hark · paused"),
+        ({}, True, "idle", None, "skriv · ready · desktop 38 ms"),
+        ({}, False, "off", "Not running", "skriv · Not running"),
+        ({"paused": True, "mic": {"status": "off"}}, True, "paused", None, "skriv · paused"),
         ({"phase": "recording", "state": "recording"}, True, "recording", None,
-         "hark · recording"),
-        ({"phase": "finishing", "finishing": 1}, True, "working", None, "hark · working"),
+         "skriv · recording"),
+        ({"phase": "finishing", "finishing": 1}, True, "working", None, "skriv · working"),
         # problems: the first that applies
         ({"mic": {"status": "lost"}, "server": {"name": "desktop", "state": "down"}}, True,
-         "idle", "Mic lost", "hark · Mic lost"),
+         "idle", "Mic lost", "skriv · Mic lost"),
         ({"server": {"name": "desktop", "state": "down", "rtt_ms": None},
           "config": {"changed": True, "restart_needed": ["audio"]}}, True,
-         "idle", "Server down", "hark · Server down"),
+         "idle", "Server down", "skriv · Server down"),
         ({"config": {"changed": True, "restart_needed": ["audio"]}}, True, "idle",
-         "Restart needed", "hark · Restart needed"),
+         "Restart needed", "skriv · Restart needed"),
         ({"config": {"changed": True, "restart_needed": []}}, True, "idle", "Config changed",
-         "hark · Config changed"),
+         "skriv · Config changed"),
     ],
 )  # fmt: skip
 def test_bar_glyph_problem_line_and_sentence(
@@ -171,11 +171,11 @@ def test_bar_glyph_problem_line_and_sentence(
 def test_problem_verbs_run_the_right_command():
     kinds = ["off", "mic", "server", "restart", "config"]
     assert model("d.k.map(M.problemCommand)", k=kinds) == [
-        ["systemctl", "--user", "start", "hark.service"],
-        ["hark", "service", "restart"],
+        ["systemctl", "--user", "start", "skriv.service"],
+        ["skriv", "service", "restart"],
         None,  # Doctor: a terminal
-        ["hark", "service", "restart"],
-        ["hark", "ctl", "reload"],
+        ["skriv", "service", "restart"],
+        ["skriv", "ctl", "reload"],
     ]
 
 
@@ -183,11 +183,11 @@ def test_problem_verbs_run_the_right_command():
 @pytest.mark.parametrize(
     ("last", "sentence"),
     [
-        ({"status": "error", "failure": "other"}, "hark · last dictation failed"),
+        ({"status": "error", "failure": "other"}, "skriv · last dictation failed"),
         ({"status": "error", "failure": "degenerate_output"},
-         "hark · last dictation failed · garbled transcript"),
-        ({"status": "paste_failed"}, "hark · paste failed, text in clipboard"),
-        ({"status": "no_speech", "flat_signal": True}, "hark · no audio from mic"),
+         "skriv · last dictation failed · garbled transcript"),
+        ({"status": "paste_failed"}, "skriv · paste failed, text in clipboard"),
+        ({"status": "no_speech", "flat_signal": True}, "skriv · no audio from mic"),
     ],
 )  # fmt: skip
 def test_a_failure_draws_attention_until_the_panel_has_shown_it(
@@ -202,7 +202,7 @@ def test_a_failure_draws_attention_until_the_panel_has_shown_it(
 def test_quiet_no_speech_is_no_failure():
     s = status(last={"utterance_id": "u1", "status": "no_speech", "flat_signal": False})
     assert model("[M.attention(d.s, true, ''), M.sentence(d.s, true, '')]", s=s) == [
-        False, "hark · ready · desktop 38 ms",
+        False, "skriv · ready · desktop 38 ms",
     ]  # fmt: skip
 
 

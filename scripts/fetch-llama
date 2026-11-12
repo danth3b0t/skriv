@@ -13,7 +13,7 @@ TAG=b12284 # 2026-11-11, llama.cpp 0.9.0-dev, commit 9e9619d03
 BASE="https://github.com/ggml-org/llama.cpp/releases/download/$TAG"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# A checkout keeps models in ./models; an installed copy (skriv-git: /usr/lib/skriv/scripts) uses the
 # XDG data dir. SKRIV_MODELS_DIR overrides both.
 if [[ -f $root/pyproject.toml ]]; then
   models="${SKRIV_MODELS_DIR:-$root/models}"

@@ -1,18 +1,18 @@
 # Maintainer: TODO <todo@example.org>
 #
-# hark: context-aware, local-first push-to-talk dictation. One package for the client daemon, skriv-server
+# skriv: context-aware, local-first push-to-talk dictation. One package for the client daemon, skriv-server
 # and their systemd user units (both machines of a laptop + GPU-desktop setup run skriv-server; see
 # packaging/aur/README.md for why this is not split).
 #
-# Python dependencies do not come from the Arch repos: hark pins CPython 3.12 (requires-python <3.13)
+# Python dependencies do not come from the Arch repos: skriv pins CPython 3.12 (requires-python <3.13)
 # while Arch ships 3.14, and it needs newer grpcio than [extra]. build() makes a self-contained tree in
-# /usr/lib/hark instead: a uv-managed CPython 3.12 (checksummed by uv) plus a venv synced from the
+# /usr/lib/skriv instead: a uv-managed CPython 3.12 (checksummed by uv) plus a venv synced from the
 # committed uv.lock with --frozen (every wheel and sdist hash-checked against the lock).
 #
 # Before the repository is public, build from a local clone:
 #   SKRIV_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
 
-pkgname=hark-git
+pkgname=skriv-git
 pkgver=0.1.0.r0.g0000000
 pkgrel=1
 pkgdesc='Context-aware, local-first push-to-talk dictation (daemon, inference server, systemd user units)'
@@ -22,7 +22,7 @@ license=('LicenseRef-TODO') # TODO: the repository has no LICENSE yet
 depends=(
   'bash'         # scripts, Omarchy adapter
   'cairo'        # pycairo
-  'curl'         # hark-llama.service readiness check
+  'curl'         # skriv-llama.service readiness check
   'libgcc'       # wheels' C/C++ extensions
   'libstdc++'
   'glib2'        # PyGObject (girepository-2.0)
@@ -48,25 +48,25 @@ optdepends=(
   'xclip: paste on X11'
   'xdotool: paste on X11'
   'tmux: caret and screen context from tmux panes'
-  'llama-cpp: llama-server for text cleanup (hark-llama.service)'
+  'llama-cpp: llama-server for text cleanup (skriv-llama.service)'
   'ggml-cuda: run llama-server on an NVIDIA GPU'
   'ggml-vulkan: run llama-server on other GPUs'
-  'openssl: hark-certs (mTLS certificates for a remote skriv-server)'
+  'openssl: skriv-certs (mTLS certificates for a remote skriv-server)'
   'tailscale: reach a skriv-server on another machine'
 )
-provides=('hark' 'skriv-server')
-conflicts=('hark' 'skriv-server')
+provides=('skriv' 'skriv-server')
+conflicts=('skriv' 'skriv-server')
 # Prebuilt manylinux wheels (auditwheel/patchelf-edited ELF files) and python-build-standalone: strip can
 # corrupt patchelf'd binaries, and there is nothing of ours to debug.
 options=('!strip' '!debug')
-source=("hark::git+${SKRIV_REPO:-$url.git}")
+source=("skriv::git+${SKRIV_REPO:-$url.git}")
 sha256sums=('SKIP')
 
 _python=3.12 # must satisfy requires-python in pyproject.toml
-_prefix=/usr/lib/hark
+_prefix=/usr/lib/skriv
 
 pkgver() {
-  cd hark
+  cd skriv
   if git describe --long --tags --abbrev=7 >/dev/null 2>&1; then
     git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
   else
@@ -92,7 +92,7 @@ _python_home() { # the uv-managed interpreter's installation directory
 }
 
 build() {
-  cd hark
+  cd skriv
   _uv_env
   local stage="$srcdir/stage$_prefix"
   rm -rf "$srcdir/stage"
@@ -100,7 +100,7 @@ build() {
 
   uv python install "$_python"
   cp -a "$(_python_home)" "$stage/python"
-  # hark needs no Tk/IDLE (and python-build-standalone's Tcl/Tk libraries carry a /tools RUNPATH)
+  # skriv needs no Tk/IDLE (and python-build-standalone's Tcl/Tk libraries carry a /tools RUNPATH)
   local stdlib="$stage/python/lib/python$_python"
   rm -rf "$stage"/python/lib/{libtcl,libtk,tcl,tk,itcl,thread}[0-9]* \
     "$stdlib"/{tkinter,idlelib,turtledemo,turtle.py} "$stdlib"/lib-dynload/_tkinter.*
@@ -120,7 +120,7 @@ check() {
 }
 
 package() {
-  cd hark
+  cd skriv
   _uv_env
   local lib="$pkgdir$_prefix"
   install -d "$pkgdir/usr/lib" "$pkgdir/usr/bin"
@@ -133,9 +133,9 @@ package() {
   ln -sfn "../../python/bin/python$_python" "$lib/venv/bin/python"
   # PEP 610 records of the local workspace build (they name a build directory), uv's lock file and
   # the private interpreter's man pages
-  rm -f "$lib"/venv/lib/python*/site-packages/hark_*.dist-info/direct_url.json "$lib/venv/.lock"
+  rm -f "$lib"/venv/lib/python*/site-packages/skriv_*.dist-info/direct_url.json "$lib/venv/.lock"
   rm -rf "$lib/python/share"
-  # Bytecode with the installed paths (nothing under /usr/lib/hark is writable at run time); the
+  # Bytecode with the installed paths (nothing under /usr/lib/skriv is writable at run time); the
   # interpreter's own caches were written while uv and check() ran it in $srcdir.
   find "$lib" -type d -name __pycache__ -prune -exec rm -rf {} +
   "$lib/python/bin/python$_python" -m compileall -q -j0 -s "$pkgdir" -p / "$lib/python/lib" "$lib/venv/lib"
@@ -146,19 +146,19 @@ package() {
 
   ln -s "$_prefix/venv/bin/skriv" "$pkgdir/usr/bin/skriv"
   ln -s "$_prefix/venv/bin/skriv-server" "$pkgdir/usr/bin/skriv-server"
-  install -Dm755 scripts/{llama-up,fetch-models,fetch-llama,hark-certs} -t "$lib/scripts"
-  ln -s "$_prefix/scripts/hark-certs" "$pkgdir/usr/bin/hark-certs"
+  install -Dm755 scripts/{llama-up,fetch-models,fetch-llama,skriv-certs} -t "$lib/scripts"
+  ln -s "$_prefix/scripts/skriv-certs" "$pkgdir/usr/bin/skriv-certs"
 
-  install -Dm644 packaging/systemd/{hark,skriv-server,hark-llama}.service -t "$pkgdir/usr/lib/systemd/user"
-  install -Dm755 packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-hark \
-    packaging/omarchy/hark-panel -t "$pkgdir/usr/bin"
-  # copied into ~/.config/omarchy/plugins by omarchy-install-dictation-hark
-  install -Dm644 packaging/omarchy/hark.shell/{manifest.json,Widget.qml,Model.js} \
-    -t "$pkgdir/usr/share/hark/omarchy/hark.shell"
+  install -Dm644 packaging/systemd/{skriv,skriv-server,skriv-llama}.service -t "$pkgdir/usr/lib/systemd/user"
+  install -Dm755 packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-skriv \
+    packaging/omarchy/skriv-panel -t "$pkgdir/usr/bin"
+  # copied into ~/.config/omarchy/plugins by omarchy-install-dictation-skriv
+  install -Dm644 packaging/omarchy/skriv.shell/{manifest.json,Widget.qml,Model.js} \
+    -t "$pkgdir/usr/share/skriv/omarchy/skriv.shell"
 
-  install -Dm644 README.md "$pkgdir/usr/share/doc/hark/README.md"
-  install -Dm644 client/README.md "$pkgdir/usr/share/doc/hark/client.md"
-  install -Dm644 server/README.md "$pkgdir/usr/share/doc/hark/server.md"
-  install -Dm644 docs/linux.md "$pkgdir/usr/share/doc/hark/linux.md"
-  install -Dm644 server/skriv-server.example.toml "$pkgdir/usr/share/doc/hark/skriv-server.example.toml"
+  install -Dm644 README.md "$pkgdir/usr/share/doc/skriv/README.md"
+  install -Dm644 client/README.md "$pkgdir/usr/share/doc/skriv/client.md"
+  install -Dm644 server/README.md "$pkgdir/usr/share/doc/skriv/server.md"
+  install -Dm644 docs/linux.md "$pkgdir/usr/share/doc/skriv/linux.md"
+  install -Dm644 server/skriv-server.example.toml "$pkgdir/usr/share/doc/skriv/skriv-server.example.toml"
 }

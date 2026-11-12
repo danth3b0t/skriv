@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Start llama-server for hark cleanup on 127.0.0.1:8080 (OpenAI-compatible /v1).
+# Start llama-server for skriv cleanup on 127.0.0.1:8080 (OpenAI-compatible /v1).
 #
 #   scripts/llama-up                         # default model (see scripts/fetch-models)
 #   scripts/llama-up qwen3-1.7b-q4_k_m       # a key from scripts/fetch-models, or a .gguf path
@@ -9,7 +9,7 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# A checkout keeps models in ./models; an installed copy (skriv-git: /usr/lib/skriv/scripts) uses the
 # XDG data dir. SKRIV_MODELS_DIR overrides both.
 if [[ -f $root/pyproject.toml ]]; then
   models="${SKRIV_MODELS_DIR:-$root/models}"
@@ -47,7 +47,7 @@ fi
 #   blow the latency budget. The template then opens the assistant turn with an empty
 #   <think> block, the exact prefix S1-mini was trained on (its model card asks for
 #   --chat-template-kwargs, not --reasoning-budget 0).
-# --temp 0: deterministic edits (the hark server also sends temperature 0).
+# --temp 0: deterministic edits (the skriv server also sends temperature 0).
 # --spec-type ngram-simple (n=1, m=4): prompt-lookup speculative decoding. Edits
 #   mostly copy the input, so drafts from it are often accepted; greedy
 #   verification keeps the output identical. ~2x faster on 1.7B (docs/bench).

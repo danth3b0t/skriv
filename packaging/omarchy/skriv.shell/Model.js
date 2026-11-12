@@ -103,9 +103,9 @@ function problemKind(status, online) {
 
 // The argv a problem's verb runs (null: Doctor, which opens a terminal).
 function problemCommand(kind) {
-  if (kind === "off") return ["systemctl", "--user", "start", "hark.service"]
-  if (kind === "mic" || kind === "restart") return ["hark", "service", "restart"]
-  if (kind === "config") return ["hark", "ctl", "reload"]
+  if (kind === "off") return ["systemctl", "--user", "start", "skriv.service"]
+  if (kind === "mic" || kind === "restart") return ["skriv", "service", "restart"]
+  if (kind === "config") return ["skriv", "ctl", "reload"]
   return null
 }
 
@@ -128,28 +128,28 @@ function serverParts(status, online) {
   return parts.filter(function(p) { return p.text !== "" })
 }
 
-// One line: "hark · ready · desktop 38 ms", or the state / the problem. Also the bar item's
+// One line: "skriv · ready · desktop 38 ms", or the state / the problem. Also the bar item's
 // accessible name.
 function sentence(status, online, seenId) {
   var p = problem(status, online)
-  if (p) return "hark · " + p.label
+  if (p) return "skriv · " + p.label
   var state = glyphState(status, online)
-  if (state === "paused") return "hark · paused"
-  if (state === "recording") return "hark · recording"
-  if (state === "working") return "hark · working"
+  if (state === "paused") return "skriv · paused"
+  if (state === "recording") return "skriv · recording"
+  if (state === "working") return "skriv · working"
   if (unseenFailure(status, seenId)) {
     var last = status.last
-    if (last.flat_signal === true) return "hark · no audio from mic"
-    if (last.status === "paste_failed") return "hark · paste failed, text in clipboard"
+    if (last.flat_signal === true) return "skriv · no audio from mic"
+    if (last.status === "paste_failed") return "skriv · paste failed, text in clipboard"
     var reason = FAILURE_WORDS[last.failure] || ""
-    return "hark · last dictation failed" + (reason !== "" ? " · " + reason : "")
+    return "skriv · last dictation failed" + (reason !== "" ? " · " + reason : "")
   }
   var server = status.server || {}
   var where = [String(server.name || ""), rtt(server)].filter(function(s) { return s !== "" }).join(" ")
-  return "hark · ready" + (where !== "" ? " · " + where : "")
+  return "skriv · ready" + (where !== "" ? " · " + where : "")
 }
 
-// ---- the last dictation (the newest `hark history -n 1 --json` record)
+// ---- the last dictation (the newest `skriv history -n 1 --json` record)
 
 function parseHistory(text) {
   var records

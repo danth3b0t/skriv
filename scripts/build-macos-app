@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# Build dist/Hark.app: a menu-bar app that owns hark's macOS permissions (Microphone,
+# Build dist/Skriv.app: a menu-bar app that owns skriv's macOS permissions (Microphone,
 # Accessibility, Input Monitoring) instead of the terminal.
 #
 #   scripts/build-macos-app                       # ad-hoc signed (see below)
-#   SKRIV_CODESIGN_IDENTITY="Hark Dev" scripts/build-macos-app   # a stable self-signed identity
-#   open dist/Hark.app                            # or drag it to /Applications first
+#   SKRIV_CODESIGN_IDENTITY="Skriv Dev" scripts/build-macos-app   # a stable self-signed identity
+#   open dist/Skriv.app                            # or drag it to /Applications first
 #
 # The bundle is a native launcher (packaging/macos/launcher.swift) + Info.plist; it runs this
 # checkout's .venv in its own process, so Python edits need no rebuild. Rebuild after moving
@@ -13,7 +13,7 @@
 # Signing and TCC: grants are keyed on the code signature. Ad-hoc ("-") signatures are a hash
 # of the bundle, which this build reproduces byte for byte as long as the launcher and the
 # plist are unchanged, so grants survive plain rebuilds; any change to either means granting
-# again (System Settings may then show two "Hark" entries; remove the stale one). A self-signed
+# again (System Settings may then show two "Skriv" entries; remove the stale one). A self-signed
 # code-signing certificate keeps grants across launcher changes too. See README.md.
 set -euo pipefail
 
@@ -22,24 +22,24 @@ cd "$root"
 [[ "$(uname -s)" == Darwin ]] || { echo "build-macos-app: macOS only" >&2; exit 1; }
 identity="${SKRIV_CODESIGN_IDENTITY:--}"
 venv="$root/.venv"
-app="$root/dist/Hark.app"
+app="$root/dist/Skriv.app"
 
 [[ -f "$venv/pyvenv.cfg" ]] || uv sync
 mkdir -p "$root/dist"
 stage="$(mktemp -d "$root/dist/.stage.XXXXXX")"
 trap 'rm -rf "$stage"' EXIT
-contents="$stage/Hark.app/Contents"
+contents="$stage/Skriv.app/Contents"
 mkdir -p "$contents/MacOS"
 
-swiftc -O -o "$contents/MacOS/Hark" packaging/macos/launcher.swift 2> >(grep -v "Xcode platforms folder" >&2)
+swiftc -O -o "$contents/MacOS/Skriv" packaging/macos/launcher.swift 2> >(grep -v "Xcode platforms folder" >&2)
 uv run --frozen python -m skriv_client.bundle "$contents/Info.plist" --venv "$venv"
 printf 'APPL????' > "$contents/PkgInfo"
 
 # No hardened runtime: the launcher loads the uv-managed libpython and extension modules from
 # outside the bundle, which library validation would refuse. Notarization needs both; README.md.
-codesign --force --sign "$identity" --identifier dev.hark.Hark "$stage/Hark.app" 2> >(grep -v "replacing existing signature" >&2)
-codesign --verify --strict "$stage/Hark.app"
+codesign --force --sign "$identity" --identifier dev.skriv.Skriv "$stage/Skriv.app" 2> >(grep -v "replacing existing signature" >&2)
+codesign --verify --strict "$stage/Skriv.app"
 
 rm -rf "$app"
-mv "$stage/Hark.app" "$app"
+mv "$stage/Skriv.app" "$app"
 echo "build-macos-app: $app ($(codesign -dvvv "$app" 2>&1 | sed -n 's/^CDHash=/cdhash /p'), identity ${identity/#-/ad-hoc})"

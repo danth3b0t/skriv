@@ -7,16 +7,16 @@ import qs.Commons as Commons
 import qs.Ui
 import "Model.js" as Model
 
-// hark's bar glyph and quick panel (design/SPEC.md §5, §6). Facts come from the daemon's
+// skriv's bar glyph and quick panel (design/SPEC.md §5, §6). Facts come from the daemon's
 // control socket (`subscribe`, docs/protocol/ctl-v1.md), which never carries dictated text;
-// the last dictation's text is read from `hark history -n 1 --json` when the panel opens and
-// is never logged. Actions run hark's CLI. Labels and rules live in Model.js.
+// the last dictation's text is read from `skriv history -n 1 --json` when the panel opens and
+// is never logged. Actions run skriv's CLI. Labels and rules live in Model.js.
 //
 // UNTESTED on hardware: written against Omarchy 4 (quattro) shell sources; see docs/linux.md.
 Panel {
   id: root
-  moduleName: "hark.shell"
-  ipcTarget: "hark.shell"
+  moduleName: "skriv.shell"
+  ipcTarget: "skriv.shell"
   manageIpc: false
 
   // ---- facts
@@ -26,7 +26,7 @@ Panel {
   property string seenId: ""  // the last dictation shown in the panel (clears attention)
   property var record: null  // newest history record, read when the panel opens
   property string cursor: "last"
-  property string wantCursor: ""  // hark-panel: "last"; kept while the panel is open
+  property string wantCursor: ""  // skriv-panel: "last"; kept while the panel is open
   property bool cursorMoved: false  // by a key or the pointer since the panel opened
   property var pendingArgv: null  // runs once the panel has closed and focus is back
 
@@ -66,7 +66,7 @@ Panel {
     return barForeground
   }
 
-  // ---- actions (hark's CLI through a login shell, so ~/.local/bin is on PATH)
+  // ---- actions (skriv's CLI through a login shell, so ~/.local/bin is on PATH)
   function run(argv) { Util.execArgv(argv) }
 
   function afterClose(argv) {
@@ -75,17 +75,17 @@ Panel {
     afterCloseTimer.restart()
   }
 
-  function copyLast() { run(["hark", "last", "--copy"]); close() }
-  function pasteLast() { afterClose(["hark", "ctl", "paste-last"]) }
-  function retryLast() { if (last && last.canRetry) afterClose(["hark", "retry", "last"]) }
-  function togglePause() { if (online) run(["hark", "ctl", paused ? "resume" : "pause"]) }
+  function copyLast() { run(["skriv", "last", "--copy"]); close() }
+  function pasteLast() { afterClose(["skriv", "ctl", "paste-last"]) }
+  function retryLast() { if (last && last.canRetry) afterClose(["skriv", "retry", "last"]) }
+  function togglePause() { if (online) run(["skriv", "ctl", paused ? "resume" : "pause"]) }
   function editConfig() {
     var base = Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
     run(["omarchy-launch-editor", base + "/skriv/config.toml"])
     close()
   }
   function doctor() {
-    run(["omarchy-launch-floating-terminal-with-presentation", "hark doctor"])
+    run(["omarchy-launch-floating-terminal-with-presentation", "skriv doctor"])
     close()
   }
   function fixProblem() {
@@ -152,7 +152,7 @@ Panel {
     function open(): void { root.open() }
     function close(): void { root.close() }
     function toggle(): void { root.toggle() }
-    // hark-panel (Super Alt D): open with the cursor on the last dictation, or close
+    // skriv-panel (Super Alt D): open with the cursor on the last dictation, or close
     function toggleAt(cursor: string): void { if (root.opened) root.close(); else root.openAt(cursor) }
     function status(): string { return root.sentence }
   }
@@ -213,7 +213,7 @@ Panel {
 
   Process {
     id: historyProc
-    command: ["bash", "-lc", "exec hark history -n 1 --json"]
+    command: ["bash", "-lc", "exec skriv history -n 1 --json"]
     stdout: StdioCollector {
       waitForEnd: true
       onStreamFinished: {
@@ -252,7 +252,7 @@ Panel {
     Accessible.role: Accessible.StatusBar
     Accessible.name: root.sentence
     onPressed: function(b) {
-      if (b === Qt.MiddleButton) root.run(["hark", "ctl", "paste-last"])
+      if (b === Qt.MiddleButton) root.run(["skriv", "ctl", "paste-last"])
       else if (b === Qt.LeftButton) root.toggle()
     }
 
@@ -307,7 +307,7 @@ Panel {
         width: parent.width
         spacing: Style.space(18)
 
-        // header: mark, hark, server · rtt, and the Pause / Resume text control
+        // header: mark, skriv, server · rtt, and the Pause / Resume text control
         RowLayout {
           width: parent.width
           spacing: Style.space(8)
@@ -319,7 +319,7 @@ Panel {
             Layout.alignment: Qt.AlignVCenter
           }
           Text {
-            text: "hark"
+            text: "skriv"
             textFormat: Text.PlainText
             color: root.foreground
             font.family: root.fontFamily
@@ -544,7 +544,7 @@ Panel {
     }
   }
 
-  // hark's mark: three bars, short tall short
+  // skriv's mark: three bars, short tall short
   component Mark: Item {
     id: mark
     property real size: 12

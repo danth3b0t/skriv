@@ -1,10 +1,10 @@
 {
   "schemaVersion": 1,
-  "id": "hark.shell",
-  "name": "hark",
+  "id": "skriv.shell",
+  "name": "skriv",
   "version": "0.1.0",
-  "author": "hark",
-  "description": "hark dictation: state in the bar and a quick panel to copy, paste or retry the last dictation, pause, and fix problems.",
+  "author": "skriv",
+  "description": "skriv dictation: state in the bar and a quick panel to copy, paste or retry the last dictation, pause, and fix problems.",
   "kinds": [
     "bar-widget"
   ],
@@ -12,7 +12,7 @@
     "barWidget": "Widget.qml"
   },
   "barWidget": {
-    "displayName": "hark",
+    "displayName": "skriv",
     "description": "Dictation state; the panel copies, pastes or retries the last dictation (Super Alt D).",
     "category": "Input",
     "allowMultiple": false,

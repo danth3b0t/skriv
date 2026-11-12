@@ -42,7 +42,7 @@ sha256() {
 }
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# A checkout keeps models in ./models; an installed copy (skriv-git: /usr/lib/skriv/scripts) uses the
 # XDG data dir. SKRIV_MODELS_DIR overrides both.
 if [[ -f $root/pyproject.toml ]]; then
   models="${SKRIV_MODELS_DIR:-$root/models}"

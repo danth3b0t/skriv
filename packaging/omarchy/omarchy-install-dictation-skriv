@@ -1,0 +1,73 @@
+#!/bin/bash
+
+# omarchy:summary=Install and configure skriv dictation
+#
+# Installs and starts the skriv systemd user unit (`skriv service install`), then selects skriv as Omarchy's
+# dictation backend (omarchy-dictation-use stops the previous backend). From a checkout it also links the
+# adapter scripts into ~/.local/bin; the skriv-git package puts them in /usr/bin. On Omarchy 4's shell it adds
+# skriv's bar widget and quick panel (the skriv.shell plugin, copied into ~/.config/omarchy/plugins) and binds
+# Super Alt D to open the panel (two marked lines in ~/.config/hypr/bindings.lua). Touches nothing else: no
+# shell rc files, and Omarchy keeps the dictation keys (Right Alt hold, Alt+Space toggle). Ends with
+# `skriv doctor`. omarchy-remove-dictation-skriv undoes all of it.
+
+set -euo pipefail
+
+if (($# > 0)) && [[ $1 != "--background" ]]; then
+  echo "Usage: omarchy-install-dictation-skriv [--background]" >&2
+  exit 1
+fi
+
+here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
+config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+bind_mark="-- skriv: dictation panel (omarchy-remove-dictation-skriv removes this line and the next)"
+skriv=$(command -v skriv || true)
+if [[ -z $skriv ]]; then
+  echo "skriv is not on PATH: install the skriv-git package, or from the skriv repo: uv tool install --editable ./client" >&2
+  exit 1
+fi
+
+if [[ $here != /usr/bin ]]; then # running from a checkout: put the adapter on PATH
+  bin="$HOME/.local/bin"
+  mkdir -p "$bin"
+  for script in omarchy-dictation-skriv omarchy-remove-dictation-skriv skriv-panel; do
+    ln -sfn "$here/$script" "$bin/$script"
+  done
+  plugin_src="$here/skriv.shell"
+else
+  plugin_src=/usr/share/skriv/omarchy/skriv.shell
+fi
+
+"$skriv" service install client
+omarchy-dictation-use skriv
+
+if command -v omarchy-shell >/dev/null 2>&1; then
+  # Copies, not links: the shell refuses a plugin folder that holds symlinks. Staged outside the
+  # plugins folder (the shell watches it), then swapped in.
+  plugin="$config_home/omarchy/plugins/skriv.shell"
+  staged=$(mktemp -d "${TMPDIR:-/tmp}/skriv.shell.XXXXXX")
+  cp "$plugin_src/manifest.json" "$plugin_src/Widget.qml" "$plugin_src/Model.js" "$staged/"
+  chmod 755 "$staged"
+  mkdir -p "${plugin%/*}"
+  rm -rf "$plugin"
+  mv "$staged" "$plugin"
+  if omarchy-shell shell rescanPlugins >/dev/null && omarchy-plugin-enable skriv.shell; then
+    echo "skriv is in the bar (right section); move it with: omarchy bar move skriv.shell"
+  else
+    echo "note: the shell did not take skriv's bar widget now; later run: omarchy plugin enable skriv.shell" >&2
+  fi
+
+  bindings="$config_home/hypr/bindings.lua"
+  if [[ ! -f $bindings ]]; then
+    echo "note: no $bindings; bind Super Alt D to skriv-panel yourself" >&2
+  elif ! grep -qxF -- "$bind_mark" "$bindings"; then
+    printf '\n%s\n%s\n' "$bind_mark" 'o.bind("SUPER + ALT + D", "Dictation panel", "skriv-panel")' >>"$bindings"
+    if command -v omarchy-restart-hyprctl >/dev/null 2>&1; then
+      omarchy-restart-hyprctl
+    fi
+  fi
+else
+  echo "note: no omarchy-shell (Omarchy 4): skipped skriv's bar widget and the Super Alt D panel" >&2
+fi
+
+echo "skriv is Omarchy's dictation backend: hold Right Alt or press Alt+Space; Super Alt D opens its panel."
+"$skriv" doctor || true

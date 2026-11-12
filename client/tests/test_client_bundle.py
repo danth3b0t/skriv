@@ -1,4 +1,4 @@
-"""Hark.app Info.plist (scripts/build-macos-app)."""
+"""Skriv.app Info.plist (scripts/build-macos-app)."""
 
 from __future__ import annotations
 
@@ -20,13 +20,13 @@ def test_info_plist_is_a_menu_bar_app_that_runs_the_venv(tmp_path: Path):
     out = tmp_path / "Info.plist"
     assert bundle.main([str(out), "--venv", str(venv)]) == 0
     info = cast("dict[str, object]", plistlib.loads(out.read_bytes()))
-    assert info["CFBundleIdentifier"] == "dev.hark.Hark"  # TCC grants hang on this + signature
-    assert info["CFBundleExecutable"] == "Hark"
+    assert info["CFBundleIdentifier"] == "dev.skriv.Skriv"  # TCC grants hang on this + signature
+    assert info["CFBundleExecutable"] == "Skriv"
     assert info["CFBundlePackageType"] == "APPL"
     assert info["LSUIElement"] is True
     assert "voice" in str(info["NSMicrophoneUsageDescription"])
     assert info["NSAppleEventsUsageDescription"]
-    assert info["HarkVenv"] == str(venv)
+    assert info["SkrivVenv"] == str(venv)
     assert info["CFBundleShortVersionString"] == info["CFBundleVersion"] != ""
 
 

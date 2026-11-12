@@ -1,19 +1,19 @@
-// Hark.app's main executable (Contents/MacOS/Hark).
+// Skriv.app's main executable (Contents/MacOS/Skriv).
 //
-// It runs the hark client *in this process* by loading the uv-managed CPython (libpython) and
+// It runs the skriv client *in this process* by loading the uv-managed CPython (libpython) and
 // calling Py_BytesMain with the venv's interpreter path as argv[0], so `python -m skriv_client
 // app` runs inside the bundle's own executable:
 //
 // - TCC (Microphone, Accessibility, Input Monitoring) attributes access to the *responsible*
 //   process. Launched from Finder/`open`/a login item, that is this executable (ppid 1), so the
-//   grants belong to Hark.app (bundle id + code signature), not to Terminal or python3.12.
+//   grants belong to Skriv.app (bundle id + code signature), not to Terminal or python3.12.
 // - Started from another process (a shell), it would inherit that process's responsibility;
 //   it then re-spawns itself with responsibility disclaimed (the `responsibility_spawnattrs_
-//   setdisclaim` SPI Qt Creator and others use), so it is still Hark that asks and is granted.
-// - NSBundle.mainBundle is Hark.app, which SMAppService.mainApp (launch at login) and the usage
+//   setdisclaim` SPI Qt Creator and others use), so it is still Skriv that asks and is granted.
+// - NSBundle.mainBundle is Skriv.app, which SMAppService.mainApp (launch at login) and the usage
 //   strings in Info.plist (NSMicrophoneUsageDescription) need.
 //
-// Info.plist key `HarkVenv` (written by scripts/build-macos-app) is the absolute path of the
+// Info.plist key `SkrivVenv` (written by scripts/build-macos-app) is the absolute path of the
 // virtualenv to run; the env var SKRIV_VENV overrides it. Python code is not copied into the
 // bundle, so editing it never changes the signature (and never invalidates the TCC grants).
 // Without a terminal, stdout/stderr go to ~/Library/Logs/skriv/app.log.
@@ -25,7 +25,7 @@ let disclaimedEnv = "SKRIV_LAUNCHER_DISCLAIMED"
 var childPid: pid_t = 0
 
 func say(_ message: String) {
-    FileHandle.standardError.write(Data("Hark: \(message)\n".utf8))
+    FileHandle.standardError.write(Data("Skriv: \(message)\n".utf8))
 }
 
 func fail(_ message: String) -> Never {
@@ -33,7 +33,7 @@ func fail(_ message: String) -> Never {
     if isatty(STDERR_FILENO) == 0 {  // launched from Finder: nobody reads the log
         CFUserNotificationDisplayNotice(
             0, kCFUserNotificationStopAlertLevel, nil, nil, nil,
-            "Hark cannot start" as CFString, message as CFString, nil)
+            "Skriv cannot start" as CFString, message as CFString, nil)
     }
     exit(1)
 }
@@ -102,8 +102,8 @@ if isatty(STDERR_FILENO) == 0 {
 }
 
 guard let venv = ProcessInfo.processInfo.environment["SKRIV_VENV"]
-    ?? (Bundle.main.object(forInfoDictionaryKey: "HarkVenv") as? String)
-else { fail("Info.plist has no HarkVenv; rebuild with scripts/build-macos-app") }
+    ?? (Bundle.main.object(forInfoDictionaryKey: "SkrivVenv") as? String)
+else { fail("Info.plist has no SkrivVenv; rebuild with scripts/build-macos-app") }
 
 let cfg = readVenvConfig(venv)
 guard let home = cfg["home"], let version = cfg["version_info"] ?? cfg["version"] else {
@@ -120,7 +120,7 @@ guard let main = dlsym(lib, "Py_BytesMain") else { fail("\(libpython) has no Py_
 typealias PyBytesMain = @convention(c) (Int32, UnsafeMutablePointer<UnsafeMutablePointer<CChar>?>?) -> Int32
 
 // argv[0] = the venv's python: CPython finds pyvenv.cfg next to it, so sys.prefix is the venv
-// and sys.executable is a real interpreter (for `hark retry` and other children).
+// and sys.executable is a real interpreter (for `skriv retry` and other children).
 // Launch Services may add -psn_* arguments; drop them.
 let extra = CommandLine.arguments.dropFirst().filter { !$0.hasPrefix("-psn_") }
 let args = [python, "-m", "skriv_client", "app"] + extra

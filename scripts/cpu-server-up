@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Run skriv-server on the transcribe.cpp backend: the local, offline ASR fallback
 # (Parakeet TDT 0.6B v3 GGUF). Fails fast with a hint when something is missing, so it
-# can run as a service (packaging/systemd/hark-cpu-server.service).
+# can run as a service (packaging/systemd/skriv-cpu-server.service).
 #
 #   scripts/cpu-server-up                          # CPU on 127.0.0.1:50052
 #   scripts/cpu-server-up --device metal           # Apple GPU (or vulkan / cuda, if built so)

@@ -1,4 +1,4 @@
-"""scripts/hark-certs: the certificates it makes give a working mTLS session between hark and
+"""scripts/skriv-certs: the certificates it makes give a working mTLS session between skriv and
 skriv-server, and the server turns away clients without one of them."""
 
 from __future__ import annotations
@@ -25,7 +25,7 @@ if TYPE_CHECKING:
 
     from skriv_server.server import Running
 
-CERTS = Path(__file__).parents[2] / "scripts" / "hark-certs"
+CERTS = Path(__file__).parents[2] / "scripts" / "skriv-certs"
 SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)
 
 pytestmark = pytest.mark.skipif(shutil.which("openssl") is None, reason="needs openssl")

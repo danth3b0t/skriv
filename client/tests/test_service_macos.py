@@ -1,5 +1,5 @@
-"""`hark service` on macOS: launchd agent plists and the install/status/restart/uninstall CLI (fake
-launchctl, temporary home), and Hark.app's LaunchAgent login-item fallback."""
+"""`skriv service` on macOS: launchd agent plists and the install/status/restart/uninstall CLI (fake
+launchctl, temporary home), and Skriv.app's LaunchAgent login-item fallback."""
 
 from __future__ import annotations
 
@@ -19,7 +19,7 @@ from skriv_server import config as server_config
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
 
-PRINT_RUNNING = """gui/501/dev.hark.server = {
+PRINT_RUNNING = """gui/501/dev.skriv.server = {
 \tactive count = 1
 \tstate = running
 \tpid = 4242
@@ -82,8 +82,8 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     lay, fake = stack
     assert main(["service", "install", "--backend", "mock"]) == 0
     home = lay.home
-    llama = read(home / "Library/LaunchAgents/dev.hark.llama.plist")
-    server = read(home / "Library/LaunchAgents/dev.hark.server.plist")
+    llama = read(home / "Library/LaunchAgents/dev.skriv.llama.plist")
+    server = read(home / "Library/LaunchAgents/dev.skriv.server.plist")
     assert llama["ProgramArguments"] == [str(lay.root / "scripts/llama-up"), "s1-mini-q4_k_m"]
     assert server["ProgramArguments"] == [
         str(lay.venv / "bin/skriv-server"), "--backend", "mock",
@@ -102,26 +102,26 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert (
         "bootstrap",
         f"gui/{uid}",
-        str(home / "Library/LaunchAgents/dev.hark.llama.plist"),
+        str(home / "Library/LaunchAgents/dev.skriv.llama.plist"),
     ) in fake.calls
-    assert fake.loaded == {"dev.hark.llama", "dev.hark.server"}
+    assert fake.loaded == {"dev.skriv.llama", "dev.skriv.server"}
     capsys.readouterr()
 
     assert main(["service", "status"]) == 0
     out = capsys.readouterr().out
-    assert "dev.hark.server" in out
+    assert "dev.skriv.server" in out
     assert "running" in out
     assert "pid 4242" in out
     assert main(["service", "restart"]) == 0
-    assert ("kickstart", "-k", f"gui/{uid}/dev.hark.server") in fake.calls
+    assert ("kickstart", "-k", f"gui/{uid}/dev.skriv.server") in fake.calls
 
     # reinstall without cleanup: the llama agent goes, the server loses its cleanup flags
     assert main(["service", "install", "--no-cleanup", "--backend", "mock"]) == 0
-    assert not (home / "Library/LaunchAgents/dev.hark.llama.plist").exists()
-    assert read(home / "Library/LaunchAgents/dev.hark.server.plist")["ProgramArguments"] == [
+    assert not (home / "Library/LaunchAgents/dev.skriv.llama.plist").exists()
+    assert read(home / "Library/LaunchAgents/dev.skriv.server.plist")["ProgramArguments"] == [
         str(lay.venv / "bin/skriv-server"), "--backend", "mock",
     ]  # fmt: skip
-    assert fake.loaded == {"dev.hark.server"}
+    assert fake.loaded == {"dev.skriv.server"}
 
     assert main(["service", "uninstall"]) == 0
     assert not list((home / "Library/LaunchAgents").iterdir())
@@ -170,11 +170,11 @@ def test_the_client_is_not_a_launchd_service(
 
 
 def test_login_item_falls_back_to_a_launch_agent_outside_an_app_bundle(tmp_path: Path):
-    app = tmp_path / "Hark.app"
+    app = tmp_path / "Skriv.app"
     assert not service.login_item_enabled(tmp_path)
     service.set_login_item(tmp_path, app, enabled=True)
     assert service.login_item_enabled(tmp_path)
-    plist = read(tmp_path / "Library/LaunchAgents/dev.hark.app.plist")
+    plist = read(tmp_path / "Library/LaunchAgents/dev.skriv.app.plist")
     assert plist["ProgramArguments"] == ["/usr/bin/open", "-a", str(app)]
     assert plist["RunAtLoad"] is True
     service.set_login_item(tmp_path, app, enabled=False)

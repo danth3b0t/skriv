@@ -1,4 +1,4 @@
-"""`hark service` on Linux: unit generation, install/uninstall/status/restart against a fake systemctl,
+"""`skriv service` on Linux: unit generation, install/uninstall/status/restart against a fake systemctl,
 and the daemon's sd_notify watchdog."""
 
 from __future__ import annotations
@@ -116,14 +116,14 @@ def test_install_writes_units_imports_the_session_and_starts(
         )
         == 0
     )
-    unit = tmp_path / "config" / "systemd" / "user" / "hark.service"
+    unit = tmp_path / "config" / "systemd" / "user" / "skriv.service"
     assert unit.read_text() == linux.render("client", DEV)
     assert unit.stat().st_mode & 0o777 == 0o644
     assert fake.systemctl() == [
         ["import-environment", "WAYLAND_DISPLAY", "HYPRLAND_INSTANCE_SIGNATURE",
          "XDG_CURRENT_DESKTOP"],
         ["daemon-reload"],
-        ["enable", "--now", "hark.service"],
+        ["enable", "--now", "skriv.service"],
     ]  # fmt: skip
     out = capsys.readouterr().out
     assert "exec-once = systemctl --user import-environment WAYLAND_DISPLAY" in out
@@ -138,16 +138,16 @@ def test_install_outside_a_session_imports_nothing(
         backend.install(["client"], service.InstallOptions(start=False, force=False, dry_run=False))
         == 0
     )
-    assert fake.systemctl() == [["daemon-reload"], ["enable", "hark.service"]]
+    assert fake.systemctl() == [["daemon-reload"], ["enable", "skriv.service"]]
     assert "no WAYLAND_DISPLAY/DISPLAY" in capsys.readouterr().err
 
 
 def test_install_keeps_a_unit_it_did_not_write_unless_forced(
     tmp_path: Path, capsys: pytest.CaptureFixture[str]
 ):
-    unit = tmp_path / "config" / "systemd" / "user" / "hark.service"
+    unit = tmp_path / "config" / "systemd" / "user" / "skriv.service"
     unit.parent.mkdir(parents=True)
-    unit.write_text("[Service]\nExecStart=/opt/my-hark run\n")
+    unit.write_text("[Service]\nExecStart=/opt/my-skriv run\n")
     fake = FakeSystemctl()
     assert (
         make(tmp_path, fake).install(
@@ -155,8 +155,8 @@ def test_install_keeps_a_unit_it_did_not_write_unless_forced(
         )
         == 1
     )
-    assert "not written by hark" in capsys.readouterr().err
-    assert unit.read_text() == "[Service]\nExecStart=/opt/my-hark run\n"
+    assert "not written by skriv" in capsys.readouterr().err
+    assert unit.read_text() == "[Service]\nExecStart=/opt/my-skriv run\n"
     assert fake.calls == []
     assert (
         make(tmp_path, fake).install(
@@ -178,9 +178,9 @@ def test_packaged_install_enables_the_package_units(
         )
         == 1
     )
-    assert "reinstall hark-git" in capsys.readouterr().err  # the package's unit is missing
+    assert "reinstall skriv-git" in capsys.readouterr().err  # the package's unit is missing
     (tmp_path / "vendor").mkdir()
-    for unit in ("hark-server.service", "hark-llama.service"):
+    for unit in ("skriv-server.service", "skriv-llama.service"):
         (tmp_path / "vendor" / unit).write_text("")
     assert (
         backend.install(
@@ -191,7 +191,7 @@ def test_packaged_install_enables_the_package_units(
     assert not (tmp_path / "config" / "systemd").exists()
     assert fake.systemctl() == [
         ["daemon-reload"],
-        ["enable", "--now", "hark-server.service", "hark-llama.service"],
+        ["enable", "--now", "skriv-server.service", "skriv-llama.service"],
     ]
     out = capsys.readouterr().out
     assert "server.toml, which does not exist" in out
@@ -210,7 +210,7 @@ def test_dry_run_prints_and_changes_nothing(tmp_path: Path, capsys: pytest.Captu
     assert not (tmp_path / "config").exists()
     out = capsys.readouterr().out
     assert linux.render("client", DEV) in out
-    assert "systemctl --user enable --now hark.service" in out
+    assert "systemctl --user enable --now skriv.service" in out
 
 
 def test_systemctl_failure_is_reported(tmp_path: Path, capsys: pytest.CaptureFixture[str]):
@@ -231,13 +231,13 @@ def test_uninstall_removes_only_generated_units(tmp_path: Path):
         ["client", "server"], service.InstallOptions(start=True, force=False, dry_run=False)
     )
     user_units = tmp_path / "config" / "systemd" / "user"
-    (user_units / "hark-server.service").write_text("[Service]\nExecStart=/opt/mine\n")
+    (user_units / "skriv-server.service").write_text("[Service]\nExecStart=/opt/mine\n")
     fake.calls.clear()
     assert backend.uninstall(["client", "server"]) == 0
-    assert not (user_units / "hark.service").exists()
-    assert (user_units / "hark-server.service").exists()
+    assert not (user_units / "skriv.service").exists()
+    assert (user_units / "skriv-server.service").exists()
     assert fake.systemctl() == [
-        ["disable", "--now", "hark.service", "hark-server.service"],
+        ["disable", "--now", "skriv.service", "skriv-server.service"],
         ["daemon-reload"],
     ]
 
@@ -248,7 +248,7 @@ ActiveState=active
 SubState=running
 UnitFileState=enabled
 NRestarts=2
-FragmentPath=/home/u/.config/systemd/user/hark.service
+FragmentPath=/home/u/.config/systemd/user/skriv.service
 
 LoadState=not-found
 ActiveState=inactive
@@ -269,13 +269,13 @@ def test_status_reads_systemd_and_exits_3_unless_all_run(
     assert code == service.EXIT_NOT_RUNNING
     lines = capsys.readouterr().out.splitlines()
     assert lines[0].split() == [
-        "client", "hark.service", "running,", "enabled", "(running,", "2", "restarts,",
-        "/home/u/.config/systemd/user/hark.service)",
+        "client", "skriv.service", "running,", "enabled", "(running,", "2", "restarts,",
+        "/home/u/.config/systemd/user/skriv.service)",
     ]  # fmt: skip
-    assert lines[1].split() == ["llama", "hark-llama.service", "not", "installed"]
+    assert lines[1].split() == ["llama", "skriv-llama.service", "not", "installed"]
     show = fake.systemctl()[0]
     assert show[0] == "show"
-    assert show[2:] == ["hark.service", "hark-llama.service"]
+    assert show[2:] == ["skriv.service", "skriv-llama.service"]
     fake.show = SHOW.split("\n\n", maxsplit=1)[0]
     assert service.main("status", ["client"], no_start=False, force=False, dry_run=False) == 0
 
@@ -287,9 +287,9 @@ def test_restart_and_default_status_cover_only_installed_units(
     fake = FakeSystemctl(show=f"{client}\n\n{missing}\n{missing}")  # client, server, llama
     monkeypatch.setattr(service, "backend", lambda: make(tmp_path, fake))
     assert service.main("restart", []) == 0
-    assert fake.systemctl()[-1] == ["restart", "hark.service"]
+    assert fake.systemctl()[-1] == ["restart", "skriv.service"]
     assert service.main("status", []) == 0  # server and llama are not installed: not counted
-    assert capsys.readouterr().out.splitlines()[-1].split()[:2] == ["client", "hark.service"]
+    assert capsys.readouterr().out.splitlines()[-1].split()[:2] == ["client", "skriv.service"]
     fake.show = f"{missing}\n{missing}\n{missing}"
     assert service.main("restart", []) == 1
     assert "no skriv services installed" in capsys.readouterr().out

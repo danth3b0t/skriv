@@ -1,12 +1,12 @@
-"""macOS launchd user agents for the local inference stack, and Hark.app's login item.
+"""macOS launchd user agents for the local inference stack, and Skriv.app's login item.
 
-The ``hark service`` backend on macOS (components ``server`` and ``llama``; the client is
-Hark.app). ``hark service install`` writes ``~/Library/LaunchAgents/dev.hark.{llama,server}.plist`` and
+The ``skriv service`` backend on macOS (components ``server`` and ``llama``; the client is
+Skriv.app). ``skriv service install`` writes ``~/Library/LaunchAgents/dev.skriv.{llama,server}.plist`` and
 bootstraps them into the GUI session: llama-server (cleanup, via scripts/llama-up) and
 skriv-server (ASR), the same commands scripts/poc-up starts, kept alive by launchd and logging to
 ``~/Library/Logs/skriv/{llama,server}.log``. They run from this source checkout and its venv.
 
-Launch at login for Hark.app uses ``SMAppService.mainApp`` (macOS 13+, works ad-hoc signed) and
+Launch at login for Skriv.app uses ``SMAppService.mainApp`` (macOS 13+, works ad-hoc signed) and
 falls back to a LaunchAgent that ``open``s the bundle.
 """
 # pyright: reportAny=false, reportExplicitAny=false
@@ -34,12 +34,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("skriv.service")
 
-LLAMA = "dev.hark.llama"
-SERVER = "dev.hark.server"
-APP = "dev.hark.app"  # login-item fallback (LaunchAgent)
+LLAMA = "dev.skriv.llama"
+SERVER = "dev.skriv.server"
+APP = "dev.skriv.app"  # login-item fallback (LaunchAgent)
 LLAMA_URL = "http://127.0.0.1:8080/v1"
 PORTS = {LLAMA: 8080, SERVER: 50051}
-LABELS = {"server": SERVER, "llama": LLAMA}  # `hark service` component -> agent
+LABELS = {"server": SERVER, "llama": LLAMA}  # `skriv service` component -> agent
 
 
 @dataclass(frozen=True)
@@ -66,7 +66,7 @@ def layout() -> Layout:
     """This interpreter's venv and the checkout skriv_client was installed from (editable)."""
     root = Path(__file__).resolve().parents[4]
     if not (root / "scripts" / "llama-up").is_file():
-        raise ServiceError(f"hark service needs a source checkout (no scripts/llama-up in {root})")
+        raise ServiceError(f"skriv service needs a source checkout (no scripts/llama-up in {root})")
     return Layout(root=root, venv=Path(sys.prefix), home=Path.home())
 
 
@@ -243,7 +243,9 @@ class LaunchdBackend:
         if not opts.start or opts.force or opts.dry_run:
             return _fail("--no-start, --force and --dry-run are for systemd units (Linux)", 2)
         if "server" not in components:
-            return _fail("llama-server runs for skriv-server: hark service install server llama", 2)
+            return _fail(
+                "llama-server runs for skriv-server: skriv service install server llama", 2
+            )
         try:
             lay = layout()
             model = (
@@ -254,7 +256,7 @@ class LaunchdBackend:
             install(lay, backend=opts.asr_backend or default_asr_backend(), cleanup_model=model)
         except ServiceError as e:
             return _fail(str(e), 1)
-        print("check with `hark service status` and `hark doctor`")
+        print("check with `skriv service status` and `skriv doctor`")
         return 0
 
     def uninstall(self, components: Sequence[str]) -> int:
@@ -263,7 +265,7 @@ class LaunchdBackend:
         except ServiceError as e:
             return _fail(str(e), 1)
         if not uninstall(lay, [LABELS[c] for c in components]):
-            print("no hark services installed")
+            print("no skriv services installed")
         return 0
 
     def status(self, components: Sequence[str]) -> list[Status]:
@@ -298,7 +300,7 @@ class LaunchdBackend:
 
 
 def _fail(message: str, code: int) -> int:
-    print(f"hark service: {message}", file=sys.stderr)
+    print(f"skriv service: {message}", file=sys.stderr)
     return code
 
 
@@ -306,7 +308,7 @@ def backend() -> LaunchdBackend:
     return LaunchdBackend()
 
 
-# --- Hark.app launch at login -------------------------------------------------------------
+# --- Skriv.app launch at login -------------------------------------------------------------
 
 
 def _sm_app_service() -> Any | None:  # noqa: ANN401 - pyobjc is untyped
@@ -361,13 +363,13 @@ def set_login_item(home: Path, app: Path, *, enabled: bool) -> str:
         if not ok:
             raise ServiceError(f"SMAppService: {err.localizedDescription() if err else '?'}")
         if int(svc.status()) == SM_REQUIRES_APPROVAL:
-            return "Allow Hark in System Settings > General > Login Items"
-        return "Hark opens at login" if enabled else "Hark no longer opens at login"
+            return "Allow Skriv in System Settings > General > Login Items"
+        return "Skriv opens at login" if enabled else "Skriv no longer opens at login"
     path = home / "Library" / "LaunchAgents" / f"{APP}.plist"
     if enabled:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(plistlib.dumps(app_login_plist(app), sort_keys=True))
-        return "Hark opens at login (LaunchAgent)"
+        return "Skriv opens at login (LaunchAgent)"
     with contextlib.suppress(FileNotFoundError):
         path.unlink()
-    return "Hark no longer opens at login"
+    return "Skriv no longer opens at login"

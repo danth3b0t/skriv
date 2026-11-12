@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Start the whole local POC stack: llama-server (cleanup) + skriv-server (ASR) [+ hark client].
+# Start the whole local POC stack: llama-server (cleanup) + skriv-server (ASR) [+ skriv client].
 #
 #   scripts/poc-up              # servers only; then run `uv run skriv run` in another terminal
-#   scripts/poc-up --client     # servers + `hark run` in the foreground (Ctrl+C stops everything)
+#   scripts/poc-up --client     # servers + `skriv run` in the foreground (Ctrl+C stops everything)
 #   SKRIV_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
 #
 # Env: SKRIV_BACKEND (default parakeet_mlx on macOS arm64, else mock), SKRIV_CLEANUP_MODEL

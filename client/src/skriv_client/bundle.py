@@ -1,7 +1,7 @@
-"""Hark.app's Info.plist (used by scripts/build-macos-app).
+"""Skriv.app's Info.plist (used by scripts/build-macos-app).
 
 The bundle holds only the native launcher (packaging/macos/launcher.swift) and this plist; the
-launcher runs the virtualenv named by ``HarkVenv`` in its own process. TCC keys its grants on
+launcher runs the virtualenv named by ``SkrivVenv`` in its own process. TCC keys its grants on
 the bundle's code signature, so everything that changes the signature (this plist, the launcher)
 should change rarely: Python edits in the venv do not.
 
@@ -15,16 +15,16 @@ import plistlib
 from importlib import metadata
 from pathlib import Path
 
-BUNDLE_ID = "dev.hark.Hark"
-EXECUTABLE = "Hark"
+BUNDLE_ID = "dev.skriv.Skriv"
+EXECUTABLE = "Skriv"
 MIN_MACOS = "13.0"  # SMAppService (launch at login)
 
 MIC_USAGE = (
-    "Hark records your voice only while you hold the dictation key and sends it to your hark "
+    "Skriv records your voice only while you hold the dictation key and sends it to your skriv "
     "server for transcription."
 )
 APPLE_EVENTS_USAGE = (
-    "Hark uses AppleScript to show notifications and may ask Terminal to show its history."
+    "Skriv uses AppleScript to show notifications and may ask Terminal to show its history."
 )
 
 
@@ -36,8 +36,8 @@ def info_plist(venv: Path, version: str) -> dict[str, object]:
         raise ValueError(f"{venv} is not a virtualenv (no pyvenv.cfg); run `uv sync` first")
     return {
         "CFBundleIdentifier": BUNDLE_ID,
-        "CFBundleName": "Hark",
-        "CFBundleDisplayName": "Hark",
+        "CFBundleName": "Skriv",
+        "CFBundleDisplayName": "Skriv",
         "CFBundleExecutable": EXECUTABLE,
         "CFBundlePackageType": "APPL",
         "CFBundleInfoDictionaryVersion": "6.0",
@@ -49,7 +49,7 @@ def info_plist(venv: Path, version: str) -> dict[str, object]:
         "NSHighResolutionCapable": True,
         "NSMicrophoneUsageDescription": MIC_USAGE,
         "NSAppleEventsUsageDescription": APPLE_EVENTS_USAGE,
-        "HarkVenv": str(venv),
+        "SkrivVenv": str(venv),
     }
 
 
