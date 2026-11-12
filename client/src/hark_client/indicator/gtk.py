@@ -38,6 +38,7 @@ window.hark-indicator { background: transparent; }
 .hark-dot.cleaning { color: #8c99ff; }
 .hark-dot.done { color: #4dd966; }
 .hark-dot.cancelled { color: #999999; }
+.hark-dot.info { color: #66b3ff; }
 levelbar.hark-level { min-width: 54px; }
 """
 

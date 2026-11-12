@@ -7,8 +7,8 @@ the daemon closes the connection. Requests are at most 512 bytes.
 Two protocols share the socket, chosen by the first byte of the line:
 
 - **Text** (compositor binds, `nc -U`): `start | stop | toggle | cancel | status | ping | paste-last | undo |
-  swap-raw` → `ok[ <detail>]` or `error <message>`. Unchanged since the POC except the added `paste-last`, `undo`
-  and `swap-raw`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
+  swap-raw | profile [next | auto | set NAME]` → `ok[ <detail>]` or `error <message>`; words after the command are
+  its arguments. Unchanged since the POC except the added `paste-last`, `undo`, `swap-raw` and `profile`; `hark ctl <cmd>` exits 0 on `ok`, 1 on `error`, 2 with no daemon.
 - **JSON v1** (status bars, panels, scripts): a line starting with `{`. `hark ctl --json <cmd>` sends one and prints
   the reply.
 
@@ -18,11 +18,12 @@ Two protocols share the socket, chosen by the first byte of the line:
 {"version": 1, "command": "status"}
 ```
 
-`version` must be `1`. `command` is one of the text commands. Unknown fields are ignored.
+`version` must be `1`. `command` is one of the text commands. Optional `args`: a list of single words, the
+command's arguments (`{"version": 1, "command": "profile", "args": ["set", "chat"]}`). Unknown fields are ignored.
 
 ## Replies
 
-Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `undo`, `swap-raw`):
+Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `undo`, `swap-raw`, `profile`):
 
 ```json
 {"version": 1, "ok": true, "command": "start", "result": "recording"}
@@ -33,7 +34,10 @@ Action commands (`start`, `stop`, `toggle`, `cancel`, `ping`, `paste-last`, `und
 the newest dictated text again into the focused window; never echoes the text) or `failed` with `nothing to paste
 yet` / `paste failed: …`; `undo` → `removed <n> chars` (Backspace × n over hark's newest paste); `swap-raw` →
 `swapped <n> for <m> chars` (the paste replaced by its uncleaned text; again: back). Both refuse (`failed`, with the
-reason; a notification too) unless the caret is known to be right after that paste.
+reason; a notification too) unless the caret is known to be right after that paste. `profile` → the override for
+the next dictation: `auto` (chosen by app again), `<name> (next dictation)`, or `<name>` with
+`[profile_switch] sticky = true` (kept until `profile auto`); `next` cycles auto → each profile in config order →
+auto; no arguments reports the current override.
 
 `status`:
 
@@ -42,7 +46,8 @@ reason; a notification too) unless the caret is known to be right after that pas
  "state": "idle", "finishing": 0,
  "last": {"at": 1762950000.123, "utterance_id": "0199…", "status": "pasted", "profile": "prose",
           "paste_verdict": "landed", "keyup_to_paste_ms": 412.5},
- "learning": {"enabled": false, "watching": false}}
+ "learning": {"enabled": false, "watching": false},
+ "profile_override": null}
 ```
 
 - `state`: `idle | recording`. `finishing`: dictations still being transcribed/pasted.
@@ -50,6 +55,7 @@ reason; a notification too) unless the caret is known to be right after that pas
   `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `paste_verdict` is
   `landed | missing | not_text | unknown`; `keyup_to_paste_ms` may be `null`. **Never** contains dictated text,
   window titles or app content, so a bar module may log it.
+- `profile_override`: the profile picked with `profile` for the next dictation(s), or `null` (by app).
 - `learning.enabled`: correction learning is on (`[learn] enabled`) and the platform can read fields;
   `learning.watching`: a post-paste watch window is open right now.
 
@@ -59,7 +65,8 @@ Errors:
 {"version": 1, "ok": false, "error": {"code": "unknown_command", "message": "…"}}
 ```
 
-`code`: `bad_json`, `unsupported_version`, `unknown_command`, `too_long`, `failed` (the command ran and refused,
+`code`: `bad_json`, `unsupported_version`, `unknown_command`, `bad_args` (`args` is not a list of single
+words), `too_long`, `failed` (the command ran and refused,
 e.g. a text `error …` reply), `internal` (exception in the daemon).
 
 ## Compatibility

@@ -17,7 +17,7 @@ from hark_client.audio import speech_ms
 from hark_client.context import CaretContext
 from hark_client.continuation import PASTE_ECHO_S, KeyPress
 from hark_client.fields import FieldText
-from hark_client.indicator import Indicator
+from hark_client.indicator import Indicator, View
 from hark_client.inject import DryRunInjector
 from hark_client.learn import LearnedStore, Learner
 
@@ -339,3 +339,36 @@ def test_keys_typed_after_a_terminal_paste_feed_the_learner(
     assert [(e.heard, e.written) for e in c.svc.learner.store.entries()] == [
         ("cube control", "kubectl")
     ]
+
+
+def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, injector = controller
+    c.indicator = ind = Indicator(FakeBackend())
+    assert c.handle("profile") == "ok auto"
+    assert [c.handle("profile next") for _ in range(4)] == [
+        "ok terminal (next dictation)",
+        "ok chat (next dictation)",
+        "ok prose (next dictation)",
+        "ok auto",
+    ]
+    assert c.handle("profile set nope").startswith("error unknown profile 'nope'")
+    assert c.handle("profile sideways") == "error usage: profile [next | auto | set NAME]"
+    assert c.handle("start now") == "error start takes no arguments"
+    assert c.handle("profile set chat") == "ok chat (next dictation)"
+    assert ind.view == View("info", "Profile: chat")
+    c.handle("start")
+    assert ind.view == View("recording", "Listening · chat")
+    c.hands_free()
+    assert ind.view == View("recording", "Hands-free · chat")
+    c.on_pcm(pcm(0.4))
+    c.handle("stop")
+    wait_idle(c)
+    dictate(c)  # used up: kitty is a terminal again
+    c.svc.cfg.profile_switch.sticky = True
+    assert c.handle("profile set chat") == "ok chat"
+    dictate(c)
+    dictate(c)
+    assert [terminal for _, terminal in injector.pasted] == [False, True, False, False]
+    assert c.status_json()["profile_override"] == "chat"

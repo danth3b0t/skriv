@@ -34,7 +34,7 @@ Foundation: Any = importlib.import_module("Foundation")
 objc: Any = importlib.import_module("objc")
 importlib.import_module("Quartz")  # registers CGColorRef, so CGColor() is not a raw pointer
 
-WIDTH, HEIGHT = 220.0, 34.0
+WIDTH, HEIGHT = 260.0, 34.0  # room for "Hands-free · terminal"
 MARGIN = 72.0  # from the bottom (or top) of the visible frame: clear of the Dock / menu bar
 METER_W = 54.0
 VISIBLE_POLL_S = 0.05
@@ -47,6 +47,7 @@ _DOT_RGB: dict[State, tuple[float, float, float]] = {
     "done": (0.3, 0.85, 0.4),
     "error": (1.0, 0.27, 0.23),
     "cancelled": (0.6, 0.6, 0.6),
+    "info": (0.4, 0.7, 1.0),
 }
 
 

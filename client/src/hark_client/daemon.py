@@ -25,7 +25,7 @@ from hark_client.continuation import ShadowBuffer, backspaces
 from hark_client.pipeline import Utterance
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
     from types import FrameType
 
     from hark_client.context import CaretContext, FocusInfo
@@ -49,6 +49,11 @@ def _caret_context(focus: FocusInfo) -> CaretContext:
 
 
 CARET_CHECK_CHARS = 64  # context.caret reads at most this much before the caret
+
+
+def _label(mode: str, utt: Utterance) -> str:
+    """The indicator's recording label: the mode and a profile picked by hand."""
+    return f"{mode} · {utt.profile_override}" if utt.profile_override else mode
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,6 +88,7 @@ class Controller:
         # the hotkey listener reports every key and click (shadow buffer): undo can trust it
         self.keys_observed = False
         self.insertion: Insertion | None = None  # the newest dictation's paste, if any
+        self.profile_override: str | None = None  # `hark ctl profile`; None = by app
         self._undo_lock = threading.Lock()
 
     def on_pcm(self, pcm: bytes) -> None:
@@ -108,13 +114,18 @@ class Controller:
                 return "ok already recording"
             cue = self._start_cue()
             mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
-            self.current = utt = Utterance(self.svc, preroll=self.preroll.take(), mask_ms=mask_ms)
+            profile = self.profile_override
+            if not self.svc.cfg.profile_switch.sticky:
+                self.profile_override = None  # used up by this dictation
+            self.current = utt = Utterance(
+                self.svc, profile=profile, preroll=self.preroll.take(), mask_ms=mask_ms
+            )
             self._max_hit = False
             self.insertion = None  # undo is for the newest dictation only
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
         if self.indicator is not None:
-            self.indicator.recording(utt.id)
+            self.indicator.recording(utt.id, _label("Listening", utt))
         if self.svc.learner is not None:
             self.svc.learner.cancel()  # the next paste changes the field: stop watching the last
         if self.mic is not None and not self.keep_open:
@@ -147,7 +158,7 @@ class Controller:
             return
         log.info("hands-free: tap the hotkey again to stop")
         if self.indicator is not None:
-            self.indicator.recording(utt.id, "Hands-free")
+            self.indicator.recording(utt.id, _label("Hands-free", utt))
 
     def stop(self) -> str:
         keyup = unix_us()
@@ -315,6 +326,36 @@ class Controller:
         self.insertion = Insertion(ins.swap, ins.text, ins.terminal)
         return f"ok swapped {n} for {len(ins.swap)} chars"
 
+    def profile(self, args: Sequence[str]) -> str:
+        """``[]`` (show) | ``["next"]`` (auto -> each profile in table order -> auto) | ``["auto"]``
+        | ``["set", NAME]``: the profile of the next dictation (``profile_switch.sticky``: of
+        every one until ``auto``)."""
+        names = list(self.svc.cfg.profiles)
+        with self._lock:
+            current = self.profile_override
+            match list(args):
+                case []:
+                    new = current
+                case ["auto"]:
+                    new = None
+                case ["next"]:
+                    order: list[str | None] = [None, *names]
+                    new = order[(order.index(current) + 1) % len(order)]
+                case ["set", name] if name in names:
+                    new = name
+                case ["set", name]:
+                    return f"error unknown profile {name!r} (have: {', '.join(names)})"
+                case _:
+                    return "error usage: profile [next | auto | set NAME]"
+            self.profile_override = new
+        label = new or "auto"
+        if args and self.indicator is not None:
+            self.indicator.notice(f"Profile: {label}")
+        if args:
+            log.info("profile override: %s", label)
+        scope = "" if new is None or self.svc.cfg.profile_switch.sticky else " (next dictation)"
+        return f"ok {label}{scope}"
+
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current and
         feeds the learner's terminal key replay (one listener for both)."""
@@ -351,9 +392,15 @@ class Controller:
                 "enabled": learner is not None,
                 "watching": learner is not None and learner.watching,
             },
+            "profile_override": self.profile_override,
         }
 
     def handle(self, command: str) -> str:
+        verb, *args = command.split() or [""]
+        if verb == "profile":
+            return self.profile(args)
+        if args:
+            return f"error {verb} takes no arguments"
         actions: dict[str, Callable[[], str]] = {
             "start": self.start,
             "stop": self.stop,
@@ -365,7 +412,7 @@ class Controller:
             "undo": self.undo,
             "swap-raw": self.swap_raw,
         }
-        action = actions.get(command)
+        action = actions.get(verb)
         return action() if action else f"error unknown command {command!r}"
 
 
@@ -397,7 +444,11 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
             # a filtering event tap needs Accessibility; without it the tap is not created at all
             log.warning("no Accessibility permission: Esc will also reach the focused app")
             swallow_esc = False
-    actions = ((cfg.undo_key, controller.undo), (cfg.swap_key, controller.swap_raw))
+    actions = (
+        (cfg.undo_key, controller.undo),
+        (cfg.swap_key, controller.swap_raw),
+        (cfg.profile_key, lambda: controller.profile(["next"])),
+    )
     return PushToTalk(
         cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input,
         on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000, swallow_esc=swallow_esc,

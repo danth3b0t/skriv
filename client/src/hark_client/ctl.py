@@ -3,9 +3,11 @@
 Two protocols on the same socket, one request line and one reply line per connection:
 
 - Text (key binds): ``start``, ``stop``, ``toggle``, ``cancel``, ``status``, ``ping``,
-  ``paste-last``, ``undo``, ``swap-raw`` ->
+  ``paste-last``, ``undo``, ``swap-raw``, ``profile [next | auto | set NAME]`` (words after the
+  command are its arguments) ->
   ``ok[ <detail>]`` or ``error <message>``. Example: ``echo toggle | nc -U "$sock"``.
-- JSON v1 (UIs, scripts), any line starting with ``{``: ``{"version": 1, "command": "status"}`` ->
+- JSON v1 (UIs, scripts), any line starting with ``{``: ``{"version": 1, "command": "status"}``
+  (arguments: ``"args": ["set", "chat"]``) ->
   ``{"version": 1, "ok": true, "command": "status", ...}``; errors are
   ``{"version": 1, "ok": false, "error": {"code": ..., "message": ...}}``.
   Spec: docs/protocol/ctl-v1.md (pinned by client/tests/test_client_ctl.py).
@@ -29,12 +31,13 @@ from pathlib import Path
 from typing import TYPE_CHECKING, cast, override
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 log = logging.getLogger("hark.ctl")
 
 COMMANDS = (
     "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
+    "profile",
 )  # fmt: skip
 MAX_LINE = 512
 PROTOCOL_VERSION = 1
@@ -66,7 +69,15 @@ def text_to_json(command: str, reply: str) -> JsonObject:
     return error_reply("failed", reply.removeprefix("error").strip())
 
 
-def _json_request(
+def _words(args: object) -> list[str] | None:
+    """A JSON request's ``args``: a list of single words, else None."""
+    if not isinstance(args, list):
+        return None
+    words = [w for w in cast("list[object]", args) if isinstance(w, str) and w.split() == [w]]
+    return words if len(words) == len(cast("list[object]", args)) else None
+
+
+def _json_request(  # noqa: PLR0911 - one reply per error code
     line: bytes, json_handler: Callable[[str], JsonObject], handler: Callable[[str], str]
 ) -> JsonObject:
     try:
@@ -82,9 +93,12 @@ def _json_request(
     command = obj.get("command")
     if not isinstance(command, str) or command not in COMMANDS:
         return error_reply("unknown_command", f"command {command!r} (use: {', '.join(COMMANDS)})")
+    words = _words(obj.get("args", []))
+    if words is None:
+        return error_reply("bad_args", "args: a list of words (non-empty, no whitespace)")
     try:
         return json_handler(command) if command == "status" else text_to_json(
-            command, handler(command)
+            command, handler(" ".join([command, *words]))
         )  # fmt: skip
     except Exception as e:
         log.exception("ctl %s failed", command)
@@ -140,8 +154,8 @@ class CtlServer:
                 if len(line) > MAX_LINE:
                     reply = "error command too long"
                 else:
-                    cmd = line.decode(errors="replace").strip()
-                    if cmd not in COMMANDS:
+                    cmd = " ".join(line.decode(errors="replace").split())
+                    if cmd.split(" ", 1)[0] not in COMMANDS:
                         reply = f"error unknown command {cmd!r} (use: {', '.join(COMMANDS)})"
                     else:
                         try:
@@ -188,9 +202,14 @@ def send(command: str, path: Path | None = None, timeout: float = 2.0) -> str:
     return data.decode(errors="replace").strip()
 
 
-def send_json(command: str, path: Path | None = None, timeout: float = 2.0) -> JsonObject:
+def send_json(
+    command: str, path: Path | None = None, timeout: float = 2.0, args: Sequence[str] = ()
+) -> JsonObject:
     """JSON v1 request; returns the decoded reply object. Raises OSError, ValueError, TypeError."""
-    reply = send(json.dumps({"version": PROTOCOL_VERSION, "command": command}), path, timeout)
+    request: JsonObject = {"version": PROTOCOL_VERSION, "command": command}
+    if args:
+        request["args"] = list(args)
+    reply = send(json.dumps(request), path, timeout)
     obj = cast("object", json.loads(reply))
     if not isinstance(obj, dict):
         raise TypeError(f"not a JSON object: {reply[:80]!r}")

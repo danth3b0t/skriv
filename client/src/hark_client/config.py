@@ -99,6 +99,7 @@ class HotkeyConfig:
     # not seen as typing, unlike `hark ctl` bound to a key (which undo would take for an edit).
     undo_key: str = ""  # = hark ctl undo
     swap_key: str = ""  # = hark ctl swap-raw
+    profile_key: str = ""  # = hark ctl profile next
 
 
 @dataclass
@@ -164,6 +165,13 @@ class IndicatorConfig:
 
 
 @dataclass
+class ProfileSwitchConfig:
+    """`hark ctl profile` / hotkey.profile_key: a profile picked by hand instead of by app."""
+
+    sticky: bool = False  # false: for the next dictation only; true: until `profile auto`
+
+
+@dataclass
 class Profile:
     apps: list[str] = field(
         default_factory=list[str]
@@ -213,6 +221,7 @@ class Config:
     learn: LearnConfig = field(default_factory=LearnConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
+    profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     log_level: str = "INFO"
 

@@ -29,6 +29,7 @@ class Args(argparse.Namespace):
     server: str | None
     verbose: bool
     action: str
+    args: list[str]
     wav: str
     dry_run: bool
     profile: str | None
@@ -55,20 +56,15 @@ def parse_args(argv: list[str] | None = None) -> Args:
     c.add_argument(
         "action",
         choices=[
-            "start",
-            "stop",
-            "toggle",
-            "cancel",
-            "status",
-            "ping",
-            "paste-last",
-            "undo",
-            "swap-raw",
+            "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "undo", "swap-raw",
+            "profile",
         ],
         help="paste-last: paste the last dictated text again into the focused window; "
         "undo: delete the last dictation's text if nothing was typed after it; "
-        "swap-raw: replace it with the uncleaned text (again: back)",
-    )
+        "swap-raw: replace it with the uncleaned text (again: back); "
+        "profile next|auto|set NAME: the profile for the next dictation",
+    )  # fmt: skip
+    c.add_argument("args", nargs="*", help="profile: next | auto | set NAME")
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
     )
@@ -118,10 +114,10 @@ def cmd_ctl(args: Args) -> int:
 
     try:
         if args.json:
-            obj = ctl.send_json(args.action)
+            obj = ctl.send_json(args.action, args=args.args)
             print(json.dumps(obj))
             return 0 if obj.get("ok") is True else 1
-        reply = ctl.send(args.action)
+        reply = ctl.send(" ".join([args.action, *args.args]))
     except (ValueError, TypeError) as e:
         print(f"hark ctl: bad reply ({e})", file=sys.stderr)
         return 1
