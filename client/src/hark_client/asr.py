@@ -26,7 +26,7 @@ from hark_client.context import TermKind, TermSource
 if TYPE_CHECKING:
     from collections.abc import Iterator, Sequence
 
-    from hark_client.config import ServerConfig
+    from hark_client.config import ProviderConfig, ServerConfig
     from hark_client.context import Term
 
 log = logging.getLogger("hark.asr")
@@ -78,9 +78,17 @@ def uuid7() -> str:
     return str(uuid.UUID(int=value))
 
 
-def open_channel(cfg: ServerConfig) -> grpc.Channel:
+# A provider that was down is noticed within a few seconds of coming back (gRPC's default
+# reconnect backoff grows to 120 s).
+CHANNEL_OPTIONS: list[tuple[str, int | str]] = [
+    ("grpc.initial_reconnect_backoff_ms", 500),
+    ("grpc.max_reconnect_backoff_ms", 5000),
+]
+
+
+def open_channel(cfg: ServerConfig | ProviderConfig) -> grpc.Channel:
     if not cfg.tls_ca:
-        return grpc.insecure_channel(cfg.address)
+        return grpc.insecure_channel(cfg.address, options=CHANNEL_OPTIONS)
 
     def read(p: str) -> bytes:
         return Path(p).expanduser().read_bytes()
@@ -90,9 +98,9 @@ def open_channel(cfg: ServerConfig) -> grpc.Channel:
         private_key=read(cfg.tls_key) if cfg.tls_key else None,
         certificate_chain=read(cfg.tls_cert) if cfg.tls_cert else None,
     )
-    options = (
-        [("grpc.ssl_target_name_override", cfg.tls_server_name)] if cfg.tls_server_name else []
-    )
+    options = list(CHANNEL_OPTIONS)
+    if cfg.tls_server_name:
+        options.append(("grpc.ssl_target_name_override", cfg.tls_server_name))
     return grpc.secure_channel(cfg.address, creds, options=options)
 
 

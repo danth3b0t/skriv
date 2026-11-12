@@ -16,12 +16,11 @@ from dataclasses import dataclass, field
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import TYPE_CHECKING, cast, override
 
-import grpc
 import numpy as np
 import pytest
 
-from hark_client import asr, context
-from hark_client.config import Config, FeedbackConfig
+from hark_client import context
+from hark_client.config import Config, FeedbackConfig, ProviderConfig
 from hark_client.context import (
     CaretContext,
     ContextSnapshot,
@@ -35,6 +34,7 @@ from hark_client.daemon import Controller
 from hark_client.feedback import Feedback, Sound
 from hark_client.inject import DryRunInjector
 from hark_client.pipeline import Services
+from hark_client.providers import Router
 from hark_server.backends.mock import MockBackend
 from hark_server.config import Config as ServerConfig
 from hark_server.server import start
@@ -225,12 +225,9 @@ def controller(
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0
     injector = DryRunInjector(out=lambda _: None)
-    with grpc.insecure_channel(hark_server.target) as channel:
-        caps = asr.Capabilities(channel)
-        yield (
-            Controller(Services(cfg, channel, caps, injector, RecordingFeedback()), None),
-            injector,
-        )
+    router = Router([ProviderConfig(address=hark_server.target)])
+    yield Controller(Services(cfg, router, injector, RecordingFeedback()), None), injector
+    router.close()
 
 
 def wait_idle(c: Controller) -> None:
