@@ -59,6 +59,9 @@ class Controller:
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
         self.last_text = ""  # newest pasted/copied text (`hark ctl paste-last`)
         self.indicator: Indicator | None = None
+        self.paused = False  # menu bar: hotkey/ctl start refused, mic released
+        self.profile_override: str | None = None  # menu bar: forced profile for new dictations
+        self.started = 0  # dictations started (onboarding's hotkey test watches it)
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -79,10 +82,15 @@ class Controller:
 
     def start(self) -> str:
         with self._lock:
+            if self.paused:
+                return "error paused"
             if self.current is not None:
                 return "ok already recording"
-            self.current = utt = Utterance(self.svc, preroll=self.preroll.take())
+            self.current = utt = Utterance(
+                self.svc, preroll=self.preroll.take(), profile=self.profile_override
+            )
             self._max_hit = False
+            self.started += 1
         if self.indicator is not None:
             self.indicator.recording(utt.id)
         if self.svc.learner is not None:
@@ -151,6 +159,27 @@ class Controller:
         self.svc.feedback.sound("error")
         log.info("cancelled")
         return "ok cancelled"
+
+    def set_paused(self, paused: bool) -> None:  # noqa: FBT001 - a menu toggle
+        """Pause: a recording in progress is cancelled and an always-open mic is released."""
+        with self._lock:
+            if paused == self.paused:
+                return
+            self.paused = paused
+        if paused:
+            self.cancel()
+        if self.mic is not None and self.keep_open:
+            if paused:
+                self.mic.stop()
+            else:
+                self.mic.start()
+        log.info("dictation %s", "paused" if paused else "resumed")
+
+    def set_profile_override(self, name: str | None) -> None:
+        """Force ``name`` for the next dictations (None: choose by app again)."""
+        if name is not None:
+            self.svc.cfg.profile(name)  # raises ConfigError for an unknown profile
+        self.profile_override = name
 
     def _keep(self, utt: Utterance, res: Result) -> None:
         """Recovery ring for `hark retry` (not for presses under min_ms)."""
