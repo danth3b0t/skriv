@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 
 import pytest
 
-from hark_client.inject import LinuxInjector, detect_method
+from hark_client.inject import TIMED_OUT, LinuxInjector, detect_method
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -15,9 +15,14 @@ if TYPE_CHECKING:
 
 class FakeRunner:
     def __init__(
-        self, hyprctl_reply: str = "ok", clipboard: str = "old", repl_reply: str | None = None
+        self,
+        hyprctl_reply: str = "ok",
+        clipboard: str = "old",
+        repl_reply: str | None = None,
+        times_out: Sequence[str] = (),
     ) -> None:
         self.calls: list[tuple[list[str], str | None]] = []
+        self.times_out = list(times_out)  # argv prefix of a command that does not finish
         self.hyprctl_reply = hyprctl_reply
         self.repl_reply = repl_reply  # None: `hyprctl repl` is unknown (hyprlang Hyprland)
         self.clipboard = clipboard
@@ -27,6 +32,8 @@ class FakeRunner:
     ) -> tuple[int, str]:
         argv = list(argv)
         self.calls.append((argv, stdin))
+        if self.times_out and argv[: len(self.times_out)] == self.times_out:
+            return TIMED_OUT, "timed out"
         if argv[0] in ("wl-copy", "xclip") and stdin is not None:
             self.clipboard = stdin
         if argv[0] in ("wl-paste", "xclip") and stdin is None:
@@ -146,6 +153,38 @@ def test_previous_clipboard_text_is_restored():
             break
         time.sleep(0.01)
     assert run.clipboard == "previous"
+
+
+@pytest.mark.parametrize(
+    ("target", "times_out"),
+    [
+        ("", ["hyprctl", "dispatch", "sendshortcut"]),
+        (ADDR, ["hyprctl", "repl"]),
+        ("", ["wtype"]),
+    ],
+)
+def test_a_paste_command_that_timed_out_is_not_retried_and_the_text_stays(
+    target: str, times_out: list[str]
+):
+    run = FakeRunner(clipboard="previous", repl_reply="paste_sent", times_out=times_out)
+    mode = "wtype" if times_out == ["wtype"] else "hyprland"
+    res = LinuxInjector(mode, restore=True, restore_delay_s=0.0, run=run).paste(
+        "dictated", terminal=False, target=target
+    )
+    assert not res.ok
+    assert "not retried" in res.detail
+    assert [c[: len(times_out)] for c in run.key_calls()] == [times_out]  # one attempt only
+    time.sleep(0.05)
+    assert run.clipboard == "dictated"  # not restored: the user can paste it
+
+
+def test_back_to_back_pastes_restore_the_users_clipboard_not_the_previous_dictation():
+    run = FakeRunner(clipboard="user's")
+    inj = LinuxInjector("hyprland", restore=True, restore_delay_s=0.05, run=run)
+    assert inj.paste("first", terminal=False).ok
+    assert inj.paste("second", terminal=False).ok  # before the first restore ran
+    time.sleep(0.2)
+    assert run.clipboard == "user's"
 
 
 @pytest.mark.parametrize(

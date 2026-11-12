@@ -7,6 +7,11 @@
   Without a known target: an untargeted shortcut. Else wtype.
 - Linux X11: xclip + xdotool.
 - Terminals get Ctrl+Shift+V on Linux. Nothing ever sends Enter.
+- A paste command that may have been delivered (it timed out) is never followed by another attempt: the
+  text stays in the clipboard. Only a command that certainly did nothing falls through to the next one.
+- The clipboard is restored `restore_delay_s` after the paste (the target reads it asynchronously). A newer
+  paste before then takes over the saved content, so back-to-back dictations restore the user's clipboard,
+  not hark's previous text.
 - dry-run prints instead of touching the clipboard; `clipboard` copies without pasting.
 """
 
@@ -26,15 +31,18 @@ if TYPE_CHECKING:
     from collections.abc import Callable, Mapping, Sequence
 
     from hark_client.config import PasteConfig
+    from hark_client.macos import PasteboardSnapshot
 
 log = logging.getLogger("hark.inject")
+
+TIMED_OUT = 124  # Runner exit code for a command that did not finish in time (as timeout(1))
 
 
 class Runner(Protocol):
     def __call__(
         self, argv: Sequence[str], *, stdin: str | None = None, capture: bool = True
     ) -> tuple[int, str]:
-        """Run argv; returns (exit code, stdout or "")."""
+        """Run argv; returns (exit code, stdout or ""); TIMED_OUT when it did not finish."""
         ...
 
 
@@ -53,7 +61,9 @@ def run_cmd(
             timeout=2.0,
             check=False,
         )
-    except (OSError, subprocess.TimeoutExpired) as e:
+    except subprocess.TimeoutExpired as e:
+        return TIMED_OUT, str(e)
+    except OSError as e:
         return 127, str(e)
     return p.returncode, p.stdout if capture else ""
 
@@ -147,6 +157,43 @@ def hypr_lua_paste(mods: str, address_hex: str) -> str:
     )
 
 
+class _Restorer[T]:
+    """Restores the clipboard after a paste; a newer paste takes over the saved content."""
+
+    def __init__(self, delay_s: float) -> None:
+        self.delay_s = delay_s
+        self._lock = threading.Lock()
+        self._gen = 0
+        self._saved: T | None = None  # saved by a paste whose restore is still pending
+
+    def begin(self, save: Callable[[], T | None]) -> tuple[int, T | None]:
+        """A paste starts: (its generation, the user's clipboard: pending one or `save()`)."""
+        with self._lock:
+            self._gen += 1
+            gen, pending = self._gen, self._saved
+            self._saved = None
+        return gen, pending if pending is not None else save()
+
+    def schedule(
+        self, gen: int, saved: T, still_ours: Callable[[], bool], put: Callable[[T], object]
+    ) -> None:
+        with self._lock:
+            if gen != self._gen:
+                return
+            self._saved = saved
+
+        def restore() -> None:
+            time.sleep(self.delay_s)
+            with self._lock:
+                if gen != self._gen:
+                    return  # a newer paste owns the saved content now
+                self._saved = None
+            if still_ours():  # the user has not copied something else
+                put(saved)
+
+        threading.Thread(target=restore, daemon=True, name="hark-clip-restore").start()
+
+
 class LinuxInjector:
     """mode: "hyprland" | "wtype" (Wayland) | "x11"."""
 
@@ -155,7 +202,7 @@ class LinuxInjector:
         mode: str,
         *,
         restore: bool = True,
-        restore_delay_s: float = 0.25,
+        restore_delay_s: float = 0.8,
         run: Runner = run_cmd,
     ) -> None:
         self.name = mode
@@ -164,6 +211,7 @@ class LinuxInjector:
         self.restore_delay_s = restore_delay_s
         self.run = run
         self._hypr_syntax: str | None = None  # "lua" | "hyprlang" once one has worked
+        self._restorer: _Restorer[str] = _Restorer(restore_delay_s)
 
     def copy(self, text: str) -> bool:
         argv = (
@@ -182,47 +230,60 @@ class LinuxInjector:
         code, out = self.run(argv)
         return out if code == 0 else None
 
-    def _hypr_targeted(self, *, terminal: bool, address_hex: str) -> tuple[bool | None, str]:
-        """(True: sent | False: focus changed | None: neither syntax worked, detail)."""
+    def _hypr_targeted(self, *, terminal: bool, address_hex: str) -> tuple[str, str]:
+        """(outcome, detail): "sent" | "focus_changed" | "unknown" (may have been sent) |
+        "unsupported" (neither syntax did anything)."""
         order = ["lua", "hyprlang"]
         if self._hypr_syntax == "hyprlang":
             order.reverse()
         for syntax in order:
             if syntax == "lua":
                 mods = "CTRL + SHIFT" if terminal else "CTRL"
+                how = f"hyprctl repl send_shortcut {mods}+V to 0x{address_hex}"
                 code, out = self.run(["hyprctl", "repl", hypr_lua_paste(mods, address_hex)])
                 verdict = out.strip().strip("\"'")
                 if code == 0 and verdict == "paste_sent":
                     self._hypr_syntax = "lua"
-                    return True, f"hyprctl repl send_shortcut {mods}+V to 0x{address_hex}"
+                    return "sent", how
                 if code == 0 and verdict.startswith("focus_changed:"):
                     self._hypr_syntax = "lua"
                     active = verdict.split(":", 1)[1]
-                    return False, f"focus changed before the paste (active window 0x{active})"
+                    return (
+                        "focus_changed",
+                        f"focus changed before the paste (active window 0x{active})",
+                    )
                 log.debug("hyprctl repl paste: %s", out.strip()[:200])
             else:
                 mods = "CTRL SHIFT" if terminal else "CTRL"
+                how = f"hyprctl sendshortcut {mods}+V to 0x{address_hex}"
                 arg = f"{mods}, V, address:0x{address_hex}"
                 code, out = self.run(["hyprctl", "dispatch", "sendshortcut", arg])
                 if code == 0 and out.strip() == "ok":
                     self._hypr_syntax = "hyprlang"
-                    return True, f"hyprctl sendshortcut {mods}+V to 0x{address_hex}"
+                    return "sent", how
                 log.debug("hyprctl sendshortcut paste: %s", out.strip()[:200])
-        return None, ""
+            if code == TIMED_OUT:
+                return "unknown", how
+        return "unsupported", ""
 
-    def _send_keys(self, *, terminal: bool) -> tuple[bool, str]:
+    def _send_keys(self, *, terminal: bool) -> tuple[str, str]:
+        """(outcome, detail): "sent" | "unknown" (may have been sent) | "failed"."""
         if self.name == "hyprland":
             mods = "CTRL SHIFT" if terminal else "CTRL"
             # Hyprland <= 0.54 (hyprlang dispatcher syntax)
             code, out = self.run(["hyprctl", "dispatch", "sendshortcut", f"{mods}, V,"])
             if code == 0 and out.strip() == "ok":
-                return True, f"hyprctl sendshortcut {mods}+V"
+                return "sent", f"hyprctl sendshortcut {mods}+V"
+            if code == TIMED_OUT:
+                return "unknown", f"hyprctl sendshortcut {mods}+V"
             # Hyprland >= 0.55 (Lua dispatchers)
             lua_mods = "CTRL + SHIFT" if terminal else "CTRL"
             lua = f'hl.dsp.send_shortcut({{ mods = "{lua_mods}", key = "V" }})'
             code, out = self.run(["hyprctl", "dispatch", lua])
             if code == 0 and out.strip() == "ok":
-                return True, f"hyprctl send_shortcut {lua_mods}+V"
+                return "sent", f"hyprctl send_shortcut {lua_mods}+V"
+            if code == TIMED_OUT:
+                return "unknown", f"hyprctl send_shortcut {lua_mods}+V"
             log.debug("hyprctl sendshortcut failed (%s); trying wtype", out.strip())
         if self.wayland:
             shift_down = ["-M", "shift"] if terminal else []
@@ -231,7 +292,7 @@ class LinuxInjector:
         else:
             argv = ["xdotool", "key", "--clearmodifiers", "ctrl+shift+v" if terminal else "ctrl+v"]
         code, _ = self.run(argv, capture=False)
-        return code == 0, " ".join(argv)
+        return {0: "sent", TIMED_OUT: "unknown"}.get(code, "failed"), " ".join(argv)
 
     def backspace(self, n: int) -> PasteResult:
         # the focused window (the caller checked it is the one hark pasted into)
@@ -256,44 +317,41 @@ class LinuxInjector:
         )
 
     def paste(self, text: str, *, terminal: bool, target: str = "") -> PasteResult:
-        previous = self.read_clipboard() if self.restore else None
+        gen, previous = self._restorer.begin(self.read_clipboard if self.restore else lambda: None)
         if not self.copy(text):
             return PasteResult(ok=False, method=self.name, detail="clipboard write failed")
-        sent: bool | None = None
-        how = ""
+        outcome, how = "unsupported", ""
         m = _HYPR_ADDRESS_RE.fullmatch(target)
         if self.name == "hyprland" and m is not None:
-            sent, how = self._hypr_targeted(terminal=terminal, address_hex=m.group(1).lower())
-        if sent is False:
+            outcome, how = self._hypr_targeted(terminal=terminal, address_hex=m.group(1).lower())
+        if outcome == "focus_changed":
             return PasteResult(
                 ok=False, method=self.name, detail=f"{how}; text left in clipboard",
                 focus_changed=True,
             )  # fmt: skip
-        if sent:
-            ok = True
-        else:
-            ok, how = self._send_keys(terminal=terminal)
-        if not ok:
+        if outcome == "unsupported":
+            outcome, how = self._send_keys(terminal=terminal)
+        if outcome == "unknown":
+            return PasteResult(
+                ok=False, method=self.name,
+                detail=f"{how} timed out (may have pasted; not retried); text left in clipboard",
+            )  # fmt: skip
+        if outcome != "sent":
             return PasteResult(
                 ok=False, method=self.name, detail=f"{how} failed; text left in clipboard"
             )
         if previous is not None:
-
-            def restore() -> None:
-                time.sleep(self.restore_delay_s)
-                if self.read_clipboard() == text:  # the user has not copied something else
-                    self.copy(previous)
-
-            threading.Thread(target=restore, daemon=True, name="hark-clip-restore").start()
+            self._restorer.schedule(gen, previous, lambda: self.read_clipboard() == text, self.copy)
         return PasteResult(ok=True, method=self.name, detail=how)
 
 
 class MacInjector:
     name = "macos"
 
-    def __init__(self, *, restore: bool = True, restore_delay_s: float = 0.25) -> None:
+    def __init__(self, *, restore: bool = True, restore_delay_s: float = 0.8) -> None:
         self.restore = restore
         self.restore_delay_s = restore_delay_s
+        self._restorer: _Restorer[PasteboardSnapshot] = _Restorer(restore_delay_s)
 
     def copy(self, text: str) -> bool:
         if sys.platform != "darwin":
@@ -308,7 +366,7 @@ class MacInjector:
             return PasteResult(ok=False, method=self.name, detail="not macOS")
         from hark_client import macos  # noqa: PLC0415
 
-        saved = macos.save_pasteboard() if self.restore else None
+        gen, saved = self._restorer.begin(macos.save_pasteboard if self.restore else lambda: None)
         change = macos.set_clipboard_text(text)
         if not macos.can_post_events():
             return PasteResult(
@@ -317,13 +375,9 @@ class MacInjector:
             )  # fmt: skip
         macos.send_cmd_v()
         if saved is not None:
-
-            def restore() -> None:
-                time.sleep(self.restore_delay_s)
-                if macos.change_count() == change:  # the user has not copied something else
-                    macos.restore_pasteboard(saved)
-
-            threading.Thread(target=restore, daemon=True, name="hark-clip-restore").start()
+            self._restorer.schedule(
+                gen, saved, lambda: macos.change_count() == change, macos.restore_pasteboard
+            )
         return PasteResult(ok=True, method=self.name, detail="Cmd+V")
 
     def backspace(self, n: int) -> PasteResult:

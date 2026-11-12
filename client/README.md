@@ -161,6 +161,7 @@ profile_key = ""              # hark ctl profile next
 [paste]
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
 restore_clipboard = true
+restore_delay_ms = 800         # then the clipboard is restored (a slow app pastes the old text if too short)
 check_focus = true            # focus changed since key-down => copy + notify instead of pasting
 smart_spacing = true          # leading/trailing space + mid-sentence lower case from the caret (see below)
 join_space = true             # older name; false also turns smart spacing off

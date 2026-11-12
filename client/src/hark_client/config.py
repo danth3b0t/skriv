@@ -146,7 +146,9 @@ class HotkeyConfig:
 class PasteConfig:
     method: str = "auto"  # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
     restore_clipboard: bool = True
-    restore_delay_ms: int = 250
+    restore_delay_ms: int = (
+        800  # the target reads the clipboard asynchronously; too short = old text
+    )
     check_focus: bool = True
     # Leading/trailing space and mid-sentence lower case from the text around the caret
     # (hark_client.continuation). join_space is the older name; false turns it off too.
