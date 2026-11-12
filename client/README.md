@@ -4,8 +4,8 @@ Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) serve
 ([ADR-001](../docs/protocol/ADR-001-protocol.md)). Hold a key, speak, release: the text is pasted into the focused app.
 
 ```
-key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
-          └─ Transcribe stream opens; 40 ms PCM16 chunks (+ pre-roll) queue behind SessionStart
+key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list, if the provider may see it)
+          └─ provider router picks a server (cached health) ──► Transcribe stream; 40 ms PCM16 chunks (+ pre-roll)
 key up ───► EndOfAudio ► FinalResult ► anchor gate ► canonicalize ► spoken symbols (terminal) ► cleanup (optional, deadline) ► guardrails
           ► focus re-check ► paste (or clipboard + notification) ► history.jsonl (+ audio kept for `hark retry`)
 ```
@@ -94,11 +94,11 @@ the last dictation's status/paste verdict/latency (never its text) and whether l
 
 ## Configuration
 
-`~/.config/hark/config.toml` (or `--config FILE`; `--server` overrides the address). All keys are optional; unknown
-keys and wrong types are errors.
+`~/.config/hark/config.toml` (or `--config FILE`; `--server ADDRESS` uses only that server). All keys are optional;
+unknown keys and wrong types are errors.
 
 ```toml
-[server]
+[server]                      # one server; [[providers]] (below) replaces address/tls_*/model_id
 address = "127.0.0.1:50051"   # or "desktop.tailnet:50051", "unix:/run/hark.sock"
 tls_ca = ""                   # set => TLS; tls_cert + tls_key => mTLS
 model_id = ""                 # "" => server default
@@ -170,6 +170,52 @@ cleanup_profile = "prose"     # server CleanupProfile.id
 ```
 
 A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`.
+
+## Providers and the offline fallback
+
+With `[[providers]]`, every dictation goes to the first healthy server in `priority` order (lower first, then file
+order), e.g. the desktop GPU over Tailscale, then the laptop's own CPU server:
+
+```toml
+[[providers]]
+name = "desktop"
+address = "desktop.tailnet:50051"
+tls_ca = "~/.config/hark/ca.pem"     # tls_cert/tls_key/tls_server_name/model_id as in [server]
+priority = 0
+max_latency_ms = 300                 # health check slower than this: skipped for this dictation
+send_context = true                  # send the context shortlist (bias terms)
+
+[[providers]]
+name = "laptop-cpu"                  # scripts/cpu-server-up (transcribe.cpp, Parakeet v3 Q4_K_M)
+address = "127.0.0.1:50052"
+priority = 10
+```
+
+- **Health**: a gRPC health check of `hark.v1.Asr` bounded by `max_latency_ms`: SERVING in time is *ok*, no answer in
+  time is *slow* (also what a blackholed host looks like), refused/NOT_SERVING/TLS errors are *down*. Results are
+  cached (ok 30 s, slow/down 5 s) and `hark run` re-checks every 10 s in the background, so key-down normally waits
+  for nothing; a stale cache costs at most `max_latency_ms` per skipped provider, spent while the context is collected
+  and with the audio buffered.
+- **Per dictation**, at session start: the first *ok* provider takes it. If none is ok, the first is used anyway and
+  its error reaches you (`hark retry` re-runs the audio). A dictation that gets no answer at all (stream error,
+  timeout) marks its provider down, so the next one moves on. There is no switch mid-dictation.
+- **Privacy**: `send_context = false` sends audio only; the shortlist stays on this machine and is still used to
+  canonicalize the result. Cleanup on such a provider gets the transcript and which spans of it to protect.
+- The CPU server has no bias input (bias `NONE`) and no TextCleanup, so dictations it serves are canonicalized
+  client-side and not cleaned. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
+- `hark doctor` lists every provider (health, latency, models, bias mechanism, cleanup) and which one the next
+  dictation would use; `hark history show ID` and `history.jsonl` (`provider`, `route`, `timings_ms.route_ms`) record
+  which one served and why.
+
+Running the CPU server (Linux laptop; also macOS for testing):
+
+```sh
+uv sync && scripts/fetch-transcribe          # builds transcribe.cpp 0.4.2 into build/, fetches the GGUF into models/
+scripts/cpu-server-up                        # 127.0.0.1:50052, CPU; --device metal|vulkan|cuda, --threads N
+# as a systemd user service:
+sed "s|@REPO@|$PWD|g" packaging/systemd/hark-cpu-server.service > ~/.config/systemd/user/hark-cpu-server.service
+systemctl --user daemon-reload && systemctl --user enable --now hark-cpu-server
+```
 
 ## Recording indicator
 
@@ -320,7 +366,8 @@ outcome, guard events, paste result and `paste_verdict`, the anchor gate's decis
 `keyup_to_paste_ms`, `verify_ms`), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
-and the server's `Timings`. Files are created 0600 in a 0700 directory.
+the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
+(each provider tried: state, rtt_ms, cached, detail). Files are created 0600 in a 0700 directory.
 
 With `save_recordings = true`, each dictation also writes `recordings/YYYY/MM/<utterance_id>/`:
 `audio.wav` (exactly the 16 kHz stream sent, pre-roll included), `context.json` (the context snapshot) and
@@ -351,6 +398,7 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
   only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
   pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
-- No VAD, no `EagerEnd`, no partials, no automatic retries/fallback providers, no `ContextUpdate`, no undo/swap-to-raw.
+- No VAD, no `EagerEnd`, no partials, no automatic retry of a failed dictation on the next provider (the next
+  dictation moves on; `hark retry` re-runs the failed one), no `ContextUpdate`, no undo/swap-to-raw.
 - Esc (cancel) is not swallowed: the focused app sees it too. The start sound can leak into the recording.
 - Clipboard restore on Linux restores text only.

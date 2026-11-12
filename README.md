@@ -22,17 +22,21 @@ Grant the terminal app that runs `hark run` **Microphone**, **Accessibility** an
 Try it without a mic: `uv run hark once --wav some.wav --dry-run --profile terminal --cwd ~/some/repo`.
 
 Linux/Hyprland: see [client/README.md](client/README.md) (`hark ctl start|stop` bound with `bind`/`bindr`).
-On Linux without a Mac-class GPU, run `hark-server` on another machine and point `server.address` at it.
+On Linux without a Mac-class GPU, run `hark-server` on another machine and list it in `[[providers]]`, with the
+laptop's own CPU server as the offline fallback: `scripts/fetch-transcribe && scripts/cpu-server-up`
+(transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of speech on 4 cores of an M5 Pro, see
+[the bench](docs/bench/2026-11-12-transcribe-cpp-cpu.md)). Each dictation goes to the first healthy provider; see
+[client/README.md](client/README.md#providers-and-the-offline-fallback).
 
 ## Layout
 
 | Path | What |
 |---|---|
 | `proto/hark/v1/hark.proto` | client ↔ inference-server protocol (gRPC), see `docs/protocol/ADR-001-protocol.md` |
-| `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, NeMo GPU-PB stub) + TextCleanup proxy |
+| `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, transcribe_cpp CPU/Metal/Vulkan, NeMo GPU-PB stub) + TextCleanup proxy |
 | `client/` | `hark`: hotkey, audio, context engine, streaming, canonicalization, cleanup, guardrails, paste |
 | `proto-py/` | generated Python stubs (`proto-py/gen-proto`) |
-| `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup` |
+| `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up` |
 | `docs/` | context, research-driven decisions, protocol, dataset spec, benchmarks |
 
 ## Development
