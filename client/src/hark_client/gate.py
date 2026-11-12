@@ -11,7 +11,9 @@ Canonicalization reads these confidences whether or not any text is reverted.
 
 Text: each place where the two decodes differ is a region. A region that overlaps no
 bias hit keeps the biased words (``no_hit``): the bias did not act there, and the anchor
-is no better a guess. A bias-hit region (``BiasHit`` on the biased text) keeps them too
+is no better a guess. One exception reverts it (``caps_oov``): a single all-caps token that is
+no English word and no shortlist term where the anchor heard one dictionary word (biased
+"MT", anchor "empty"). A bias-hit region (``BiasHit`` on the biased text) keeps them too
 when the anchor's words have the same letters (``same_letters``: case, spacing or
 punctuation only). Otherwise it keeps the biased words only if all of these hold, checked
 in this order (the first failure is the logged reason):
@@ -22,17 +24,23 @@ in this order (the first failure is the logged reason):
   words, it dropped words the term does not cover: the biased words stay
   (``anchor_dropped``: "the is terminal" is not reverted to "this terminal");
 - ``in_anchor``: the anchor did not already say one of the term's forms (then the
-  anchor's words stay and canonicalization writes the term);
+  anchor's words stay and canonicalization writes the term). If the anchor's spelling
+  differs from that form in case or symbols only, the biased words stay (``anchor_case``:
+  "model.Train" for ``model.train``, which canonicalization would not fix);
 - ``negation`` / ``number``: no negation added or removed, no number (digits or number
   words) changed;
-- ``inflection``: not an inflection-only change (``parse`` -> ``parsed``);
-- ``word_dropped``: no function word dropped that the term does not contain
-  (``parse the config`` -> ``parse config``);
+- ``inflection``: not an inflection-only change (``parse`` -> ``parsed``). Not checked
+  when the biased words are exactly one of the term's forms and the bias only added the
+  suffix (anchor "Hyper LAN", biased "hyper land"): it did not strip one the speaker said;
 - ``not_close``: the anchor heard something close to one of the term's forms: normalized
   edit distance on letters or on a phonetic key <= ``max_distance``;
+- ``word_dropped``: no function word dropped that the term does not contain
+  (``parse the config`` -> ``parse config``). A function word whose letters align with
+  letters of the closest form is part of the term, not dropped ("a val" for "eval");
 - ``anchor_confident``: the anchor was not sure of what it heard: its least confident
   word in the region is below ``confident_anchor`` (a confidently heard "hard" stays
-  "hard" even though it is close to "hark").
+  "hard" even though it is close to "hark"). A COMMAND term followed by one of its
+  subcommands ("Git push") is evidence enough for the biased words.
 
 A failed region gets the anchor's words back. The output is the biased words with the
 reverted regions spliced in. Alignment: token Levenshtein (difflib) on normalized words; a
@@ -48,12 +56,14 @@ from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
+from hark.v1 import hark_pb2 as pb
 from hark_client.context import WordInfo
+from hark_client.context.canon import common_words
+from hark_client.symbols import SUBCOMMANDS
 
 if TYPE_CHECKING:
     from collections.abc import Iterable, Sequence
 
-    from hark.v1 import hark_pb2 as pb
     from hark_client.config import GateConfig
 
 _STRIP = string.punctuation + "\u201c\u201d\u2018\u2019\u00ab\u00bb\u2026"
@@ -80,13 +90,14 @@ _DIGITS = re.compile(r"\d+")
 _MAX_FORMS = 256  # form combinations tried for a region with several hits
 
 KEPT, REVERTED = "kept", "reverted"
-_KEEP = frozenset(("close", "no_hit", "same_letters", "anchor_dropped"))  # reasons that keep
+# reasons that keep
+_KEEP = frozenset(("close", "no_hit", "same_letters", "anchor_dropped", "anchor_case"))
 
 
 @dataclass(frozen=True, slots=True)
 class GateDecision:
     decision: str  # kept | reverted
-    reason: str  # why it was kept (close, no_hit, same_letters, anchor_dropped) or reverted
+    reason: str  # why it was kept (see _KEEP) or reverted
     biased: str  # the biased words of the region
     anchor: str  # the anchor words of the same region
     term: str = ""  # canonical(s) of the bias hit(s) ("" outside any hit)
@@ -208,18 +219,42 @@ def _inflection_only(a: Sequence[str], b: Sequence[str]) -> bool:
     return True
 
 
+def _suffix_added(a: Sequence[str], b: Sequence[str]) -> bool:
+    """Every differing pair: the biased word is the longer one ("lan" -> "land")."""
+    return all(len(y) > len(x) for x, y in zip(a, b, strict=True) if x != y)
+
+
+def _dropped(word_letters: list[str], heard: str, said: str) -> list[bool]:
+    """Per anchor word (its letters, in order, making up ``heard``): are most of its letters
+    unaligned with ``said`` (deleted, not replaced)?"""
+    deleted = [False] * len(heard)
+    for tag, i1, i2, _, _ in SequenceMatcher(None, heard, said, autojunk=False).get_opcodes():
+        if tag == "delete":
+            deleted[i1:i2] = [True] * (i2 - i1)
+    out: list[bool] = []
+    pos = 0
+    for w in word_letters:
+        out.append(sum(deleted[pos : pos + len(w)]) * 2 > len(w))
+        pos += len(w)
+    return out
+
+
 def _judge(  # noqa: PLR0911, PLR0913 - one return per rule, in order
-    a: list[str],
+    raw: list[str],
     b: list[str],
     hit: tuple[int, int],
     forms: list[str],
     *,
     anchor_conf: float | None,
+    subcommand: bool,
     cfg: GateConfig,
 ) -> tuple[str, float | None]:
-    """Reason for a hit region ("close" keeps it). a/b: normalized anchor/biased words of
-    the region; hit: the bias-hit words within b; forms: what those words may stand for
-    (every combination of the hits' forms); anchor_conf: least confident anchor word."""
+    """Reason for a hit region (a reason in _KEEP keeps it). raw: the anchor words of the
+    region as heard; b: normalized biased words of the region; hit: the bias-hit words within
+    b; forms: what those words may stand for (every combination of the hits' forms);
+    anchor_conf: least confident anchor word; subcommand: a COMMAND term of the hits is
+    followed by one of its subcommands in the biased text."""
+    a = [_norm(w) for w in raw]
     if not a:
         return "inserted", None
     heard = letters(" ".join(a))
@@ -228,23 +263,49 @@ def _judge(  # noqa: PLR0911, PLR0913 - one return per rule, in order
     pre, post = letters(" ".join(b[: hit[0]])), letters(" ".join(b[hit[1] :]))
     if not (heard.startswith(pre) and heard.endswith(post) and len(pre) + len(post) < len(heard)):
         return ("anchor_dropped" if len(a) < len(b) else "outside_term"), None
-    if any(a == [*b[: hit[0]], *(_norm(x) for x in f.split()), *b[hit[1] :]] for f in forms):
-        return "in_anchor", 0.0
+    for f in forms:
+        if a == [*b[: hit[0]], *(_norm(x) for x in f.split()), *b[hit[1] :]]:
+            spelled = " ".join(raw[hit[0] : len(raw) - (len(b) - hit[1])]).strip(_STRIP)
+            return ("in_anchor" if spelled == f else "anchor_case"), 0.0
     if _negations(a) != _negations(b):
         return "negation", None
     if _numbers(a) != _numbers(b):
         return "number", None
-    if _inflection_only(a, b):
+    exact = any(b[hit[0] : hit[1]] == [_norm(x) for x in f.split()] for f in forms)
+    if _inflection_only(a, b) and not (exact and _suffix_added(a, b)):
         return "inflection", None
-    form_words = {_norm(x) for f in forms for x in f.split()}
-    if any(w in _FUNCTION_WORDS and w not in b and w not in form_words for w in a):
-        return "word_dropped", None
-    d = round(closeness(heard[len(pre) : len(heard) - len(post)], forms), 3)
+    mid = heard[len(pre) : len(heard) - len(post)]
+    best = min(forms, key=lambda f: closeness(mid, [f]))
+    d = round(closeness(mid, [best]), 3)
     if d > cfg.max_distance:
         return "not_close", d
-    if anchor_conf is not None and anchor_conf >= cfg.confident_anchor:
+    form_words = {_norm(x) for f in forms for x in f.split()}
+    said = pre + letters(best) + post
+    unaligned = _dropped([letters(w) for w in a], heard, said)
+    if any(
+        w in _FUNCTION_WORDS and w not in b and w not in form_words and gone
+        for w, gone in zip(a, unaligned, strict=True)
+    ):
+        return "word_dropped", d
+    if anchor_conf is not None and anchor_conf >= cfg.confident_anchor and not subcommand:
         return "anchor_confident", d
     return "close", d
+
+
+def _caps_oov(biased: list[str], anchor: list[str], term_words: frozenset[str]) -> bool:
+    """One all-caps token that is no English word and no shortlist word, where the anchor
+    heard one English word (biased "MT", anchor "empty")."""
+    if len(biased) != 1 or len(anchor) != 1:
+        return False
+    token, heard = biased[0].strip(_STRIP), _norm(anchor[0])
+    return (
+        len(token) > 1
+        and token.isalpha()
+        and token.isupper()
+        and token.lower() not in term_words
+        and token.lower() not in common_words()
+        and heard in common_words()
+    )
 
 
 def _regions(
@@ -292,7 +353,7 @@ def _hit_spans(
     return out
 
 
-def apply(
+def apply(  # noqa: PLR0915 - one pass over the regions
     biased: pb.Hypothesis,
     anchor: pb.Hypothesis | None,
     hits: Sequence[pb.BiasHit],
@@ -310,6 +371,10 @@ def apply(
 
     forms_of = {t.id: [t.canonical, *(x.text for x in t.aliases)] for t in terms}
     canonical_of = {t.id: t.canonical for t in terms}
+    commands = {t.id: t.canonical.lower() for t in terms if t.kind == pb.TERM_KIND_COMMAND}
+    term_words = frozenset(
+        _norm(x) for forms in forms_of.values() for f in forms for x in f.split()
+    )
 
     def aligned(a0: int, a1: int, b0: int, b1: int) -> None:
         """Equal words: the biased spelling (case) with the anchor's confidence."""
@@ -332,8 +397,10 @@ def apply(
         confs = [w.confidence for w in a_words[r.a0 : r.a1] if w.confidence is not None]
         conf = min(confs) if confs else None
         term, dist = "", None
+        b_raw = [w.text for w in b_words[r.b0 : r.b1]]
+        a_raw = [w.text for w in a_words[r.a0 : r.a1]]
         if not r.hits:
-            reason = "no_hit"
+            reason = "caps_oov" if _caps_oov(b_raw, a_raw, term_words) else "no_hit"
         else:
             parts: list[list[str]] = []  # per hit its forms, between hits the biased words
             end = r.hits[0][0]
@@ -345,14 +412,19 @@ def apply(
             forms = [" ".join(p) for p in itertools.islice(itertools.product(*parts), _MAX_FORMS)]
             hit = (r.hits[0][0] - r.b0, end - r.b0)
             term = ", ".join(canonical_of.get(h.term_id, h.matched_form) for _, _, h in r.hits)
-            reason, dist = _judge(ar, br, hit, forms, anchor_conf=conf, cfg=cfg)
+            subcommand = end < len(b) and any(
+                b[end] in SUBCOMMANDS.get(commands.get(h.term_id, ""), ()) for _, _, h in r.hits
+            )
+            reason, dist = _judge(
+                a_raw, br, hit, forms, anchor_conf=conf, subcommand=subcommand, cfg=cfg
+            )
         keep = reason in _KEEP
         decisions.append(
             GateDecision(
                 KEPT if keep else REVERTED,
                 reason,
-                " ".join(w.text for w in b_words[r.b0 : r.b1]),
-                " ".join(w.text for w in a_words[r.a0 : r.a1]),
+                " ".join(b_raw),
+                " ".join(a_raw),
                 term,
                 dist,
             )

@@ -9,16 +9,25 @@ from hark_client import gate
 from hark_client.config import GateConfig
 
 TERMS = [
-    pb.BiasTerm(id=i, canonical=c, aliases=[pb.SpokenAlias(text=a) for a in aliases])
-    for i, c, aliases in (
-        ("kubectl", "kubectl", ["cube control"]),
-        ("hark", "hark", ["hark"]),
-        ("parse_config", "parse_config", ["parse config"]),
-        ("parse_args", "parse_args", ["parse args"]),
-        ("is_terminal", "is_terminal", ["is terminal"]),
-        ("ruff", "ruff", ["ruff"]),
-        ("Notion", "Notion", ["notion"]),
-        ("Tauri", "Tauri", ["tauri"]),
+    pb.BiasTerm(id=i, canonical=c, aliases=[pb.SpokenAlias(text=a) for a in aliases], kind=kind)
+    for i, c, aliases, kind in (
+        ("kubectl", "kubectl", ["cube control"], pb.TERM_KIND_COMMAND),
+        ("hark", "hark", ["hark"], pb.TERM_KIND_PRODUCT),
+        ("parse_config", "parse_config", ["parse config"], pb.TERM_KIND_IDENTIFIER),
+        ("parse_args", "parse_args", ["parse args"], pb.TERM_KIND_IDENTIFIER),
+        ("is_terminal", "is_terminal", ["is terminal"], pb.TERM_KIND_IDENTIFIER),
+        ("ruff", "ruff", ["ruff"], pb.TERM_KIND_COMMAND),
+        ("Notion", "Notion", ["notion"], pb.TERM_KIND_PRODUCT),
+        ("Tauri", "Tauri", ["tauri"], pb.TERM_KIND_PRODUCT),
+        (
+            "make-eval",
+            "scripts/make-eval-set",
+            ["scripts slash make dash eval dash set"],
+            pb.TERM_KIND_PATH,
+        ),
+        ("Hyprland", "Hyprland", ["hyper land"], pb.TERM_KIND_PRODUCT),
+        ("model.train", "model.train", ["model dot train"], pb.TERM_KIND_IDENTIFIER),
+        ("git", "git", ["git"], pb.TERM_KIND_COMMAND),
     )
 ]
 
@@ -73,6 +82,20 @@ CASES: dict[str, Case] = {
         "Parse the config file", "Parse config file", [(0, 2, "parse_config")],
         "Parse the config file", [("reverted", "word_dropped", "Parse config", "Parse the config")],
     ),
+    "an anchor function word made of the term's letters is not dropped": (
+        "chmod script slash make dash a val dash set", "chmod scripts slash make dash eval dash set",
+        [(1, 8, "make-eval")], "chmod scripts slash make dash eval dash set",
+        [("kept", "close", "scripts slash make dash eval dash set",
+          "script slash make dash a val dash set")],
+    ),
+    "an all-caps non-word where the anchor heard a word": (
+        "handle empty transcripts", "handle MT transcripts", [],
+        "handle empty transcripts", [("reverted", "caps_oov", "MT", "empty")],
+    ),
+    "an all-caps dictionary word is no evidence against it": (
+        "made in Oz", "made in US", [],
+        "made in US", [("kept", "no_hit", "US", "Oz")],
+    ),
     "a change outside any hit is kept": (
         "pause the config file", "parse the config file", [],
         "parse the config file", [("kept", "no_hit", "parse", "pause")],
@@ -89,6 +112,10 @@ CASES: dict[str, Case] = {
         "run cube control now", "run kubectl now", [(1, 2, "kubectl")],
         "run cube control now", [("reverted", "in_anchor", "kubectl", "cube control")],
     ),
+    "the anchor said the term's form in another case": (
+        "call model.Train now", "call model dot train now", [(1, 4, "model.train")],
+        "call model dot train now", [("kept", "anchor_case", "model dot train", "model.Train")],
+    ),
     "a negation disappears": (
         "it is not working", "it Notion working", [(1, 2, "Notion")],
         "it is not working", [("reverted", "negation", "Notion", "is not")],
@@ -101,6 +128,10 @@ CASES: dict[str, Case] = {
         "he parsed args", "he parse args", [(1, 3, "parse_args")],
         "he parsed args", [("reverted", "inflection", "parse args", "parsed args")],
     ),
+    "the bias only added a suffix to say the term's form": (
+        "on Hyper LAN today", "on hyper land today", [(1, 3, "Hyprland")],
+        "on hyper land today", [("kept", "close", "hyper land", "Hyper LAN")],
+    ),
     "the anchor heard something else": (
         "the rough draft", "the ruff draft", [(1, 2, "ruff")],
         "the rough draft", [("reverted", "not_close", "ruff", "rough")],
@@ -108,6 +139,14 @@ CASES: dict[str, Case] = {
     "the anchor was sure of a different word": (
         "this is hard@1.0", "this is hark", [(2, 3, "hark")],
         "this is hard", [("reverted", "anchor_confident", "hark", "hard")],
+    ),
+    "a command followed by its subcommand outweighs a sure anchor": (
+        "Get@1.0 push main", "Git push main", [(0, 1, "git")],
+        "Git push main", [("kept", "close", "Git", "Get")],
+    ),
+    "a command followed by no subcommand does not": (
+        "Get@1.0 lunch", "Git lunch", [(0, 1, "git")],
+        "Get lunch", [("reverted", "anchor_confident", "Git", "Get")],
     ),
     "reverted hit and kept neighbour in one utterance": (
         "call the rough draft form main", "call the ruff draft from main", [(2, 3, "ruff")],
