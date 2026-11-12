@@ -27,3 +27,25 @@ def test_guardrail_events_name_what_changed():
     _, events = guardrails.apply("a\x1b[201~\nb\x07", terminal=True)
     assert events == ["stripped_escape_sequences", "stripped_control_chars", "collapsed_newlines"]
     assert guardrails.apply("plain text", terminal=True) == ("plain text", [])
+
+
+@pytest.mark.parametrize(
+    ("text", "refused"),
+    [
+        ("<unk>" * 60, True),
+        ("<unk> <unk> <unk>.", True),
+        ("\u00cc" * 23, True),  # baseline syn-005, boosted decode
+        ("ha " * 12, True),
+        ("ab" * 12 + ".", True),
+        ("Get status.", False),
+        ("Get <unk> status now.", False),  # one unknown token inside real text
+        ("no no no no", False),
+        ("\u00cc" * 11, False),
+        ("set the mask to ffffffff", False),
+        ("ffffffff", False),
+        ("Yes.", False),
+        ("", False),
+    ],
+)
+def test_degenerate_recognizer_output(text: str, refused: bool):
+    assert bool(guardrails.degenerate(text)) is refused

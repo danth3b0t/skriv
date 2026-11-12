@@ -17,13 +17,22 @@ from hark_client.daemon import Controller
 from hark_client.inject import DryRunInjector
 from hark_client.pipeline import Services
 from hark_client.providers import Router
+from hark_server.backends.mock import MockBackend
 
-from .conftest import KUBECTL, RecordingFeedback, pcm, snapshot, wait_idle
+from .conftest import (
+    KUBECTL,
+    HarkServer,
+    RecordingFeedback,
+    make_controller,
+    pcm,
+    snapshot,
+    wait_idle,
+)
 
 if TYPE_CHECKING:
     from pathlib import Path
 
-    from .conftest import FakeContext, HarkServer
+    from .conftest import FakeContext
 
 
 def dictate(c: Controller, seconds: float = 0.6) -> None:
@@ -112,6 +121,31 @@ def test_failed_dictation_is_retried_with_its_original_context(
     assert fake_context.calls == []
     records = (tmp_path / "history.jsonl").read_text().splitlines()
     assert [json.loads(r)["status"] for r in records] == ["error", "focus_changed"]
+
+
+@pytest.mark.parametrize("word", ["<unk>", "\u00cc"])
+def test_degenerate_recognizer_output_fails_and_is_kept_for_retry(
+    tmp_path: Path, fake_context: FakeContext, word: str
+):
+    """`<unk> <unk> ...` or one character over and over (baseline syn-005) is never pasted:
+    the dictation fails like a transcription error and its audio stays in the ring."""
+    fake_context.snapshots = [snapshot("kitty")]
+    server = HarkServer(backend=MockBackend(script=[word]))
+    router = Router([ProviderConfig(address=server.target)])
+    try:
+        c, injector = make_controller(tmp_path, router, DryRunInjector(out=lambda _: None))
+        dictate(c, 3.0)  # 15 mock words
+    finally:
+        router.close()
+        server.close()
+    assert (injector.pasted, injector.copied) == ([], [])
+    assert c.last_result is not None
+    res = c.last_result[1]
+    assert (res.status, res.final_text) == ("error", "")
+    assert res.error.startswith("asr: degenerate output")
+    assert [e.meta["status"] for e in retry.entries(tmp_path)] == ["error"]
+    feedback = cast("RecordingFeedback", c.svc.feedback)
+    assert any("`hark retry`" in n for n in feedback.notifications)
 
 
 def test_retry_without_a_known_window_copies_and_bad_ids_fail(

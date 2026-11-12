@@ -456,6 +456,14 @@ class Utterance:
             "asr",
             f"{hyp.text!r} (audio {t['audio_ms']} ms, key-up->final {t['keyup_to_final_ms']:.1f} ms, server {final.timings.end_to_final_ms} ms)",
         )
+        bad = guardrails.degenerate(hyp.text)
+        if bad:  # not text: never pasted; the kept audio can be retried
+            self._report("asr", f"REFUSED: degenerate output ({bad})")
+            svc.feedback.sound("error")
+            hint = "; `hark retry` re-runs it" if cfg.retry.keep > 0 else ""
+            svc.feedback.notify(f"Transcription failed: unusable recognizer output{hint}")
+            res.status, res.error = "error", f"asr: degenerate output ({bad})"
+            return res
 
         t1 = time.perf_counter()
         words = [
