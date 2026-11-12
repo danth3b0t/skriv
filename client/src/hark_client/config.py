@@ -130,6 +130,11 @@ class LearnConfig:
 class FeedbackConfig:
     sounds: bool = True
     notify: bool = True
+    # The start sound would be recorded: auto plays it only when no recording indicator is
+    # shown; when it plays, this much audio after key-down is replaced by silence and left out
+    # of the speech gate.
+    start_cue: str = "auto"  # auto | always | never
+    cue_mask_ms: int = 250
 
 
 @dataclass
@@ -233,6 +238,7 @@ class Config:
 PASTE_METHODS = ("auto", "macos", "hyprland", "wtype", "x11", "clipboard", "dry-run")
 LISTENERS = ("auto", "pynput", "none")
 INDICATOR_POSITIONS = ("bottom", "top")
+START_CUES = ("auto", "always", "never")
 
 
 def _type_ok(value: object, default: object) -> bool:
@@ -286,13 +292,15 @@ def _apply_profiles(cfg: Config, value: object) -> None:
         _apply(prof, cast("dict[str, object]", table), f"profiles.{name}")
 
 
-def validate(cfg: Config) -> None:
+def validate(cfg: Config) -> None:  # noqa: PLR0912 - one check per setting
     if cfg.paste.method not in PASTE_METHODS:
         raise ConfigError(f"paste.method must be one of {', '.join(PASTE_METHODS)}")
     if cfg.hotkey.listener not in LISTENERS:
         raise ConfigError(f"hotkey.listener must be one of {', '.join(LISTENERS)}")
     if cfg.indicator.position not in INDICATOR_POSITIONS:
         raise ConfigError(f"indicator.position must be one of {', '.join(INDICATOR_POSITIONS)}")
+    if cfg.feedback.start_cue not in START_CUES:
+        raise ConfigError(f"feedback.start_cue must be one of {', '.join(START_CUES)}")
     if "prose" not in cfg.profiles:
         raise ConfigError("profiles.prose is the fallback profile and cannot be removed")
     for key, v in (
@@ -306,6 +314,7 @@ def validate(cfg: Config) -> None:
         ("learn.max_terms", cfg.learn.max_terms),
         ("retry.keep", cfg.retry.keep),
         ("hotkey.tap_ms", cfg.hotkey.tap_ms),
+        ("feedback.cue_mask_ms", cfg.feedback.cue_mask_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")

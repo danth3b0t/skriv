@@ -83,7 +83,9 @@ class Controller:
         with self._lock:
             if self.current is not None:
                 return "ok already recording"
-            self.current = utt = Utterance(self.svc, preroll=self.preroll.take())
+            cue = self._start_cue()
+            mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
+            self.current = utt = Utterance(self.svc, preroll=self.preroll.take(), mask_ms=mask_ms)
             self._max_hit = False
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
@@ -93,9 +95,16 @@ class Controller:
             self.svc.learner.cancel()  # the next paste changes the field: stop watching the last
         if self.mic is not None and not self.keep_open:
             self.mic.start()
-        self.svc.feedback.sound("start")
+        if cue:
+            self.svc.feedback.sound("start")
         log.info("recording...")
         return "ok recording"
+
+    def _start_cue(self) -> bool:
+        """Play the start sound? (``auto``: not when the indicator already shows it.)"""
+        cfg = self.svc.cfg.feedback
+        mode = cfg.start_cue
+        return cfg.sounds and (mode == "always" or (mode == "auto" and self.indicator is None))
 
     def _detach(self) -> Utterance | None:
         if self.mic is not None and not self.keep_open:

@@ -119,6 +119,7 @@ class Utterance:
         profile: str | None = None,
         preroll: bytes = b"",
         replay: ContextSnapshot | None = None,  # `hark retry`: the original key-down context
+        mask_ms: int = 0,  # audio after the pre-roll replaced by silence (the start cue)
     ) -> None:
         self.svc = svc
         self.replay = replay
@@ -139,8 +140,12 @@ class Utterance:
         self.stream = TranscribeStream(svc.channel)
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
         self._starter.start()
+        self._mask_left = self._masked = self._mask_from = 0
         if preroll:
             self.feed(preroll)
+        self._mask_from = len(preroll)
+        self._mask_left = SAMPLE_RATE * mask_ms // 1000 * 2
+        self._masked = 0  # bytes of silence fed in place of audio so far
 
     # -- hotkey down ---------------------------------------------------------------
 
@@ -203,8 +208,18 @@ class Utterance:
         with self._lock:
             if self._done:
                 return
+            if self._mask_left:
+                n = min(self._mask_left, len(pcm16))
+                pcm16 = bytes(n) + pcm16[n:]
+                self._mask_left -= n
+                self._masked += n
             self.pcm += pcm16
             self.stream.feed(pcm16)
+
+    def _unmasked(self) -> bytes:
+        """The audio without the masked span: what the speech gate measures (caller holds the
+        lock). Silence there would lower the noise floor the gate's threshold comes from."""
+        return bytes(self.pcm[: self._mask_from] + self.pcm[self._mask_from + self._masked :])
 
     @property
     def audio_ms(self) -> int:
@@ -234,7 +249,9 @@ class Utterance:
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
         with self._lock:
-            speech = speech_ms(bytes(self.pcm))
+            speech = speech_ms(self._unmasked())
+            if self._masked:
+                self.timings["cue_masked_ms"] = self._masked // 2 * 1000 / SAMPLE_RATE
         if held_ms < min_ms or speech < self.svc.cfg.audio.min_speech_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
             self.svc.feedback.sound("cancel")
