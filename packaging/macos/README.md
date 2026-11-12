@@ -87,7 +87,8 @@ Menu: state (icon: `mic` ready, `mic.fill` listening, `waveform` transcribing, `
 triangle for 10 s after a failed dictation), the last dictation, Copy / Retry Last Dictation, Pause / Resume
 (releases an always-open mic), Profile (Automatic or a forced profile: the same override as `hark ctl profile set NAME|auto`, for the next
 dictation), Open History (Terminal, `hark history`),
-Settings… (opens the config file in the default text editor; restart to apply), Setup & Permissions…, Run Doctor
+Settings… (opens the config file in the default text editor; restart to apply, or `hark ctl reload` for the
+per-dictation tables), Setup & Permissions…, Run Doctor
 (runs `hark doctor` with Hark's permissions, opens the report), Launch at Login (`SMAppService.mainApp`; a
 `~/Library/LaunchAgents/dev.hark.app.plist` that `open`s the app where that is unavailable), Quit.
 
@@ -103,6 +104,8 @@ logs in `~/Library/Logs/hark/{llama,server}.log`. Options: `--backend`, `--clean
 Components as on Linux (`hark service install server` = `--no-cleanup`; status/restart default to the installed
 agents; `status` exits 3 unless all run), except `client`: on macOS that is Hark.app and its Launch at Login.
 Stop `scripts/poc-up` first: the agents need ports 8080 and 50051 (install warns if they are taken).
+Known issue: with cleanup the server agent still passes the removed `--cleanup-engine` flag and exits at once;
+until that is fixed, use `--no-cleanup` or run hark-server by hand ([server/README.md](../../server/README.md#run)).
 
 ## Running a second instance for testing
 

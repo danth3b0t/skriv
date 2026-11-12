@@ -1,7 +1,8 @@
 # Archive
 
 Historical material: research, decisions and measurements that shaped hark but no longer describe it. Kept for
-the reasoning; for how hark works now, start at the [README](../../README.md).
+the reasoning; for how hark works now, start at the [README](../../README.md) and
+[docs/architecture.md](../architecture.md).
 
 | Path | What it was |
 |---|---|
