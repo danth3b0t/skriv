@@ -31,9 +31,10 @@ if TYPE_CHECKING:
 
 log = logging.getLogger("hark.indicator")
 
-type State = Literal["recording", "transcribing", "cleaning", "done", "error", "cancelled"]
+type State = Literal["recording", "transcribing", "cleaning", "done", "error", "cancelled", "info"]
 
-FINAL_STATES: frozenset[State] = frozenset({"done", "error", "cancelled"})
+# info: a short notice while idle (the profile picked for the next dictation)
+FINAL_STATES: frozenset[State] = frozenset({"done", "error", "cancelled", "info"})
 STAGES: dict[str, str] = {"transcribing": "Transcribing…", "cleaning": "Cleaning up…"}
 # history status (pipeline.Result.status) -> what the indicator shows
 FINISHED: dict[str, tuple[State, str]] = {
@@ -47,7 +48,7 @@ FINISHED: dict[str, tuple[State, str]] = {
     "too_short": ("cancelled", "Too short"),
     "cancelled": ("cancelled", "Cancelled"),
 }
-LINGER_S: dict[State, float] = {"done": 0.8, "cancelled": 1.0, "error": 3.0}
+LINGER_S: dict[State, float] = {"done": 0.8, "cancelled": 1.0, "error": 3.0, "info": 1.5}
 LEVEL_INTERVAL_S = 0.05  # input level redraws at most 20 times a second
 LEVEL_FLOOR_DB = -60.0
 
@@ -110,10 +111,11 @@ class Indicator:
     def _may_update(self, uid: str) -> bool:
         return uid == self._owner or self._view is None or self._view.state in FINAL_STATES
 
-    def recording(self, uid: str) -> None:
+    def recording(self, uid: str, label: str = "Listening") -> None:
+        """Recording started, or its mode changed (``label``: "Hands-free" after a tap)."""
         with self._lock:
             self._level_at = float("-inf")
-            self._show(uid, View("recording", "Listening"))
+            self._show(uid, View("recording", label))
 
     def level(self, pcm16: bytes) -> None:
         """Mic callback thread: redraws the level while recording (rate-limited)."""
@@ -144,6 +146,12 @@ class Indicator:
         with self._lock:
             if self._may_update(uid):
                 self._show(uid, View(state, label), hide_after=LINGER_S[state])
+
+    def notice(self, label: str) -> None:
+        """A short message, shown only if no dictation is on display (never over a recording)."""
+        with self._lock:
+            if self._view is None or self._view.state in FINAL_STATES:
+                self._show("", View("info", label), hide_after=LINGER_S["info"])
 
     def tick(self) -> None:
         """UI thread, periodically: hides a final state once it has been shown long enough."""

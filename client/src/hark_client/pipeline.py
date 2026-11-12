@@ -90,6 +90,8 @@ class Result:
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
     paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
     gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
+    pasted_text: str = ""  # exactly what was pasted (smart spacing applied)
+    swap_text: str = ""  # the uncleaned text as it would have been pasted (`hark ctl swap-raw`)
 
 
 def _collect(deadline_s: float, max_terms: int) -> ContextSnapshot:
@@ -119,6 +121,7 @@ class Utterance:
         profile: str | None = None,
         preroll: bytes = b"",
         replay: ContextSnapshot | None = None,  # `hark retry`: the original key-down context
+        mask_ms: int = 0,  # audio after the pre-roll replaced by silence (the start cue)
     ) -> None:
         self.svc = svc
         self.replay = replay
@@ -139,8 +142,12 @@ class Utterance:
         self.stream = TranscribeStream(svc.channel)
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
         self._starter.start()
+        self._mask_left = self._masked = self._mask_from = 0
         if preroll:
             self.feed(preroll)
+        self._mask_from = len(preroll)
+        self._mask_left = SAMPLE_RATE * mask_ms // 1000 * 2
+        self._masked = 0  # bytes of silence fed in place of audio so far
 
     # -- hotkey down ---------------------------------------------------------------
 
@@ -203,8 +210,18 @@ class Utterance:
         with self._lock:
             if self._done:
                 return
+            if self._mask_left:
+                n = min(self._mask_left, len(pcm16))
+                pcm16 = bytes(n) + pcm16[n:]
+                self._mask_left -= n
+                self._masked += n
             self.pcm += pcm16
             self.stream.feed(pcm16)
+
+    def _unmasked(self) -> bytes:
+        """The audio without the masked span: what the speech gate measures (caller holds the
+        lock). Silence there would lower the noise floor the gate's threshold comes from."""
+        return bytes(self.pcm[: self._mask_from] + self.pcm[self._mask_from + self._masked :])
 
     @property
     def audio_ms(self) -> int:
@@ -234,7 +251,9 @@ class Utterance:
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
         held_ms = _ms(self.t0)
         with self._lock:
-            speech = speech_ms(bytes(self.pcm))
+            speech = speech_ms(self._unmasked())
+            if self._masked:
+                self.timings["cue_masked_ms"] = self._masked // 2 * 1000 / SAMPLE_RATE
         if held_ms < min_ms or speech < self.svc.cfg.audio.min_speech_ms:
             self.cancel(pb.CANCEL_REASON_TOO_SHORT)
             self.svc.feedback.sound("cancel")
@@ -342,6 +361,7 @@ class Utterance:
         res.final_text, res.guard_events = guardrails.apply(
             res.cleanup.text, terminal=prof.terminal
         )
+        uncleaned, _ = guardrails.apply(canon, terminal=prof.terminal)
         t["guard_ms"] = _ms(t1)
         self._report(
             "guard", f"{res.final_text!r} profile={profile_name} events={res.guard_events}"
@@ -358,6 +378,7 @@ class Utterance:
         t["focus_check_ms"] = _ms(t1)
         t1 = time.perf_counter()
         text = res.final_text  # what is pasted (smart spacing below)
+        res.swap_text = uncleaned
         if changed_to is not None:
             ok = svc.injector.copy(res.final_text)
             res.status = "focus_changed"
@@ -372,7 +393,7 @@ class Utterance:
             )  # fmt: skip
         else:
             if cfg.paste.smart_spacing and cfg.paste.join_space:
-                text = self._spacing(snap.focus, res, shadow)
+                text = self._spacing(snap.focus, res, shadow, uncleaned)
                 t["spacing_ms"] = _ms(t1)
                 t1 = time.perf_counter()
             if shadow is not None:  # before pasting: the listener sees the paste chord
@@ -381,6 +402,7 @@ class Utterance:
                 text, terminal=prof.terminal, target=snap.focus.window_id
             )
             res.status = "pasted" if res.paste.ok else "paste_failed"
+            res.pasted_text = text if res.paste.ok else ""
             if res.paste.focus_changed:
                 res.status = "focus_changed"
                 svc.feedback.notify("Focus moved to another window; the text is in the clipboard")
@@ -434,8 +456,11 @@ class Utterance:
             self._report("anchor", f"{out.text!r} ({summary})")
         return out
 
-    def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
-        """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision."""
+    def _spacing(
+        self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None, uncleaned: str
+    ) -> str:
+        """Text to paste: ``res.final_text`` spaced/cased for the caret; records the decision
+        (and spaces ``uncleaned`` the same way into ``res.swap_text``)."""
         caret = _caret_context(focus)
         if not caret.trusted:
             before = shadow.before(focus.window_id) if shadow is not None else None
@@ -443,6 +468,7 @@ class Utterance:
                 before, None, "shadow" if before is not None else "none", detail=caret.detail
             )
         sp = continuation.decide(caret.before, caret.after, res.final_text)
+        res.swap_text = continuation.decide(caret.before, caret.after, uncleaned).text
         res.spacing = {
             "before_repr": repr(caret.before[-16:]) if caret.before is not None else None,
             "after_repr": repr(caret.after) if caret.after is not None else None,

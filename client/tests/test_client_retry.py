@@ -88,6 +88,7 @@ def test_failed_dictation_is_retried_with_its_original_context(
     cfg = Config()
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0
+    cfg.feedback.start_cue = "never"
     fake_context.snapshots = [snapshot("com.apple.Notes", "w1")]
     feedback = RecordingFeedback()
     with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:

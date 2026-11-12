@@ -224,6 +224,7 @@ def controller(
     cfg = Config()
     cfg.history.dir = str(tmp_path)
     cfg.audio.min_ms = 0
+    cfg.feedback.start_cue = "never"  # audio fed right after start is not masked
     injector = DryRunInjector(out=lambda _: None)
     with grpc.insecure_channel(hark_server.target) as channel:
         caps = asr.Capabilities(channel)

@@ -90,6 +90,19 @@ def test_a_new_recording_wins_over_an_older_dictation_still_finishing():
     assert ind.view == View("cancelled", "Cancelled")
 
 
+def test_a_notice_never_covers_a_dictation_and_hides_by_itself():
+    ind, _, clock = make()
+    ind.recording("a")
+    ind.notice("Profile: chat")
+    assert ind.view == View("recording", "Listening")
+    ind.finished("a", "pasted")
+    ind.notice("Profile: chat")
+    assert ind.view == View("info", "Profile: chat")
+    clock.t += 1.5
+    ind.tick()
+    assert ind.view is None
+
+
 def test_input_level_is_scaled_and_rate_limited():
     ind, backend, clock = make()
     loud = np.full(320, 32767, dtype="<i2").tobytes()  # 0 dBFS
@@ -122,6 +135,24 @@ def test_daemon_drives_the_indicator_through_a_dictation_and_a_cancel(
     c.handle("start")
     c.handle("cancel")
     assert ind.view == View("cancelled", "Cancelled")
+
+
+def test_a_hotkey_tap_shows_hands_free_and_the_listener_follows_recordings(
+    controller: tuple[Controller, DryRunInjector],
+):
+    c, _ = controller
+    c.indicator = ind = Indicator(FakeBackend())
+    seen: list[bool] = []
+    c.on_recording = seen.append
+    c.hands_free()  # nothing recording: ignored
+    assert ind.view is None
+    c.handle("start")
+    assert ind.view == View("recording", "Listening")
+    c.hands_free()
+    assert ind.view == View("recording", "Hands-free")
+    c.handle("cancel")
+    c.handle("cancel")
+    assert seen == [True, False]
 
 
 @pytest.mark.skipif(sys.platform != "darwin", reason="AppKit panel")

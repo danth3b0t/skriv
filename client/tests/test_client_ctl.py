@@ -99,6 +99,7 @@ def v1_status(last: object) -> dict[str, object]:
         "finishing": "int",
         "last": last,
         "learning": {"enabled": "bool", "watching": "bool"},
+        "profile_override": "NoneType",
     }
 
 
@@ -134,7 +135,15 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
             "pasted 15 chars",
         )  # "please run cube": the count only
 
+        picked = _json(sock_path, {"version": 1, "command": "profile", "args": ["set", "chat"]})
+        assert (picked["ok"], picked["result"]) == (True, "chat (next dictation)")
+        assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "chat"
+        assert ctl.send("profile   auto", sock_path) == "ok auto"  # text: words are arguments
+
         for request, code in [
+            ({"version": 1, "command": "profile", "args": "next"}, "bad_args"),
+            ({"version": 1, "command": "profile", "args": ["set chat"]}, "bad_args"),
+            ({"version": 1, "command": "profile", "args": ["set", "nope"]}, "failed"),
             (b"{not json", "bad_json"),
             ({"command": "status"}, "unsupported_version"),
             ({"version": 2, "command": "status"}, "unsupported_version"),
@@ -152,16 +161,24 @@ def test_hark_ctl_json_flag(
     sock_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
     monkeypatch.setattr(ctl, "socket_path", lambda: sock_path)
-    server = ctl.CtlServer(sock_path, lambda cmd: "ok pong" if cmd == "ping" else "error nope")
+    server = ctl.CtlServer(
+        sock_path, lambda cmd: "ok pong" if cmd == "ping" else f"error nope: {cmd}"
+    )
     server.start()
     try:
         assert main(["ctl", "--json", "ping"]) == 0
-        assert main(["ctl", "--json", "stop"]) == 1
-        out = [json.loads(line) for line in capsys.readouterr().out.splitlines()]
-        assert out == [
+        assert main(["ctl", "--json", "profile", "set", "chat"]) == 1
+        assert main(["ctl", "profile", "next"]) == 1
+        out = capsys.readouterr().out.splitlines()
+        assert [json.loads(line) for line in out[:2]] == [
             {"version": 1, "ok": True, "command": "ping", "result": "pong"},
-            {"version": 1, "ok": False, "error": {"code": "failed", "message": "nope"}},
+            {
+                "version": 1,
+                "ok": False,
+                "error": {"code": "failed", "message": "nope: profile set chat"},
+            },
         ]
+        assert out[2] == "error nope: profile next"
     finally:
         server.close()
 

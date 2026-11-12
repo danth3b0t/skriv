@@ -2,6 +2,7 @@
 
 Push-to-talk dictation client for a [hark.v1](../proto/hark/v1/hark.proto) server
 ([ADR-001](../docs/protocol/ADR-001-protocol.md)). Hold a key, speak, release: the text is pasted into the focused app.
+Tap the key instead to dictate hands-free until the next tap.
 
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list)
@@ -28,7 +29,7 @@ Without `--dry-run` it really pastes into the focused window. Any PCM WAV works 
 ### macOS
 
 ```sh
-uv run hark run          # hold Right Option to dictate, release to paste, Esc while holding cancels
+uv run hark run          # hold Right Option to dictate, release to paste; or tap it, speak, tap again; Esc cancels
 ```
 
 The app that runs hark (your terminal) needs, in System Settings → Privacy & Security:
@@ -52,6 +53,20 @@ Hyprland ≤ 0.54 (hyprlang), push-to-talk on F13 (`bindr` fires on release):
 bind  = , F13, exec, hark ctl start
 bindr = , F13, exec, hark ctl stop
 bind  = SUPER, Escape, exec, hark ctl cancel
+```
+
+Plain Esc as cancel, swallowed only while recording (hark cannot grab keys on Wayland; a submap entered for the
+recording can; **untested**):
+
+```ini
+bind   = , F13, exec, hark ctl start
+bind   = , F13, submap, hark
+submap = hark
+bindr  = , F13, exec, hark ctl stop
+bindr  = , F13, submap, reset
+bind   = , Escape, exec, hark ctl cancel
+bind   = , Escape, submap, reset
+submap = reset
 ```
 
 Hyprland ≥ 0.55 (Lua config):
@@ -87,10 +102,12 @@ the clipboard, notification); with hyprlang (≤ 0.54) `dispatch sendshortcut CT
 worked is remembered. Unknown target: an untargeted shortcut; neither syntax works: `wtype`.
 Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = "pynput"` works with the `x11` extra.
 
-Control protocol: one line in (`start|stop|toggle|cancel|status|ping|paste-last`), one line out (`ok …` or `error …`).
+Control protocol: one line in (`start|stop|toggle|cancel|status|ping|paste-last|undo|swap-raw|profile …`), one line
+out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
-the last dictation's status/paste verdict/latency (never its text) and whether learning is watching.
+the last dictation's status/paste verdict/latency (never its text), whether learning is watching and the profile
+override.
 
 ## Configuration
 
@@ -130,6 +147,11 @@ max_ms = 120000
 [hotkey]
 key = "alt_r"                 # pynput Key name (alt_r = Right Option, cmd_r, f13, ...) or one character
 listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
+tap_ms = 250                  # released sooner: a tap, recording goes on hands-free until the next press (0 = hold only)
+swallow_esc = true            # the Esc that cancels a recording does not reach the app (never when idle)
+undo_key = ""                 # e.g. "f14": hark ctl undo; handled by the listener (see below)
+swap_key = ""                 # hark ctl swap-raw
+profile_key = ""              # hark ctl profile next
 
 [paste]
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
@@ -150,6 +172,8 @@ max_terms = 20                # learned terms added to every shortlist
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
 notify = true
+start_cue = "auto"            # start sound: auto (only without the indicator) | always | never
+cue_mask_ms = 250             # with a start sound: this much audio after key-down becomes silence (see below)
 
 [history]
 dir = "~/.local/share/hark"
@@ -162,6 +186,9 @@ keep = 10                     # audio of the last N dictations for `hark retry` 
 enabled = true                # small passive overlay: recording/level, transcribing, cleaning, done/error
 position = "bottom"           # bottom | top, centred on the screen with the pointer (macOS)
 
+[profile_switch]
+sticky = false                # `hark ctl profile set NAME` lasts one dictation; true: until `profile auto`
+
 [profiles.terminal]           # built-ins: terminal, chat, prose (fallback); table order = match order
 apps = ["com.mitchellh.ghostty", "kitty", "*terminal*"]   # globs on app id / name, case-insensitive
 terminal = true               # single line, Ctrl+Shift+V on Linux, never Enter
@@ -169,11 +196,44 @@ cleanup = false
 cleanup_profile = "prose"     # server CleanupProfile.id
 ```
 
-A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`.
+A profile is chosen by the first `apps` match, else `terminal` if the context engine reports a terminal, else `prose`,
+unless one was picked by hand (below).
+
+## Hands-free, cancel, undo and profiles
+
+- **Tap or hold** (listener: macOS/X11): a press released within `tap_ms` (250 ms) keeps recording hands-free (the
+  indicator says **Hands-free**); the next press stops at once. Held longer it is push-to-talk. A press while a
+  recording started by `hark ctl` runs stops it. On Wayland bind `hark ctl toggle` (tap) or start/stop (hold).
+- **Esc** cancels any recording (hotkey, hands-free or `hark ctl start`). With `swallow_esc` the focused app never
+  sees that Esc keystroke (down, auto-repeat, up); every other key, and Esc while idle, passes untouched. macOS:
+  the pynput event tap becomes a filter (`darwin_intercept`), which needs **Accessibility** (without it hark logs a
+  warning and stays listen-only); its callbacks only update the key state, the actions run on a worker thread so
+  typing is never held up. X11: a passive grab of Esc exists only while recording (**untested on real hardware**).
+  Wayland: a compositor submap, see the Hyprland example above.
+- **Start sound**: the mic would record it. By default it plays only when no recording indicator is shown (the
+  pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`
+  of audio after key-down is sent as silence and left out of the speech gate (silence would lower its noise
+  floor). Speech in those 250 ms is lost; the pre-roll before key-down is kept.
+- **Undo**: `hark ctl undo` (or `undo_key`) deletes the newest dictation's paste with Backspace × its length;
+  `hark ctl swap-raw` (or `swap_key`) replaces it with the text before cleanup (vocabulary fixes and spoken
+  symbols kept), spaced the same way; again swaps back. Both act only when hark knows the caret is right after
+  that paste: the listener's key stream (shadow buffer) saw no key, click or focus change since, the same window
+  has focus, a readable caret (AX/AT-SPI/tmux) shows the paste before it, no dictation is running, the paste
+  was not read back as `missing`, and the text has no characters that apps delete differently (combining
+  accents, emoji sequences, flags, CR LF). Otherwise nothing is typed and a notification says why. hark's own
+  Backspaces and paste chord are not taken for typing. Needs the key listener (macOS/X11); on Wayland it always
+  refuses. `hark ctl undo` bound to a key in another tool (skhd, a WM) arrives as a key press the listener sees
+  as an edit, so undo refuses: use `undo_key` (an unused key like F14), which the listener handles itself.
+- **Profile**: `hark ctl profile next|auto|set NAME` (or `profile_key` = next) picks the profile of the next
+  dictation (`next`: auto → terminal → chat → prose → auto, config order); `[profile_switch] sticky = true` keeps
+  it until `profile auto`. The indicator shows **Profile: chat** briefly (never over a recording) and the
+  recording as **Listening · chat**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
+  it. There is no menu-bar menu.
 
 ## Recording indicator
 
-While `hark run` works, a small pill shows its state: **Listening** with the live input level, **Transcribing…**,
+While `hark run` works, a small pill shows its state: **Listening** (or **Hands-free**, plus a hand-picked
+profile) with the live input level, **Transcribing…**,
 **Cleaning up…**, then **Pasted** / **Copied** / **No speech** / **Cancelled** / **Failed: hark retry** for a moment.
 It never takes focus or clicks, so the paste still goes to the window you dictated into.
 
@@ -342,7 +402,9 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
 (diff rules, store, watch window, learned terms reaching the server), the AT-SPI search and the terminal key replay
 (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
-`paste-last`.
+`paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
+events, the start-cue mask on a synthetic tone, undo/swap-raw and every refusal (fake injector), Backspace
+counting, and the profile override.
 
 ## Limitations
 
@@ -351,6 +413,8 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
   only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
   pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
-- No VAD, no `EagerEnd`, no partials, no automatic retries/fallback providers, no `ContextUpdate`, no undo/swap-to-raw.
-- Esc (cancel) is not swallowed: the focused app sees it too. The start sound can leak into the recording.
+- No VAD, no `EagerEnd`, no partials, no automatic retries/fallback providers, no `ContextUpdate`.
+- Untested on real hardware: Esc swallowing (macOS tap filter, X11 grab), Backspaces posted for undo (CGEvent,
+  xdotool, wtype), the Hyprland submap. Undo trusts the key listener: autocomplete or an app editing its own
+  text after the paste goes unseen unless a readable caret disagrees.
 - Clipboard restore on Linux restores text only.

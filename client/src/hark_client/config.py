@@ -89,6 +89,17 @@ class AudioConfig:
 class HotkeyConfig:
     key: str = "alt_r"  # pynput Key name (alt_r = Right Option) or a single character
     listener: str = "auto"  # auto | pynput | none (the ctl socket is always on)
+    # A press released sooner than this is a tap: recording continues hands-free until the
+    # next press. 0 = hold-to-talk only.
+    tap_ms: int = 250
+    # The Esc that cancels a recording does not reach the focused app (macOS: needs
+    # Accessibility; X11: grabs Esc while recording). Nothing is suppressed when idle.
+    swallow_esc: bool = True
+    # Extra keys the listener handles itself (pynput Key names, e.g. f14; "" = none). They are
+    # not seen as typing, unlike `hark ctl` bound to a key (which undo would take for an edit).
+    undo_key: str = ""  # = hark ctl undo
+    swap_key: str = ""  # = hark ctl swap-raw
+    profile_key: str = ""  # = hark ctl profile next
 
 
 @dataclass
@@ -124,6 +135,11 @@ class LearnConfig:
 class FeedbackConfig:
     sounds: bool = True
     notify: bool = True
+    # The start sound would be recorded: auto plays it only when no recording indicator is
+    # shown; when it plays, this much audio after key-down is replaced by silence and left out
+    # of the speech gate.
+    start_cue: str = "auto"  # auto | always | never
+    cue_mask_ms: int = 250
 
 
 @dataclass
@@ -146,6 +162,13 @@ class IndicatorConfig:
 
     enabled: bool = True
     position: str = "bottom"  # bottom | top (centre of the screen with the pointer)
+
+
+@dataclass
+class ProfileSwitchConfig:
+    """`hark ctl profile` / hotkey.profile_key: a profile picked by hand instead of by app."""
+
+    sticky: bool = False  # false: for the next dictation only; true: until `profile auto`
 
 
 @dataclass
@@ -198,6 +221,7 @@ class Config:
     learn: LearnConfig = field(default_factory=LearnConfig)
     retry: RetryConfig = field(default_factory=RetryConfig)
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
+    profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
     log_level: str = "INFO"
 
@@ -227,6 +251,7 @@ class Config:
 PASTE_METHODS = ("auto", "macos", "hyprland", "wtype", "x11", "clipboard", "dry-run")
 LISTENERS = ("auto", "pynput", "none")
 INDICATOR_POSITIONS = ("bottom", "top")
+START_CUES = ("auto", "always", "never")
 
 
 def _type_ok(value: object, default: object) -> bool:
@@ -280,13 +305,15 @@ def _apply_profiles(cfg: Config, value: object) -> None:
         _apply(prof, cast("dict[str, object]", table), f"profiles.{name}")
 
 
-def validate(cfg: Config) -> None:
+def validate(cfg: Config) -> None:  # noqa: PLR0912 - one check per setting
     if cfg.paste.method not in PASTE_METHODS:
         raise ConfigError(f"paste.method must be one of {', '.join(PASTE_METHODS)}")
     if cfg.hotkey.listener not in LISTENERS:
         raise ConfigError(f"hotkey.listener must be one of {', '.join(LISTENERS)}")
     if cfg.indicator.position not in INDICATOR_POSITIONS:
         raise ConfigError(f"indicator.position must be one of {', '.join(INDICATOR_POSITIONS)}")
+    if cfg.feedback.start_cue not in START_CUES:
+        raise ConfigError(f"feedback.start_cue must be one of {', '.join(START_CUES)}")
     if "prose" not in cfg.profiles:
         raise ConfigError("profiles.prose is the fallback profile and cannot be removed")
     for key, v in (
@@ -299,6 +326,8 @@ def validate(cfg: Config) -> None:
         ("learn.window_ms", cfg.learn.window_ms),
         ("learn.max_terms", cfg.learn.max_terms),
         ("retry.keep", cfg.retry.keep),
+        ("hotkey.tap_ms", cfg.hotkey.tap_ms),
+        ("feedback.cue_mask_ms", cfg.feedback.cue_mask_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
