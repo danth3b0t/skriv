@@ -9,19 +9,30 @@
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-server="$root/models/bin/llama-server"
+# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# XDG data dir. HARK_MODELS_DIR overrides both.
+if [[ -f $root/pyproject.toml ]]; then
+  models="${HARK_MODELS_DIR:-$root/models}"
+else
+  models="${HARK_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hark/models}"
+fi
 model="${1:-$(sed -n 's/^DEFAULT=//p' "$root/scripts/fetch-models")}"
 [[ $# -gt 0 ]] && shift
 
+# llama-server: $HARK_LLAMA_SERVER, else the one scripts/fetch-llama pinned, else PATH (Arch: llama-cpp).
+server="${HARK_LLAMA_SERVER:-$models/bin/llama-server}"
+if [[ ! -x $server ]] && [[ -z ${HARK_LLAMA_SERVER:-} ]] && command -v llama-server >/dev/null; then
+  server="$(command -v llama-server)"
+fi
 if [[ ! -x $server ]]; then
-  echo "llama-up: $server missing; run scripts/fetch-llama" >&2
+  echo "llama-up: $server missing; run scripts/fetch-llama or install llama.cpp (Arch: llama-cpp)" >&2
   exit 1
 fi
 if [[ $model == *.gguf ]]; then
   path="$model"
   alias="$(basename "$model" .gguf)"
 else
-  path="$root/models/$model.gguf"
+  path="$models/$model.gguf"
   alias="$model"
 fi
 if [[ ! -f $path ]]; then

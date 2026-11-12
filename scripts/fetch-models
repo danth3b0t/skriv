@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download pinned cleanup GGUFs into ./models (sha256-verified).
+# Download pinned cleanup GGUFs into ./models, or $HARK_MODELS_DIR (sha256-verified).
 #
 #   scripts/fetch-models                 # the default cleanup model
 #   scripts/fetch-models all             # every model below (eval)
@@ -42,7 +42,13 @@ sha256() {
 }
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-models="$root/models"
+# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# XDG data dir. HARK_MODELS_DIR overrides both.
+if [[ -f $root/pyproject.toml ]]; then
+  models="${HARK_MODELS_DIR:-$root/models}"
+else
+  models="${HARK_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hark/models}"
+fi
 mkdir -p "$models"
 
 fetch() { # repo rev file sha256 out
