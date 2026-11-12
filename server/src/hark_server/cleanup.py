@@ -362,10 +362,11 @@ def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
     - Correction: at least one word right after the cue (and its fillers).
     - Cue: a phrase cue ("no wait", "I mean", "scratch that", ...) is set off
       by punctuation on at least one side, so "there is no wait time" is not
-      one. A bare cue ("no", "sorry", "actually") is set off on both sides, and
-      the correction must be of the same kind as the retracted words: it
-      repeats their first word ("in C, no, in Rust") or replaces a single word
-      after a kept word of the same sentence ("on Tuesday, no, Wednesday").
+      one. A bare cue ("no", "sorry", "actually") needs a correction of the same
+      kind as the retracted words: either it repeats their first word ("in C um
+      no in Rust", punctuation optional because ASR often drops it) or it
+      replaces a single word after a kept word of the same sentence and the
+      cue is set off on both sides ("on Tuesday, no, Wednesday").
     - Sentences: no sentence ends inside the retracted words; a "?" or "!"
       next to the cue ends the match ("Is it on? No, ..." answers); a "." next
       to it is allowed only when the correction repeats the first retracted
@@ -410,7 +411,9 @@ def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
                     and j > 0
                     and not _SENTENCE_END.search(find, tokens[j - 1][2], first[1])
                 )
-                ok = _set_off(gaps[0]) and _set_off(gaps[1]) and (restart or slot)
+                # A restart ("in C um no in Rust") is structural evidence on its own: ASR
+                # often drops the commas around the cue. A one-word slot needs both.
+                ok = restart or (slot and _set_off(gaps[0]) and _set_off(gaps[1]))
             if ok:
                 return tokens[j][1], tokens[c][1]
     return None

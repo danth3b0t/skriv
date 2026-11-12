@@ -177,6 +177,11 @@ CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
         # bare cues: the retracted words and the cue's "no" may go ...
         ("I want it written in C, uh no, in Rust.", "in C, uh no, in", "in",
          K.EDIT_KIND_SELF_CORRECTION, "I want it written in Rust.", ""),
+        # real ASR output drops the commas: a restart ("in ... in") is enough
+        ("I would like to write a program in C um no in Rust.", "in C um no in", "in",
+         K.EDIT_KIND_SELF_CORRECTION, "I would like to write a program in Rust.", ""),
+        ("I would like to write an application in C a no uh in Rust.", "in C a no uh in", "in",
+         K.EDIT_KIND_SELF_CORRECTION, "I would like to write an application in Rust.", ""),
         ("Um my name is David. Uh no, uh my name is Dan.", "Um my name is David. Uh no, uh my",
          "My", K.EDIT_KIND_SELF_CORRECTION, "My name is Dan.", ""),
         ("Pick the red blue green big car, no, the bus.", "the red blue green big car, no, the",
@@ -191,6 +196,9 @@ CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
         ("Is it done? No, it is not.", "Is it done? No, it", "It", K.EDIT_KIND_SELF_CORRECTION,
          "", "protected span"),
         ("No, I don't want C.", "No, I", "I", K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
+        # a one-word slot without commas is not enough evidence
+        ("Meet on Tuesday no Wednesday.", "Tuesday no Wednesday", "Wednesday",
+         K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
         ("use C not Rust", "C not Rust", "Rust", K.EDIT_KIND_SELF_CORRECTION, "",
          "protected span"),
         ("It is, actually, fine.", "It is, actually, fine", "Fine", K.EDIT_KIND_SELF_CORRECTION,

@@ -538,6 +538,16 @@ async def test_s1_rewrite_guard(
             "I want it written in C, uh no, in Rust.", ["C", "no"], [],
             "I want it written in Rust.", "I want it written in Rust.",
         ),
+        (  # real ASR without commas: the restart "in ... in" carries the cue
+            "I would like to write a program in C um no in Rust.", ["C", "no"], [],
+            "I would like to write a program in Rust.",
+            "I would like to write a program in Rust.",
+        ),
+        (  # real: "uh" misheard as "a" before the cue
+            "I would like to write an application in C a no uh in Rust.", ["C", "no"], [],
+            "I would like to write an application in Rust.",
+            "I would like to write an application in Rust.",
+        ),
         (  # real: the correction restarts the sentence the cue follows
             "Um my name is David. Uh no, uh my name is Dan.", ["no"], [],
             "My name is Dan.", "My name is Dan.",

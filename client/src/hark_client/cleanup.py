@@ -184,7 +184,9 @@ def self_correction_cut(find: str, replace: str) -> tuple[int, int] | None:
                     and j > 0
                     and not _SENTENCE_END.search(find, tokens[j - 1][2], first[1])
                 )
-                ok = _set_off(gaps[0]) and _set_off(gaps[1]) and (restart or slot)
+                # A restart ("in C um no in Rust") is structural evidence on its own: ASR
+                # often drops the commas around the cue. A one-word slot needs both.
+                ok = restart or (slot and _set_off(gaps[0]) and _set_off(gaps[1]))
             if ok:
                 return tokens[j][1], tokens[c][1]
     return None
