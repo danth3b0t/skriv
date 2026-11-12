@@ -9,12 +9,13 @@ import subprocess
 import sys
 import threading
 import time
+from pathlib import Path
 from typing import TYPE_CHECKING, cast
 
 import numpy as np
 import pytest
 
-from hark_client import retry
+from hark_client import history, retry
 from hark_client.audio import speech_ms
 from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
@@ -29,7 +30,6 @@ from .test_client_indicator import FakeBackend
 
 if TYPE_CHECKING:
     from collections.abc import Callable, Iterator
-    from pathlib import Path
 
     import numpy.typing as npt
 
@@ -51,6 +51,25 @@ def test_toggle_streams_preroll_and_speech_then_pastes(
     wait_idle(c)
     # 200 ms pre-roll + 800 ms = 5 mock words; 1.2 s would have produced 6.
     assert injector.pasted == [("please run kubectl get", True)]
+
+
+def test_latency_runs_from_the_key_release_including_the_wait_for_context(
+    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
+):
+    c, _ = controller
+    fake_context.delay_s = 0.3  # the key-down context is still being collected at release
+    c.handle("start")
+    c.on_pcm(pcm(0.4))
+    c.handle("stop")
+    wait_idle(c)
+    assert c.last_result is not None
+    t = c.last_result[1].timings
+    assert t["release_to_paste_ms"] >= t["keyup_to_paste_ms"] + 100  # the context deadline
+    (rec,) = history.recent(Path(c.svc.cfg.history.dir), 1)
+    assert (
+        cast("dict[str, float]", rec["timings_ms"])["release_to_paste_ms"]
+        == t["release_to_paste_ms"]
+    )
 
 
 def dictate(c: Controller) -> None:

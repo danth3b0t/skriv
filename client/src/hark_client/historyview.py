@@ -53,9 +53,10 @@ def _clip(text: str, width: int) -> str:
 
 
 def latency_ms(r: Record) -> float | None:
-    """Key-up -> paste, else key-up -> final result (failed pastes, errors after the ASR)."""
+    """Key release -> paste, else key-up -> paste (older records), else key-up -> final result
+    (failed pastes, errors after the ASR)."""
     t = _dict(r.get("timings_ms"))
-    for key in ("keyup_to_paste_ms", "keyup_to_final_ms"):
+    for key in ("release_to_paste_ms", "keyup_to_paste_ms", "keyup_to_final_ms"):
         v = t.get(key)
         if isinstance(v, int | float):
             return float(v)
@@ -151,6 +152,9 @@ def show(r: Record, *, kept: bool = False) -> str:
     if paste:
         line("paste", _pairs(paste))
     timings = _dict(r.get("timings_ms"))
+    release = timings.get("release_to_paste_ms")
+    if isinstance(release, int | float):
+        line("latency", f"release->paste {release:.0f} ms")
     if timings:
         line("timings", ", ".join(f"{k.removesuffix('_ms')}={v}" for k, v in timings.items()))
     return "\n".join(out)

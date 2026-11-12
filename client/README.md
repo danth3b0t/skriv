@@ -301,10 +301,11 @@ again; otherwise the text goes to the clipboard (also when the window is unknown
 It is a new history entry; the kept audio stays.
 
 ```sh
-hark history                  # last 20: time, id, app, status, key-up->paste latency, text preview
+hark history                  # last 20: time, id, app, status, release->paste latency, text preview
 hark history -n 100 --json    # the full records
 hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup edits/dropped,
-                              # gate decisions (if recorded), final, spacing decision, paste, timings
+                              # gate decisions (if recorded), final, spacing decision, paste,
+                              # latency (key release -> text sent), timings
 hark last                     # print the last dictated text; --copy puts it on the clipboard
 hark ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
 ```
@@ -314,7 +315,8 @@ newlines); its reply gives only the length, never the text.
 
 Accuracy regressions: `hark eval add` puts a kept dictation into a private set of real clips, `hark eval run`
 re-runs them all and fails on a lost identifier, a false substitution or a lost negation
-([docs/eval.md](../docs/eval.md)).
+([docs/eval.md](../docs/eval.md)). It ends with the median and max release->paste latency; `--report` has every
+clip's `timings_ms`.
 
 ## Guardrails
 
@@ -394,7 +396,9 @@ including any change outside a hit, goes back to the anchor's words. `history.js
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
-`keyup_to_paste_ms`), the smart-spacing decision (`spacing`, see above),
+`keyup_to_paste_ms`, and `release_to_paste_ms`: from the key release, monotonic clock, to the text sent; this is
+what you wait, including the recovery copy and the wait for the key-down context that the other stage timings
+start after), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
@@ -415,7 +419,7 @@ contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake 
 AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
-events, the start-cue mask on a synthetic tone, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
+events, the start cue on live audio, release->paste latency, the profile override, pause, the menu-bar state icon, Hark.app's Info.plist, and `hark service`
 (launchd plists, install/status/restart/uninstall against a fake launchctl, the login-item LaunchAgent fallback).
 
 ## Limitations

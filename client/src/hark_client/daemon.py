@@ -265,7 +265,7 @@ class Controller:
 
     def stop(self, reason: str = "key_up", only: Utterance | None = None) -> str:
         """``reason``: key_up (release, tap, `stop`) or limit (`audio.max_ms`, for ``only``)."""
-        keyup = unix_us()
+        keyup, released = unix_us(), time.perf_counter()  # release_to_paste_ms starts here
         utt = self._detach(finishing=True, only=only)
         if utt is None:
             return "ok idle"
@@ -282,17 +282,17 @@ class Controller:
                 utt.wait_started()  # bounded; the key-down context goes with the audio
                 kept = self._keep(utt, None)  # before transcribing: a crash keeps the audio
                 res = utt.finish(
-                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, shadow=self.shadow,
-                    reason=end,
+                    min_ms=self.svc.cfg.audio.min_ms, keyup_unix_us=keyup, released=released,
+                    shadow=self.shadow, reason=end,
                 )  # fmt: skip
                 self.last_result = (time.time(), res)
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
                 self._kept(kept, utt, res)
-                timing = res.timings.get("keyup_to_paste_ms")
+                timing = res.timings.get("release_to_paste_ms")
                 log.info(
                     "%s: %r%s", res.status, res.final_text,
-                    f" ({timing:.0f} ms key-up->paste)" if timing is not None else "",
+                    f" ({timing:.0f} ms release->paste)" if timing is not None else "",
                 )  # fmt: skip
             finally:
                 if self.indicator is not None:

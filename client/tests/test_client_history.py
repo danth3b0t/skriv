@@ -75,7 +75,7 @@ def test_show_lists_every_stage():
         },
         gate={"decision": "accept"},
         spacing={"source": "ax", "leading": True},
-        timings_ms={"keyup_to_paste_ms": 400.0},
+        timings_ms={"keyup_to_paste_ms": 400.0, "release_to_paste_ms": 431.6},
         provider={"name": "laptop-cpu", "address": "127.0.0.1:50052", "send_context": False},
         route=[{"name": "desktop", "state": "down"}, {"name": "laptop-cpu", "state": "ok"}],
     )
@@ -90,7 +90,8 @@ def test_show_lists_every_stage():
         'gate       {"decision": "accept"}',
         "spacing    source=ax, leading=True",
         "status     pasted",
-        "timings    keyup_to_paste=400.0",
+        "latency    release->paste 432 ms",
+        "timings    keyup_to_paste=400.0, release_to_paste=431.6",
         "provider   laptop-cpu (127.0.0.1:50052, audio only)  route desktop:down -> laptop-cpu:ok",
     ):
         assert expected in out

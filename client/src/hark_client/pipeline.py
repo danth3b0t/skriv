@@ -156,6 +156,7 @@ class Utterance:
         self._cancelled = False
         self._committed = False  # past the point of no return (clipboard write / paste)
         self.keyup_unix_us = 0
+        self.t_release = 0.0  # time.perf_counter() at key release (set by finish)
         self.stop_reason = ""
         self.mic_interrupted = False  # set by the daemon's mic watchdog
         self.failed_over = False
@@ -279,11 +280,14 @@ class Utterance:
         min_ms: int = 0,
         reason: pb.EndReason.ValueType = pb.END_REASON_KEY_UP,
         keyup_unix_us: int | None = None,
+        released: float | None = None,
         shadow: ShadowBuffer | None = None,
     ) -> Result:
-        """keyup_unix_us: when the key was released, if earlier than this call.
+        """keyup_unix_us: when the key was released, if earlier than this call; released: the
+        same moment on the time.perf_counter() clock (release_to_paste_ms starts there).
         shadow: the daemon's record of its pastes and later keys (spacing fallback)."""
         self.keyup_unix_us = keyup_unix_us or asr.unix_us()
+        self.t_release = time.perf_counter() if released is None else released
         self.stop_reason = "limit" if reason == pb.END_REASON_MAX_DURATION else "key_up"
         held_ms = _ms(self.t0)
         with self._lock:
@@ -542,11 +546,16 @@ class Utterance:
                 shadow.forget()
         t["paste_ms"] = _ms(t1)
         t["keyup_to_paste_ms"] = _ms(t_up)
+        t["release_to_paste_ms"] = _ms(self.t_release)  # what the user waits: key up -> text sent
         self._report(
             "paste",
             f"{res.status} via {res.paste.method}: {res.paste.detail} ({t['paste_ms']:.1f} ms)",
         )
-        self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
+        self._report(
+            "total",
+            f"release->paste {t['release_to_paste_ms']:.1f} ms"
+            f" (key-up->paste {t['keyup_to_paste_ms']:.1f} ms)",
+        )
         svc.feedback.sound("done" if res.paste.ok else "error")
         return res
 

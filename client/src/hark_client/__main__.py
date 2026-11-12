@@ -312,6 +312,7 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
         )  # fmt: skip
         scores: list[evalset.Score] = []
         records: list[dict[str, object]] = []
+        latency: list[float] = []  # release_to_paste_ms of the clips that reached the paste
         for clip in found:
             res = evalset.run_clip(svc, clip)
             s = evalset.score(
@@ -320,6 +321,8 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
             )  # fmt: skip
             scores.append(s)
             records.append(evalset.report(s, res))
+            if "release_to_paste_ms" in res.timings:
+                latency.append(res.timings["release_to_paste_ms"])
             print(evalset.line(s, res.status, res.final_text))
     finally:
         router.close()
@@ -332,6 +335,13 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
     wers = [s.wer for s in scores if s.wer is not None]
     mean = f"{sum(wers) / len(wers):.1%}" if wers else "n/a"
     print(f"{len(scores)} clips: {failed} failed, {unreviewed} unreviewed, recognition WER {mean}")
+    if latency:
+        import statistics  # noqa: PLC0415
+
+        print(
+            f"release->paste median {statistics.median(latency):.0f} ms, max {max(latency):.0f} ms"
+            f" ({len(latency)} clips)"
+        )
     return 1 if failed else 0
 
 

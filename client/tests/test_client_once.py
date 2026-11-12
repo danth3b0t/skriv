@@ -74,6 +74,7 @@ def test_prose_dictation_is_biased_cleaned_and_pasted(
         "cleanup_ms",
         "paste_ms",
         "keyup_to_paste_ms",
+        "release_to_paste_ms",
     ):
         assert stage in timings
 
