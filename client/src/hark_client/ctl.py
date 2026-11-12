@@ -3,11 +3,11 @@
 Two protocols on the same socket, one request line and one reply line per connection:
 
 - Text (key binds): ``start``, ``stop``, ``toggle``, ``cancel``, ``status``, ``ping``,
-  ``paste-last``, ``profile [next | auto | set NAME]``, ``reload`` (words after the command are
+  ``paste-last``, ``profile [auto | set NAME]``, ``reload`` (words after the command are
   its arguments) ->
   ``ok[ <detail>]`` or ``error <message>``. Example: ``echo toggle | nc -U "$sock"``.
 - JSON v1 (UIs, scripts), any line starting with ``{``: ``{"version": 1, "command": "status"}``
-  (arguments: ``"args": ["set", "chat"]``) ->
+  (arguments: ``"args": ["set", "prose"]``) ->
   ``{"version": 1, "ok": true, "command": "status", ...}``; errors are
   ``{"version": 1, "ok": false, "error": {"code": ..., "message": ...}}``.
   Spec: docs/protocol/ctl-v1.md (pinned by client/tests/test_client_ctl.py).

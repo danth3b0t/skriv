@@ -52,7 +52,7 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     # Fields not given keep the built-in profile's values; new profiles are appended.
     assert cfg.profiles["terminal"].apps == ["my-term"]
     assert cfg.profiles["terminal"].terminal
-    assert list(cfg.profiles) == ["terminal", "chat", "prose", "agent"]
+    assert list(cfg.profiles) == ["terminal", "prose", "agent"]
     assert cfg.profiles["agent"].cleanup_profile == "commit_message"
 
 
@@ -60,8 +60,8 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     ("focus", "profile"),
     [
         (FocusInfo(app_id="com.mitchellh.ghostty"), "terminal"),
-        (FocusInfo(app="Slack", app_id=""), "chat"),
-        (FocusInfo(app_id="org.Telegram.Desktop"), "chat"),  # globs are case-insensitive
+        (FocusInfo(app_id="NET.KovidGoyal.Kitty"), "terminal"),  # globs are case-insensitive
+        (FocusInfo(app="Slack", app_id=""), "prose"),  # no built-in chat profile
         (FocusInfo(app_id="org.example.unknown", is_terminal=True), "terminal"),
         (FocusInfo(app_id="com.apple.Notes"), "prose"),
         (FocusInfo(), "prose"),

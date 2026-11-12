@@ -146,9 +146,9 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
             "pasted 15 chars",
         )  # "please run cube": the count only
 
-        picked = _json(sock_path, {"version": 1, "command": "profile", "args": ["set", "chat"]})
-        assert (picked["ok"], picked["result"]) == (True, "chat (next dictation)")
-        assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "chat"
+        picked = _json(sock_path, {"version": 1, "command": "profile", "args": ["set", "prose"]})
+        assert (picked["ok"], picked["result"]) == (True, "prose (next dictation)")
+        assert _json(sock_path, {"version": 1, "command": "status"})["profile_override"] == "prose"
         assert ctl.send("profile   auto", sock_path) == "ok auto"  # text: words are arguments
 
         for request, code in [

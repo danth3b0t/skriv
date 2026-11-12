@@ -151,7 +151,6 @@ key = "alt_r"                 # pynput Key name (alt_r = Right Option, cmd_r, f1
 listener = "auto"             # auto (pynput on macOS/X11) | pynput | none
 tap_ms = 250                  # released sooner: a tap, recording goes on hands-free until the next press (0 = hold only)
 swallow_esc = true            # the Esc that cancels a recording does not reach the app (never when idle)
-profile_key = ""              # hark ctl profile next
 
 [paste]
 method = "auto"               # auto | macos | hyprland | wtype | x11 | clipboard | dry-run
@@ -183,10 +182,7 @@ keep = 10                     # audio of the last N dictations for `hark retry` 
 enabled = true                # small passive overlay: recording/level, transcribing, cleaning, done/error
 position = "bottom"           # bottom | top, centred on the screen with the pointer (macOS)
 
-[profile_switch]
-sticky = false                # `hark ctl profile set NAME` lasts one dictation; true: until `profile auto`
-
-[profiles.terminal]           # built-ins: terminal, chat, prose (fallback); table order = match order
+[profiles.terminal]           # built-ins: terminal, prose (fallback); table order = match order
 apps = ["com.mitchellh.ghostty", "kitty", "*terminal*"]   # globs on app id / name, case-insensitive
 terminal = true               # single line, Ctrl+Shift+V on Linux, never Enter
 cleanup = true
@@ -214,10 +210,9 @@ unless one was picked by hand (below).
   pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`
   of audio after key-down is sent as silence and left out of the speech gate (silence would lower its noise
   floor). Speech in those 250 ms is lost; the pre-roll before key-down is kept.
-- **Profile**: `hark ctl profile next|auto|set NAME` (or `profile_key` = next) picks the profile of the next
-  dictation (`next`: auto → terminal → chat → prose → auto, config order); `[profile_switch] sticky = true` keeps
-  it until `profile auto`. The indicator shows **Profile: chat** briefly (never over a recording) and the
-  recording as **Listening · chat**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
+- **Profile**: `hark ctl profile set NAME` picks the profile of the next dictation only; `hark ctl profile auto`
+  goes back to choosing by app. The indicator shows **Profile: prose** briefly (never over a recording) and the
+  recording as **Listening · prose**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
   it. Hark.app's menu-bar Profile menu sets the same override (Automatic = `profile auto`).
 
 ## Providers and the offline fallback

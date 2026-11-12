@@ -310,33 +310,24 @@ def test_a_profile_picked_by_hand_applies_to_the_next_dictation(
     c, injector = controller
     c.indicator = ind = Indicator(FakeBackend())
     assert c.handle("profile") == "ok auto"
-    assert [c.handle("profile next") for _ in range(4)] == [
-        "ok terminal (next dictation)",
-        "ok chat (next dictation)",
-        "ok prose (next dictation)",
-        "ok auto",
-    ]
     assert c.handle("profile set nope").startswith("error unknown profile 'nope'")
-    assert c.handle("profile sideways") == "error usage: profile [next | auto | set NAME]"
+    assert c.handle("profile next") == "error usage: profile [auto | set NAME]"
     assert c.handle("start now") == "error start takes no arguments"
-    assert c.handle("profile set chat") == "ok chat (next dictation)"
+    assert c.handle("profile set prose") == "ok prose (next dictation)"
+    assert c.status_json()["profile_override"] == "prose"
     assert ind.view is not None
-    assert ind.view.label == "Profile: chat"
+    assert ind.view.label == "Profile: prose"
     c.handle("start")
     assert ind.view is not None
-    assert (ind.view.glyph, ind.view.pinned) == ("dot", "chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("dot", "prose")
     c.hands_free()
-    assert (ind.view.glyph, ind.view.pinned) == ("lock", "chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("lock", "prose")
     c.on_pcm(pcm(0.4))
     c.handle("stop")
     wait_idle(c)
+    assert c.status_json()["profile_override"] is None
     dictate(c)  # used up: kitty is a terminal again
-    c.svc.cfg.profile_switch.sticky = True
-    assert c.handle("profile set chat") == "ok chat"
-    dictate(c)
-    dictate(c)
-    assert [terminal for _, terminal in injector.pasted] == [False, True, False, False]
-    assert c.status_json()["profile_override"] == "chat"
+    assert [terminal for _, terminal in injector.pasted] == [False, True]
 
 
 def until(cond: Callable[[], bool]) -> None:

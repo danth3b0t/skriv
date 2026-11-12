@@ -81,10 +81,10 @@ def parse_args(argv: list[str] | None = None) -> Args:
             "reload",
         ],
         help="paste-last: paste the last dictated text again into the focused window; "
-        "profile next|auto|set NAME: the profile for the next dictation; "
+        "profile auto|set NAME: the profile for the next dictation; "
         "reload: re-read the config file (the next dictation uses it)",
     )  # fmt: skip
-    c.add_argument("args", nargs="*", help="profile: next | auto | set NAME")
+    c.add_argument("args", nargs="*", help="profile: auto | set NAME")
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"
     )
@@ -93,7 +93,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "--wav", required=True, help="WAV file (any rate/channels; resampled to 16 kHz mono)"
     )
     o.add_argument("--dry-run", action="store_true", help="print instead of pasting")
-    o.add_argument("--profile", help="force a profile (e.g. terminal, chat, prose)")
+    o.add_argument("--profile", help="force a profile (e.g. terminal, prose)")
     o.add_argument(
         "--realtime",
         action="store_true",

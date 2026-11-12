@@ -86,7 +86,7 @@ bundle, signed. Steps:
 Menu: state (icon: `mic` ready, `mic.fill` listening, `waveform` transcribing, `mic.slash` paused, a warning
 triangle for 10 s after a failed dictation), the last dictation, Copy / Retry Last Dictation, Pause / Resume
 (releases an always-open mic), Profile (Automatic or a forced profile: the same override as `hark ctl profile set NAME|auto`, for the next
-dictation unless `[profile_switch] sticky = true`), Open History (Terminal, `hark history`),
+dictation), Open History (Terminal, `hark history`),
 Settings… (opens the config file in the default text editor; restart to apply), Setup & Permissions…, Run Doctor
 (runs `hark doctor` with Hark's permissions, opens the report), Launch at Login (`SMAppService.mainApp`; a
 `~/Library/LaunchAgents/dev.hark.app.plist` that `open`s the app where that is unavailable), Quit.

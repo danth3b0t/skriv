@@ -48,7 +48,7 @@ MIC_RETRY_S = 5.0  # a lost mic is reopened at most this often (no device: PortA
 TICK_S = 1.0  # mic watchdog, config and server checks (status changes for `subscribe`)
 # Applied by `reload` for the next dictation; every other table needs a restart.
 RELOADABLE = (
-    "words", "context", "gate", "cleanup", "feedback", "profiles", "profile_switch", "retry",
+    "words", "context", "gate", "cleanup", "feedback", "profiles", "retry",
 )  # fmt: skip
 PASTE_RESTART_KEYS = ("method", "restore_clipboard", "restore_delay_ms", "join_window_ms")
 
@@ -156,9 +156,7 @@ class Controller:
                 return self._refuse("error busy", "busy")
             cue = self._start_cue()
             mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
-            profile = self.profile_override
-            if not self.svc.cfg.profile_switch.sticky:
-                self.profile_override = None  # used up by this dictation
+            profile, self.profile_override = self.profile_override, None  # used up by it
             self.current = utt = Utterance(
                 self.svc, profile=profile, preroll=self.preroll.take(), mask_ms=mask_ms
             )
@@ -428,9 +426,7 @@ class Controller:
         return f"ok pasted {len(text)} chars"
 
     def profile(self, args: Sequence[str]) -> str:
-        """``[]`` (show) | ``["next"]`` (auto -> each profile in table order -> auto) | ``["auto"]``
-        | ``["set", NAME]``: the profile of the next dictation (``profile_switch.sticky``: of
-        every one until ``auto``)."""
+        """``[]`` (show) | ``["auto"]`` | ``["set", NAME]``: the profile of the next dictation."""
         names = list(self.svc.cfg.profiles)
         with self._lock:
             current = self.profile_override
@@ -439,15 +435,12 @@ class Controller:
                     new = current
                 case ["auto"]:
                     new = None
-                case ["next"]:
-                    order: list[str | None] = [None, *names]
-                    new = order[(order.index(current) + 1) % len(order)]
                 case ["set", name] if name in names:
                     new = name
                 case ["set", name]:
                     return f"error unknown profile {name!r} (have: {', '.join(names)})"
                 case _:
-                    return "error usage: profile [next | auto | set NAME]"
+                    return "error usage: profile [auto | set NAME]"
             self.profile_override = new
         self.touch()
         label = new or "auto"
@@ -455,8 +448,7 @@ class Controller:
             self.indicator.notice(f"Profile: {label}")
         if args:
             log.info("profile override: %s", label)
-        scope = "" if new is None or self.svc.cfg.profile_switch.sticky else " (next dictation)"
-        return f"ok {label}{scope}"
+        return f"ok {label}" if new is None else f"ok {label} (next dictation)"
 
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current."""
@@ -639,11 +631,9 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
             # a filtering event tap needs Accessibility; without it the tap is not created at all
             log.warning("no Accessibility permission: Esc will also reach the focused app")
             swallow_esc = False
-    actions = ((cfg.profile_key, lambda: controller.profile(["next"])),)
     return PushToTalk(
         cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input,
         on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000, swallow_esc=swallow_esc,
-        keys={key: action for key, action in actions if key},
     )  # fmt: skip
 
 
