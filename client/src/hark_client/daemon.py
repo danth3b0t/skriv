@@ -276,6 +276,7 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
         from hark_client.hotkey import PushToTalk  # noqa: PLC0415
     except ImportError as e:
         raise StartupError("hotkey.listener = pynput needs pynput (Linux: hark-client[x11])") from e
+    swallow_esc = cfg.swallow_esc
     if sys.platform == "darwin":
         from hark_client import macos  # noqa: PLC0415
 
@@ -283,9 +284,13 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
             log.warning(
                 "no Input Monitoring permission: the hotkey will not fire (see `hark doctor`)"
             )
+        if swallow_esc and not macos.can_post_events():
+            # a filtering event tap needs Accessibility; without it the tap is not created at all
+            log.warning("no Accessibility permission: Esc will also reach the focused app")
+            swallow_esc = False
     return PushToTalk(
         cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input,
-        on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000,
+        on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000, swallow_esc=swallow_esc,
     )  # fmt: skip
 
 

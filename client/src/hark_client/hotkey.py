@@ -17,8 +17,10 @@ only; the exported class has precise signatures.
 
 from __future__ import annotations
 
+import importlib
 import logging
 import queue
+import sys
 import threading
 import time
 from typing import TYPE_CHECKING, Literal, Protocol
@@ -87,11 +89,14 @@ class PushToTalk:
         *,
         on_tap: Action | None = None,
         tap_s: float = 0.0,
+        swallow_esc: bool = False,
         clock: Callable[[], float] = time.monotonic,
         dispatch: Callable[[Action], None] | None = None,
     ) -> None:
         """on_input: any other key press (modifiers folded into ``mods``) or mouse click.
         tap_s: releases sooner than this after the press are taps (0: hold only).
+        swallow_esc: the Esc that cancels a recording does not reach the focused app (macOS:
+        an active event tap, which needs Accessibility; X11: a grab of Esc while recording).
         dispatch: runs actions (default: in order on a worker thread)."""
         from pynput import keyboard  # noqa: PLC0415 - optional, platform-specific
 
@@ -112,7 +117,21 @@ class PushToTalk:
         self._external = False  # a recording is running (from any source)
         self._mods: dict[object, str] = {}  # held modifier key -> mods name
         self._lock = threading.Lock()
-        self._listener = keyboard.Listener(on_press=self._press, on_release=self._release)
+        self.swallow_esc = swallow_esc
+        self._swallowing = False  # an Esc keystroke that cancelled: until its release
+        self._drop = False  # suppress the event the listener just reported (macOS)
+        self._grab: _XEscGrab | None = None
+        if swallow_esc and sys.platform.startswith("linux"):
+            self._grab = _XEscGrab.open()
+        intercept = self._intercept if swallow_esc and sys.platform == "darwin" else None
+        # an intercept turns the macOS tap from listen-only into a filter (needs Accessibility)
+        self._listener = (
+            keyboard.Listener(
+                on_press=self._press, on_release=self._release, darwin_intercept=intercept
+            )
+            if intercept is not None
+            else keyboard.Listener(on_press=self._press, on_release=self._release)
+        )
         self._mouse: _Listener | None = None
         if on_input is not None:
             from pynput import mouse  # noqa: PLC0415 - optional, platform-specific
@@ -138,6 +157,16 @@ class PushToTalk:
             self._external = on
             if not on:
                 self._mode = "idle"  # a later release of a held key does nothing
+        grab = self._grab
+        if grab is not None:  # in order with the actions, off the caller's (locked) path
+            self._dispatch(lambda: grab.hold(on=on))
+
+    def _intercept(self, event_type: object, event: object) -> object | None:
+        """macOS event tap filter, right after the listener reported ``event``: None drops it.
+        Drops only the Esc keystroke that cancelled a recording (down, repeats, up)."""
+        with self._lock:
+            drop, self._drop = self._drop, False
+        return None if drop else event
 
     def _key_press(self, key: object) -> KeyPress:
         mods = frozenset(self._mods.values())
@@ -162,8 +191,12 @@ class PushToTalk:
                 return self.on_up
             self._mode, self._down_at = "hold", self._clock()
             return self.on_down
+        if key == self._keyboard.Key.esc and self._swallowing:
+            self._drop = True  # auto-repeat of the Esc that cancelled
+            return None
         if key == self._keyboard.Key.esc and (self._mode != "idle" or self._external):
             self._mode, self._external = "idle", False
+            self._swallowing = self._drop = self.swallow_esc
             return self.on_cancel
         if (mod := MODIFIERS.get(str(getattr(key, "name", "")))) is not None:
             self._mods[key] = mod
@@ -182,6 +215,9 @@ class PushToTalk:
     def _release(self, key: object, injected: bool = False) -> None:  # noqa: FBT001, FBT002 - pynput callback signature
         with self._lock:
             self._mods.pop(key, None)
+            if key == self._keyboard.Key.esc and self._swallowing:
+                self._swallowing, self._drop = False, True
+                return
             if key != self.target or not self._down:
                 return
             self._down = False
@@ -208,5 +244,60 @@ class PushToTalk:
         self._listener.stop()
         if self._mouse is not None:
             self._mouse.stop()
+        if self._grab is not None:
+            self._dispatch(self._grab.close)  # after any pending grab change
         if self._serial is not None:
             self._serial.stop()
+
+
+class _XEscGrab:
+    """X11: a passive grab of Esc (any modifiers) on the root window while recording, so Esc goes
+    to hark instead of the focused window; the listener (RECORD extension) still sees it and
+    cancels, which releases the grab. **Untested on real hardware.**"""
+
+    def __init__(self, display) -> None:  # noqa: ANN001 - an untyped Xlib Display
+        xk = importlib.import_module("Xlib.XK")  # python-xlib comes with pynput on Linux
+        self._display = display
+        self._root = display.screen().root
+        self._keycode = display.keysym_to_keycode(xk.string_to_keysym("Escape"))
+        self._held = False
+
+    @classmethod
+    def open(cls) -> _XEscGrab | None:
+        try:
+            return cls(importlib.import_module("Xlib.display").Display())
+        except Exception as e:  # noqa: BLE001 - no X display / no python-xlib: Esc is not swallowed
+            log.warning(
+                "cannot grab Esc (%s: %s); it will reach the focused app", type(e).__name__, e
+            )
+            return None
+
+    def hold(self, *, on: bool) -> None:
+        """Grab (on) or release Esc. Runs on the hotkey worker thread only."""
+        x = importlib.import_module("Xlib.X")
+        error = importlib.import_module("Xlib.error")
+        if on == self._held:
+            return
+        if on:
+            catch = error.CatchError(error.BadAccess)
+            self._root.grab_key(
+                self._keycode,
+                x.AnyModifier,
+                True,  # noqa: FBT003 - Xlib's owner_events
+                x.GrabModeAsync,
+                x.GrabModeAsync,
+                onerror=catch,
+            )
+            self._display.sync()
+            if catch.get_error() is not None:
+                log.warning("another client grabs Esc; it will reach the focused app")
+                return
+        else:
+            self._root.ungrab_key(self._keycode, x.AnyModifier)
+            self._display.sync()
+        self._held = on
+        while self._display.pending_events():  # grabbed key events are not used: drain them
+            self._display.next_event()
+
+    def close(self) -> None:
+        self._display.close()

@@ -31,13 +31,20 @@ def run_now(action: Callable[[], object]) -> None:
     action()
 
 
-def make(events: list[object], clock: Clock | None = None, *, tap_s: float = 0.25) -> PushToTalk:
+def make(
+    events: list[object],
+    clock: Clock | None = None,
+    *,
+    tap_s: float = 0.25,
+    swallow_esc: bool = False,
+) -> PushToTalk:
     def note(name: str) -> Callable[[], None]:
         return lambda: events.append(name)
 
     return hotkey.PushToTalk(
         "alt_r", note("down"), note("up"), note("cancel"), events.append,
-        on_tap=note("tap"), tap_s=tap_s, clock=clock or Clock(), dispatch=run_now,
+        on_tap=note("tap"), tap_s=tap_s, swallow_esc=swallow_esc, clock=clock or Clock(),
+        dispatch=run_now,
     )  # fmt: skip
 
 
@@ -128,3 +135,40 @@ def test_without_tap_ms_every_press_is_push_to_talk():
     ptt._press(K.alt_r)
     ptt._release(K.alt_r)
     assert events == ["down", "up"]
+
+
+EVENT = object()  # stands in for the CGEventRef the tap filters
+
+
+def delivered(ptt: PushToTalk, key: object, *, down: bool = True) -> bool:
+    """Report ``key`` to the listener, then ask the tap filter whether the app gets it."""
+    (ptt._press if down else ptt._release)(key)
+    return ptt._intercept(0, EVENT) is EVENT
+
+
+def test_only_the_esc_that_cancels_a_recording_is_swallowed():
+    events: list[object] = []
+    ptt = make(events, swallow_esc=True)
+    assert delivered(ptt, K.esc)  # idle: never suppressed
+    assert delivered(ptt, K.esc, down=False)
+    assert delivered(ptt, K.alt_r)  # the hotkey itself is not suppressed
+    assert delivered(ptt, K.space)  # nor what is typed while recording
+    assert not delivered(ptt, K.esc)  # cancels
+    assert not delivered(ptt, K.esc)  # its auto-repeat
+    assert delivered(ptt, K.alt_r, down=False)
+    assert not delivered(ptt, K.esc, down=False)  # its release
+    assert delivered(ptt, K.esc)  # the next Esc, idle again
+    assert delivered(ptt, K.esc, down=False)
+    ptt.recording(True)  # `hark ctl start`
+    assert not delivered(ptt, K.esc)
+    esc = KeyPress("esc")
+    assert events == [esc, "down", KeyPress("space"), "cancel", esc, "cancel"]
+
+
+def test_esc_reaches_the_app_when_swallowing_is_off():
+    events: list[object] = []
+    ptt = make(events)
+    ptt._press(K.alt_r)
+    assert delivered(ptt, K.esc)
+    assert delivered(ptt, K.esc, down=False)
+    assert events == ["down", "cancel"]

@@ -92,6 +92,9 @@ class HotkeyConfig:
     # A press released sooner than this is a tap: recording continues hands-free until the
     # next press. 0 = hold-to-talk only.
     tap_ms: int = 250
+    # The Esc that cancels a recording does not reach the focused app (macOS: needs
+    # Accessibility; X11: grabs Esc while recording). Nothing is suppressed when idle.
+    swallow_esc: bool = True
 
 
 @dataclass
