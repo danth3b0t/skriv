@@ -15,6 +15,12 @@ if TYPE_CHECKING:
     from hark_client.config import WordConfig
 
 _TOKEN_RE = re.compile(r"[^\W_]+")
+# Shell commands said in a terminal that no context may show (``git`` is heard as "get"),
+# most useful first; spoken forms from aliases.LEXICON ("cube control").
+TERMINAL_COMMANDS = (
+    "git", "uv", "npm", "pnpm", "docker", "kubectl", "cargo", "journalctl", "systemctl", "uvx",
+)  # fmt: skip
+TERMINAL_WEIGHT = 0.3  # below any context term with real evidence
 
 
 def _kind(word: str) -> TermKind:
@@ -34,6 +40,21 @@ def dictionary_terms(words: Sequence[WordConfig]) -> tuple[Term, ...]:
                  TermSource.DICTIONARY)
         )  # fmt: skip
     return tuple(out)
+
+
+def with_terminal_commands(terms: Sequence[Term], max_terms: int) -> tuple[Term, ...]:
+    """``terms`` plus the :data:`TERMINAL_COMMANDS` not on it, for the terminal profile. They
+    take the free slots, and when the list is full at most a quarter of ``max_terms`` from
+    the weakest (last) terms; never more than ``max_terms`` in all."""
+    taken = {t.canonical for t in terms}
+    missing = [
+        Term(c, spoken_forms(c, TermKind.COMMAND), TERMINAL_WEIGHT, TermKind.COMMAND,
+             TermSource.DICTIONARY)
+        for c in TERMINAL_COMMANDS
+        if c not in taken
+    ]  # fmt: skip
+    room = min(len(missing), max(max_terms - len(terms), max_terms // 4))
+    return (*terms[: max_terms - room], *missing[:room])
 
 
 def merge_terms(
