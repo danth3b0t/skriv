@@ -1,6 +1,7 @@
 """Optional TextCleanup under a deadline: the server's rewrite, kept only if it is faithful.
 
-The server returns a rewrite of the whole text (S1-mini). Before it replaces the text, the
+The server returns a rewrite of the whole text (S1-mini, or an instruct model that also gets the
+shortlist; `prime` sends it the shortlist at key-down). Before it replaces the text, the
 rewrite must pass `fidelity.check` against the text: protected identifiers, negations, numbers
 and content words survive. If it does not, the sentences that pass are kept and the others stay
 as said (`fidelity.accept`; status applied, with the reason). If none passes, and on timeouts
@@ -19,7 +20,7 @@ import grpc
 from skriv.v1 import skriv_pb2 as pb
 from skriv.v1 import skriv_pb2_grpc as pb_grpc
 from skriv_client import fidelity
-from skriv_client.asr import rpc_error_text
+from skriv_client.asr import bias_list, rpc_error_text
 
 if TYPE_CHECKING:
     from collections.abc import Sequence
@@ -32,6 +33,9 @@ CORRECTION_CUES = fidelity.CORRECTION_CUES
 BARE_CUES = fidelity.BARE_CUES
 MAX_RETRACTED_WORDS = fidelity.MAX_RETRACTED_WORDS
 
+# A cold prompt (the first dictation after the model loaded) takes ~1.5 s on a 4B model; giving
+# up early would waste the work, and nobody waits for it.
+PRIME_BUDGET_MS = 5000
 SINGLE_LINE_PROFILES = frozenset({"terminal", "chat"})
 _TOKEN = re.compile(r"\S+")
 _CODE_INNER = re.compile(r"[_/\\.:@#$=<>{}\[\]()`~|*]|[a-z][A-Z]|[A-Za-z]\d|\d[A-Za-z]")
@@ -71,6 +75,16 @@ def restore_case(text: str, rewrite: str, keep: set[str]) -> str:
     return rewrite
 
 
+def judge(text: str, rewrite: str, terms: Sequence[Term], *, single_line: bool) -> tuple[str, str]:
+    """`fidelity.accept` with what the shortlist allows: what to keep of `rewrite`, and why
+    the rest was refused ("" if nothing was)."""
+    keep = protected(text, terms)
+    # What a merge or a repair may produce: "Super Whisper" -> "Superwhisper".
+    keep |= {t.canonical for t in terms if fidelity.count(t.canonical, rewrite)}
+    spoken = {t.canonical: t.spoken for t in terms if len(t.canonical) >= 2}
+    return fidelity.accept(text, rewrite, keep, single_line=single_line, terms=spoken)
+
+
 @dataclass
 class CleanupOutcome:
     text: str  # what goes on: the rewrite if it was accepted, else the input
@@ -80,18 +94,47 @@ class CleanupOutcome:
     rewrite: str = ""  # the server's rewrite (also when rejected)
 
 
+def prime(  # noqa: PLR0913 - keyword-only args
+    channel: grpc.Channel,
+    *,
+    terms: Sequence[Term],
+    send_terms: bool,
+    utterance_id: str,
+    profile_id: str,
+    app_category: str,
+) -> str:
+    """At key-down: the server sends its model the prompt this utterance's `run` will start
+    with, so only the transcript is new at key-up. "" when done, else why not."""
+    request = pb.CleanupRequest(
+        request_id=utterance_id + "/prime",
+        utterance_id=utterance_id,
+        profile_id=profile_id,
+        context=pb.CleanupContext(app_category=app_category),
+        budget_ms=PRIME_BUDGET_MS,
+        terms=bias_list(terms).terms if send_terms else (),
+        prime=True,
+    )
+    try:
+        resp = pb_grpc.TextCleanupStub(channel).Cleanup(request, timeout=PRIME_BUDGET_MS / 1000 + 1)
+    except grpc.RpcError as e:
+        return rpc_error_text(e)
+    return "server budget exhausted" if resp.truncated else ""
+
+
 def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     channel: grpc.Channel,
     *,
     text: str,
     terms: Sequence[Term],
+    send_terms: bool,
     utterance_id: str,
     profile_id: str,
     app_category: str,
     language: str,
     deadline_ms: int,
 ) -> CleanupOutcome:
-    """The shortlist (`terms`) stays here: it only decides what the rewrite must keep."""
+    """The shortlist (`terms`) decides what the rewrite must keep and which new spellings it
+    may write; it goes to the server too if `send_terms` (the provider gets context)."""
     t0 = time.perf_counter()
 
     def done(
@@ -111,6 +154,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
         language=language,
         context=pb.CleanupContext(app_category=app_category),
         budget_ms=max(1, deadline_ms * 4 // 5),  # leave room for the round trip
+        terms=bias_list(terms).terms if send_terms else (),
     )
     try:
         resp = pb_grpc.TextCleanupStub(channel).Cleanup(request, timeout=deadline_ms / 1000)
@@ -124,12 +168,8 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
         return done("skipped", resp.skipped or "no rewrite")
     if resp.text == text:
         return done("no_edits")
-    keep = protected(text, terms)
-    rewrite = restore_case(text, resp.text, keep)
-    single_line = profile_id in SINGLE_LINE_PROFILES
-    # What a merge may produce: "Super Whisper" -> "Superwhisper".
-    keep |= {t.canonical for t in terms if fidelity.count(t.canonical, rewrite)}
-    result, why = fidelity.accept(text, rewrite, keep, single_line=single_line)
+    rewrite = restore_case(text, resp.text, protected(text, terms))
+    result, why = judge(text, rewrite, terms, single_line=profile_id in SINGLE_LINE_PROFILES)
     if why and result == text:
         return done("rejected", why, rewrite=rewrite)
     return done("applied", why, result=result, rewrite=rewrite)

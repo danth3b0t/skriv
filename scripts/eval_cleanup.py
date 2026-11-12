@@ -120,6 +120,7 @@ def run_case(channel: grpc.Channel, case: Case, budget_ms: int) -> Result:
         channel,
         text=text,
         terms=terms(case),
+        send_terms=True,
         utterance_id=case["id"],
         profile_id=case["profile"],
         app_category=case["profile"],
