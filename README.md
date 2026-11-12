@@ -53,7 +53,7 @@ scripts/cpu-server-up` (transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of s
 | `proto-py/` | generated Python stubs (`proto-py/gen-proto`) |
 | `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up`, `build-macos-app`, `hark-certs` (mTLS) |
 | `packaging/` | `macos/` (Hark.app launcher), AUR `hark-git`, `systemd/` user units, `omarchy/` dictation adapter |
-| `docs/` | context, research-driven decisions, protocol, dataset spec, benchmarks |
+| `docs/` | context, research-driven decisions, protocol, eval set, benchmarks |
 
 ## Development
 

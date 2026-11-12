@@ -177,7 +177,6 @@ cue_mask_ms = 250             # with a start sound: this much audio after key-do
 
 [history]
 dir = "~/.local/share/hark"
-save_recordings = false       # opt-in dataset seeding, see below
 
 [retry]
 keep = 10                     # audio of the last N dictations for `hark retry` (0 = off), see below
@@ -293,8 +292,8 @@ It never takes focus or clicks, so the paste still goes to the window you dictat
 
 ## Recovery, history and re-insertion
 
-The daemon keeps the audio of the last `retry.keep` (10) dictations in `<history.dir>/retry/<id>/` (0700/0600; also
-with `save_recordings = false`; older ones are deleted after each dictation, all of them with `keep = 0`): the WAV,
+The daemon keeps the audio of the last `retry.keep` (10) dictations in `<history.dir>/retry/<id>/` (0700/0600; the
+only audio hark keeps; older ones are deleted after each dictation, all of them with `keep = 0`): the WAV,
 the key-down context without selection, window title or agent reply, and the outcome. After a server error or
 timeout the notification says `hark retry`:
 
@@ -397,7 +396,7 @@ including any change outside a hit, goes back to the anchor's words. `history.js
 `gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`. Measurements:
 [docs/bench/2026-11-12-acoustic-gate.md](../docs/bench/2026-11-12-acoustic-gate.md).
 
-## History and recordings
+## History
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
 outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
@@ -407,11 +406,6 @@ wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by th
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
 (each provider tried: state, rtt_ms, cached, detail). Files are created 0600 in a 0700 directory.
-
-With `save_recordings = true`, each dictation also writes `recordings/YYYY/MM/<utterance_id>/`:
-`audio.wav` (exactly the 16 kHz stream sent, pre-roll included), `context.json` (the context snapshot) and
-`result.json` (history record + SessionStart + FinalResult). These are raw, unscrubbed inputs for the dataset
-pipeline in [docs/dataset/spec.md](../docs/dataset/spec.md).
 
 ## Tests
 

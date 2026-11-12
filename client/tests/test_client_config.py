@@ -25,8 +25,6 @@ preroll_ms = 0
 keep_open = false
 [paste]
 method = "wtype"
-[history]
-save_recordings = true
 [gate]
 max_distance = 0
 confident_anchor = 0.9
@@ -47,7 +45,6 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     assert cfg.server.address == "desktop.tailnet:50051"
     assert (cfg.cleanup.enabled, cfg.cleanup.deadline_ms) == (False, 300)
     assert (cfg.audio.preroll_ms, cfg.audio.keep_open, cfg.paste.method) == (0, False, "wtype")
-    assert cfg.history.save_recordings
     # floats accept TOML integers
     assert (cfg.gate.max_distance, cfg.gate.confident_anchor) == (0.0, 0.9)
     assert isinstance(cfg.gate.max_distance, float)

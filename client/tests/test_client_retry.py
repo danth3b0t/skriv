@@ -46,7 +46,6 @@ def test_ring_keeps_the_newest_n_privately_and_purges_the_rest(
     tmp_path: Path, controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
 ):
     c, _ = controller
-    assert not c.svc.cfg.history.save_recordings  # kept regardless
     focus = FocusInfo(app="kitty", app_id="kitty", title="secret title", window_id="w1")
     fake_context.snapshots = [ContextSnapshot(focus=focus, selection="secret", terms=(KUBECTL,))]
     c.svc.cfg.retry.keep = 2

@@ -1,8 +1,8 @@
 """Recovery ring: the last ``retry.keep`` dictations' audio, kept so `hark retry` can re-run one.
 
 Layout: ``<history.dir>/retry/<utterance_id>/{audio.wav, context.json, meta.json}`` (directories
-0700, files 0600). Kept even with ``history.save_recordings = false``; older entries are deleted
-after each save. ``context.json`` is the snapshot taken at key-down (without the selection,
+0700, files 0600); hark's only audio store (`hark eval add` copies from it). Older entries are
+deleted after each save. ``context.json`` is the snapshot taken at key-down (without the selection,
 agent reply and window title), so a retry is biased and targeted like the original: it pastes
 only if that window is focused again, else copies.
 """

@@ -172,13 +172,12 @@ class FeedbackConfig:
 class HistoryConfig:
     dir: str = field(default_factory=default_data_dir)
     enabled: bool = True
-    save_recordings: bool = False  # opt-in: WAV + context snapshot + texts per utterance
 
 
 @dataclass
 class RetryConfig:
-    # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600),
-    # independent of save_recordings, so `hark retry` can re-run a failed one. 0 = off.
+    # Audio + context of the last `keep` dictations under <history.dir>/retry (0700/0600), so
+    # `hark retry` can re-run a failed one and `hark eval add` can copy one. 0 = off.
     keep: int = 10
 
 

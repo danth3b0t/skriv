@@ -697,7 +697,7 @@ class Utterance:
                 "terms": len(snap.terms),
                 "collected_ms": snap.collected_ms,
                 "errors": list(snap.errors),
-                # Why each term was on the list (dataset `shortlist_used`; no raw context text).
+                # Why each term was on the list (no raw context text).
                 "provenance": [
                     {
                         "term": t.canonical,
@@ -722,17 +722,5 @@ class Utterance:
         try:
             path = history.append(base, record)
             self._report("history", str(path))
-            if cfg.history.save_recordings:
-                full = dict(record)
-                if self.start_message is not None:
-                    full["session_start"] = json_format.MessageToDict(
-                        self.start_message, preserving_proto_field_name=True
-                    )
-                if final is not None:
-                    full["final_result"] = json_format.MessageToDict(
-                        final, preserving_proto_field_name=True
-                    )
-                rec = history.save_recording(base, self.id, bytes(self.pcm), snap, full)
-                self._report("recording", str(rec))
         except OSError as e:
             log.warning("could not write history: %s", e)
