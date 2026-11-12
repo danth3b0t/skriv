@@ -217,7 +217,7 @@ def report(s: Score, res: Result) -> dict[str, object]:
         "raw": res.raw_text,
         "gated": gate.get("text", res.raw_text),
         "canonical": res.canonical_text,
-        "uncleaned": res.swap_text,  # symbols, self-corrections and guardrails, no cleanup
+        "uncleaned": res.uncleaned_text,  # symbols, self-corrections and guardrails, no cleanup
         "final": res.final_text,
         "gate": gate,
         "replacements": res.replacements,

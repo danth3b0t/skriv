@@ -73,6 +73,9 @@ class Result:
     profile: str = ""
     raw_text: str = ""
     canonical_text: str = ""
+    uncleaned_text: str = (
+        ""  # what would be pasted without cleanup (symbols, corrections, guardrails)
+    )
     final_text: str = ""
     replacements: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
     cleanup: CleanupOutcome | None = None
@@ -501,6 +504,7 @@ class Utterance:
         res.final_text, res.guard_events = guardrails.apply(
             res.cleanup.text, terminal=prof.terminal
         )
+        res.uncleaned_text, _ = guardrails.apply(canon, terminal=prof.terminal)
         t["guard_ms"] = _ms(t1)
         self._report(
             "guard", f"{res.final_text!r} profile={profile_name} events={res.guard_events}"
@@ -674,6 +678,7 @@ class Utterance:
             "app_id": snap.focus.app_id,
             "raw_text": res.raw_text,
             "canonical_text": res.canonical_text,
+            "uncleaned_text": res.uncleaned_text,
             "final_text": res.final_text,
             "joined": bool(res.spacing and res.spacing["leading"]),
             "spacing": res.spacing,
