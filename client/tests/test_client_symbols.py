@@ -74,6 +74,7 @@ from hark_client import symbols
         ("go to slash tmp", "go to slash tmp"),
         ("add plus x", "add plus x"),
         ("one issue at a time", "one issue at a time"),
+        ("add a test with dash-bos and up-d", "add a test with dash-bos and up-d"),  # "add": a word
         ("", ""),
     ],
 )

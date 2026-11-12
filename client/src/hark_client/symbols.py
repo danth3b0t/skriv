@@ -10,7 +10,8 @@ Rules, on whitespace-separated words:
 - "dot dot" -> "..", "dot slash X" -> "./X", "dot dot slash X" -> "../X".
 - "dash dash WORD" -> "--word"; "dash L" (one letter) -> "-l" after a command-like
   word (COMMANDS, or a flag), or after any word but a function word once a command
-  was said in the sentence ("docker compose up dash d").
+  that is no everyday word (docker, uv; not add, make) was said in the sentence
+  ("docker compose up dash d").
 - "A slash B ..." -> "A/B...": with 2+ slashes, a final "dot EXT", or a leading
   slash at the start or after a command ("cd slash tmp" -> "cd /tmp"). One slash
   between ordinary words stays a word ("use the slash command"). A function word
@@ -21,8 +22,8 @@ Rules, on whitespace-separated words:
 - "chmod plus x" -> "chmod +x".
 - "issue/PR/port/ticket" + number words -> digits ("PR four thirty seven" -> "PR 437").
 - "zero comma one" -> "0,1" between two numbers.
-- ASR-joined forms: "x.by" -> "x.py", "commit-m" -> "commit -m" (also "up-d" once a
-  command was said in the sentence), "dash-dash fix" / "dash-fix" -> "--fix".
+- ASR-joined forms: "x.by" -> "x.py", "commit-m" -> "commit -m", and once such a command
+  was said: "up-d" -> "up -d", "dash-fix" -> "--fix"; "dash-dash fix" -> "--fix" always.
 - When a flag was produced and the text starts with a capitalized command, it
   is lower-cased ("Git commit -m" -> "git commit -m"); so is a capitalized command
   followed by one of its subcommands ("Git status" -> "git status").
@@ -31,6 +32,8 @@ Rules, on whitespace-separated words:
 from __future__ import annotations
 
 import re
+
+from hark_client.context.canon import common_words
 
 EXTENSIONS = frozenset({
     "py", "pyi", "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "go", "rb", "java", "kt", "swift",
@@ -126,7 +129,7 @@ class _Rewriter:
         self.out: list[str] = []
         self.events: list[str] = []
         self.flag = False
-        self.command_seen = False  # a command was said in the current sentence
+        self.command_seen = False  # a command that is no everyday word, in this sentence
 
     def low(self, i: int) -> str:
         return self.words[i][0].lower() if i < len(self.words) else ""
@@ -154,8 +157,8 @@ class _Rewriter:
         while i < len(self.words):
             n = self.step(i)
             for core, punct in self.words[i:n]:
-                if core.lower() in COMMANDS:
-                    self.command_seen = True
+                if core.lower() in COMMANDS and core.lower() not in common_words():
+                    self.command_seen = True  # docker, uv; not add, make, find
                 if any(c in _SENTENCE_END for c in punct):
                     self.command_seen = False
             i = n
