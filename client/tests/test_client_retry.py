@@ -7,16 +7,16 @@ import socket
 import stat
 from typing import TYPE_CHECKING, cast
 
-import grpc
 import pytest
 
-from hark_client import asr, retry
+from hark_client import retry
 from hark_client.__main__ import main
-from hark_client.config import Config
+from hark_client.config import Config, ProviderConfig
 from hark_client.context import ContextSnapshot, FocusInfo
 from hark_client.daemon import Controller
 from hark_client.inject import DryRunInjector
 from hark_client.pipeline import Services
+from hark_client.providers import Router
 
 from .conftest import KUBECTL, RecordingFeedback, pcm, snapshot, wait_idle
 
@@ -91,11 +91,10 @@ def test_failed_dictation_is_retried_with_its_original_context(
     cfg.feedback.start_cue = "never"
     fake_context.snapshots = [snapshot("com.apple.Notes", "w1")]
     feedback = RecordingFeedback()
-    with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
-        svc = Services(
-            cfg, channel, asr.Capabilities(channel), DryRunInjector(out=lambda _: None), feedback
-        )
-        dictate(Controller(svc, None), 1.0)  # 5 mock words: the 3rd+4th are "cube control"
+    router = Router([ProviderConfig(address=f"127.0.0.1:{port}")])
+    svc = Services(cfg, router, DryRunInjector(out=lambda _: None), feedback)
+    dictate(Controller(svc, None), 1.0)  # 5 mock words: the 3rd+4th are "cube control"
+    router.close()
     assert any("`hark retry`" in n for n in feedback.notifications)
     failed_id = history_ids(tmp_path)[0]
 

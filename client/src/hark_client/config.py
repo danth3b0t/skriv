@@ -51,6 +51,32 @@ class ServerConfig:
 
 
 @dataclass
+class ProviderConfig:
+    """One ASR server in `[[providers]]`, tried in `priority` order (lower first, then file
+    order) at the start of every dictation; see hark_client.providers."""
+
+    address: str = ""  # host:port or unix:/path
+    name: str = ""  # shown in `hark doctor` and history; "" => address
+    priority: int = 0
+    # Privacy: send the context shortlist (bias terms from screen, repo, agent sessions) to
+    # this server. false => audio and the transcript only (cleanup gets the text and which
+    # spans of it to protect); canonicalization against the shortlist stays local.
+    send_context: bool = True
+    # A health check slower than this skips the provider for this dictation (and bounds the
+    # time spent finding out).
+    max_latency_ms: int = 300
+    tls_ca: str = ""
+    tls_cert: str = ""
+    tls_key: str = ""
+    tls_server_name: str = ""
+    model_id: str = ""  # "" => server default
+
+    @property
+    def label(self) -> str:
+        return self.name or self.address
+
+
+@dataclass
 class ContextConfig:
     deadline_ms: int = 150  # SessionStart waits at most this long for context
     max_terms: int = 30  # research: short lists; the acoustic gate guards the rest
@@ -223,7 +249,20 @@ class Config:
     indicator: IndicatorConfig = field(default_factory=IndicatorConfig)
     profile_switch: ProfileSwitchConfig = field(default_factory=ProfileSwitchConfig)
     profiles: dict[str, Profile] = field(default_factory=default_profiles)
+    providers: list[ProviderConfig] = field(default_factory=list[ProviderConfig])
     log_level: str = "INFO"
+
+    def provider_configs(self) -> list[ProviderConfig]:
+        """`[[providers]]`, else the single `[server]` (the configuration before providers)."""
+        if self.providers:
+            return list(self.providers)
+        s = self.server
+        return [
+            ProviderConfig(
+                address=s.address, tls_ca=s.tls_ca, tls_cert=s.tls_cert, tls_key=s.tls_key,
+                tls_server_name=s.tls_server_name, model_id=s.model_id,
+            )
+        ]  # fmt: skip
 
     def profile_for(self, focus: FocusInfo) -> str:
         """First profile (in table order) whose `apps` glob matches the focused app id or
@@ -278,6 +317,8 @@ def _apply(obj: DataclassInstance, data: Mapping[str, object], where: str) -> No
         current = cast("object", getattr(obj, key))
         if key == "profiles" and not where:
             _apply_profiles(cast("Config", obj), value)
+        elif key == "providers" and not where:
+            _apply_providers(cast("Config", obj), value)
         elif dataclasses.is_dataclass(current):
             if not isinstance(value, dict):
                 raise ConfigError(f"{path}: expected a table")
@@ -305,7 +346,38 @@ def _apply_profiles(cfg: Config, value: object) -> None:
         _apply(prof, cast("dict[str, object]", table), f"profiles.{name}")
 
 
-def validate(cfg: Config) -> None:  # noqa: PLR0912 - one check per setting
+def _apply_providers(cfg: Config, value: object) -> None:
+    if not isinstance(value, list):
+        raise ConfigError("providers: expected an array of tables ([[providers]])")
+    for i, table in enumerate(cast("list[object]", value)):
+        if not isinstance(table, dict):
+            raise ConfigError(f"providers[{i}]: expected a table")
+        prov = ProviderConfig()
+        _apply(prov, cast("dict[str, object]", table), f"providers[{i}]")
+        cfg.providers.append(prov)
+
+
+def _validate_tls(where: str, ca: str, cert: str, key: str) -> None:
+    if bool(cert) != bool(key):
+        raise ConfigError(f"{where}tls_cert and {where}tls_key must be set together")
+    if cert and not ca:
+        raise ConfigError(f"{where}tls_cert needs {where}tls_ca")
+
+
+def _validate_providers(providers: list[ProviderConfig]) -> None:
+    labels: set[str] = set()
+    for i, p in enumerate(providers):
+        if not p.address:
+            raise ConfigError(f"providers[{i}].address is required")
+        if p.max_latency_ms < 1:
+            raise ConfigError(f"providers[{i}].max_latency_ms must be >= 1")
+        _validate_tls(f"providers[{i}].", p.tls_ca, p.tls_cert, p.tls_key)
+        if p.label in labels:
+            raise ConfigError(f"providers[{i}]: two providers named {p.label!r}")
+        labels.add(p.label)
+
+
+def validate(cfg: Config) -> None:
     if cfg.paste.method not in PASTE_METHODS:
         raise ConfigError(f"paste.method must be one of {', '.join(PASTE_METHODS)}")
     if cfg.hotkey.listener not in LISTENERS:
@@ -331,10 +403,8 @@ def validate(cfg: Config) -> None:  # noqa: PLR0912 - one check per setting
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")
-    if bool(cfg.server.tls_cert) != bool(cfg.server.tls_key):
-        raise ConfigError("server.tls_cert and server.tls_key must be set together")
-    if cfg.server.tls_cert and not cfg.server.tls_ca:
-        raise ConfigError("server.tls_cert needs server.tls_ca")
+    _validate_tls("server.", cfg.server.tls_ca, cfg.server.tls_cert, cfg.server.tls_key)
+    _validate_providers(cfg.providers)
     if not 0 <= cfg.gate.max_distance <= 1:
         raise ConfigError("gate.max_distance must be in [0, 1]")
     if cfg.gate.confident_anchor < 0:

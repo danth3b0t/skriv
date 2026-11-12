@@ -1,9 +1,10 @@
 """One dictation, end to end.
 
 hotkey down -> Utterance():
-    context.collect() starts on a thread; the Transcribe call opens immediately.
-    SessionStart goes out when the context is ready or the deadline passes (with an
-    empty context then); audio fed meanwhile queues behind it.
+    context.collect() starts on a thread; the provider router picks the server
+    (hark_client.providers) meanwhile. SessionStart goes out when the context is ready or
+    the deadline passes (with an empty context then; without context at all if the
+    provider has send_context = false); audio recorded meanwhile is replayed first.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> anchor gate -> canonicalize -> spoken symbols (terminal profile) ->
@@ -46,14 +47,13 @@ from hark_client.inject import PasteResult
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    import grpc
-
     from hark_client.config import Config
     from hark_client.continuation import ShadowBuffer
     from hark_client.feedback import Feedback
     from hark_client.fields import FieldReader
     from hark_client.inject import Injector
     from hark_client.learn import LearnedStore, Learner
+    from hark_client.providers import Provider, Router
 
 log = logging.getLogger("hark")
 
@@ -61,8 +61,7 @@ log = logging.getLogger("hark")
 @dataclass
 class Services:
     cfg: Config
-    channel: grpc.Channel
-    caps: asr.Capabilities
+    router: Router
     injector: Injector
     feedback: Feedback
     out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
@@ -134,12 +133,15 @@ class Utterance:
         self.timings: dict[str, float] = {}
         self.start_message: pb.SessionStart | None = None
         self.snapshot_at_start = ContextSnapshot()
+        self.provider: Provider | None = None
+        self.route: list[dict[str, object]] = []
+        self.stream: TranscribeStream | None = None
         self._ctx: Future[ContextSnapshot] = Future()
         self._lock = threading.Lock()
         self._done = False
+        self._cancelled = False
         self.keyup_unix_us = 0
         threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
-        self.stream = TranscribeStream(svc.channel)
         self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
         self._starter.start()
         self._mask_left = self._masked = self._mask_from = 0
@@ -170,25 +172,34 @@ class Utterance:
         self._ctx.set_result(snap)
 
     def _send_start(self) -> None:
+        t = time.perf_counter()
+        provider, self.route = self.svc.router.pick()  # while the context is collected
+        self.provider = provider
+        self.timings["route_ms"] = _ms(t)
         deadline_s = self.svc.cfg.context.deadline_ms / 1000
         try:
-            snap = self._ctx.result(timeout=deadline_s)
+            snap = self._ctx.result(timeout=max(0.0, deadline_s - (time.perf_counter() - t)))
         except TimeoutError:
             snap = ContextSnapshot(errors=("collect: missed the SessionStart deadline",))
         self.snapshot_at_start = snap
-        self.start_message = self._session_start(snap)
-        self.stream.start(self.start_message)
+        self.start_message = self._session_start(snap, provider)
+        with self._lock:
+            if self._cancelled:
+                return
+            self.stream = TranscribeStream(provider.channel)
+            self.stream.feed(bytes(self.pcm))  # recorded while the provider was chosen
+            self.stream.start(self.start_message)
         self.timings["session_start_ms"] = _ms(self.t0)
 
-    def _session_start(self, snap: ContextSnapshot) -> pb.SessionStart:
+    def _session_start(self, snap: ContextSnapshot, provider: Provider) -> pb.SessionStart:
         cfg = self.svc.cfg
         ctx = pb.RecognitionContext(revision=1)
-        bias = asr.bias_list(snap.terms)
+        bias = asr.bias_list(snap.terms) if provider.cfg.send_context else pb.BiasList()
         if bias.terms:
             ctx.bias.CopyFrom(bias)
         return pb.SessionStart(
             utterance_id=self.id,
-            model_id=cfg.server.model_id,
+            model_id=provider.cfg.model_id,
             languages=[cfg.server.language] if cfg.server.language else [],
             audio_format=pb.AudioFormat(
                 encoding=pb.AUDIO_ENCODING_PCM_S16LE,
@@ -216,7 +227,8 @@ class Utterance:
                 self._mask_left -= n
                 self._masked += n
             self.pcm += pcm16
-            self.stream.feed(pcm16)
+            if self.stream is not None:
+                self.stream.feed(pcm16)
 
     def _unmasked(self) -> bytes:
         """The audio without the masked span: what the speech gate measures (caller holds the
@@ -229,8 +241,10 @@ class Utterance:
 
     def cancel(self, reason: pb.CancelReason.ValueType = pb.CANCEL_REASON_USER_ABORT) -> None:
         with self._lock:
-            self._done = True
-        self.stream.cancel(reason)
+            self._done = self._cancelled = True
+            stream = self.stream
+        if stream is not None:
+            stream.cancel(reason)
 
     # -- hotkey up -----------------------------------------------------------------
 
@@ -266,9 +280,13 @@ class Utterance:
             if res.status == "no_speech":
                 self._record(res)
             return res
+        self._starter.join()  # bounded: health probes + the context deadline
         with self._lock:
             self._done = True
-            self.stream.end(reason)
+            stream = self.stream
+        if stream is None:  # cancelled while the provider was being chosen
+            return Result(self.id, "cancelled", timings=self.timings)
+        stream.end(reason)
         t_up = time.perf_counter()
         self.timings["held_ms"] = held_ms
         self.timings["speech_ms"] = speech
@@ -276,6 +294,8 @@ class Utterance:
         try:
             result = self._finish(t_up, shadow)
         except AsrError as e:
+            if self.provider is not None and stream.final is None and stream.ended is None:
+                self.provider.mark_down(str(e))  # no answer at all: the next dictation moves on
             result = Result(self.id, "error", error=f"asr: {e}", timings=self.timings)
             self._report("asr", f"FAILED: {e}")
             self.svc.feedback.sound("error")
@@ -286,7 +306,10 @@ class Utterance:
 
     def _finish(self, t_up: float, shadow: ShadowBuffer | None) -> Result:  # noqa: PLR0912, PLR0915 - the pipeline, stage by stage
         svc, cfg = self.svc, self.svc.cfg
-        final = self.stream.wait_final(cfg.server.final_timeout_ms / 1000)
+        stream, provider = self.stream, self.provider
+        if stream is None or provider is None:
+            raise AsrError("no stream")  # finish() returns before this
+        final = stream.wait_final(cfg.server.final_timeout_ms / 1000)
         snap0 = self.snapshot_at_start  # set before SessionStart, hence before any result
         self._report(
             "context",
@@ -295,15 +318,20 @@ class Utterance:
         )
         t = self.timings
         t["keyup_to_final_ms"] = _ms(t_up)
-        if self.stream.t_accepted is not None:
-            t["accepted_ms"] = round((self.stream.t_accepted - self.t0) * 1000, 1)
-        if self.stream.accepted is not None:
-            svc.caps.note_etag(self.stream.accepted.capabilities_etag)
+        if stream.t_accepted is not None:
+            t["accepted_ms"] = round((stream.t_accepted - self.t0) * 1000, 1)
+        if stream.accepted is not None:
+            provider.caps.note_etag(stream.accepted.capabilities_etag)
         t["server_end_to_final_ms"] = final.timings.end_to_final_ms
         n_terms = len(self.start_message.context.bias.terms) if self.start_message else 0
         self._report(
             "session",
             f"SessionStart at {t.get('session_start_ms', 0):.1f} ms, bias terms={n_terms}",
+        )
+        self._report(
+            "provider",
+            f"{provider.name} ({provider.cfg.address}), route "
+            + " -> ".join(f"{r['name']}:{r['state']}" for r in self.route),
         )
 
         # A context result that arrived after the SessionStart deadline is still
@@ -349,7 +377,7 @@ class Utterance:
             if res.symbols:
                 self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
 
-        res.cleanup = self._cleanup(canon, snap, profile_name)
+        res.cleanup = self._cleanup(canon, snap, profile_name, provider)
         t["cleanup_ms"] = round(res.cleanup.ms, 1)
         detail = f" [{res.cleanup.reason}]" if res.cleanup.reason else ""
         self._report(
@@ -502,26 +530,30 @@ class Utterance:
         if verdict == "landed" and svc.learner is not None:
             svc.learner.after_paste(focus, pasted, field_text.value, _focus_token)
 
-    def _cleanup(self, text: str, snap: ContextSnapshot, profile_name: str) -> CleanupOutcome:
+    def _cleanup(
+        self, text: str, snap: ContextSnapshot, profile_name: str, provider: Provider
+    ) -> CleanupOutcome:
         cfg = self.svc.cfg
         prof = cfg.profile(profile_name)
         if not (prof.cleanup and cfg.cleanup.enabled):
             return CleanupOutcome(text, "skipped", "off for this profile")
-        if not self.svc.caps.cleanup_profile(prof.cleanup_profile):
+        if not provider.caps.cleanup_profile(prof.cleanup_profile):
             return CleanupOutcome(
                 text, "skipped", f"server has no cleanup profile {prof.cleanup_profile!r}"
             )
         if self.svc.on_stage is not None:
             self.svc.on_stage(self.id, "cleaning")
         return cleanup.run(
-            self.svc.channel,
+            provider.channel,
             text=text,
+            # protected spans are offsets into `text`: no shortlist leaves with send_context = false
             terms=snap.terms,
             utterance_id=self.id,
             profile_id=prof.cleanup_profile,
             app_category=profile_name,
             language=cfg.server.language,
             deadline_ms=cfg.cleanup.deadline_ms,
+            send_terms=provider.cfg.send_context,
         )
 
     def _focus_changed(self, before: FocusInfo) -> str | None:
@@ -564,7 +596,10 @@ class Utterance:
             "paste": asdict(res.paste) if res.paste else None,
             "paste_verdict": res.paste_verdict,
             "timings_ms": res.timings,
-            "client_unix_us": {"keyup": self.keyup_unix_us, **self.stream.unix_us},
+            "client_unix_us": {
+                "keyup": self.keyup_unix_us,
+                **(self.stream.unix_us if self.stream else {}),
+            },
             "context": {
                 "terms": len(snap.terms),
                 "collected_ms": snap.collected_ms,
@@ -582,8 +617,10 @@ class Utterance:
             "bias_terms_sent": len(self.start_message.context.bias.terms)
             if self.start_message
             else 0,
+            "provider": self.provider.describe() if self.provider else None,
+            "route": self.route,
         }
-        final = self.stream.final
+        final = self.stream.final if self.stream else None
         if final is not None:
             record["server_timings_ms"] = json_format.MessageToDict(
                 final.timings, preserving_proto_field_name=True

@@ -21,7 +21,7 @@ target. "Fit" says where it lands in hark's split (client / server / protocol / 
 | 6 | Work during speech / prewarm | H | M | L | partly done; cleanup prefill **adopt later** |
 | 7 | Warm mic via WirePlumber `fast-capture-start` | L | L | L | adopt later (docs only, for `keep_open = false`) |
 | 1 | Phoneme-based acoustic vocabulary verification | H | H | M | adopt later (design below) |
-| 2 | transcribe.cpp Parakeet CPU fallback | H | M | L | adopt later (design below) |
+| 2 | transcribe.cpp Parakeet CPU fallback | H | M | L | implemented (`feat/m1-cpu`, see §2) |
 | 3 | fcitx5 commit-based insertion | M | M | M | adopt later (design below) |
 | 12 | Signed update manifest, versioned installs, rollback | M | M | L | adopt later, at packaging time (principles fixed now) |
 
@@ -117,7 +117,18 @@ precision with distractor terms on the existing boost clips (`docs/bench/parakee
 `acoustic.py` + capability + per-stage timing `acoustic_vocab_ms`; (c) fusion in the server, gated by the client's
 existing confidence rule; (d) CPU budget on the laptop (target ≤ 80 ms for 10 s audio).
 
-### 2. transcribe.cpp CPU fallback — later
+### 2. transcribe.cpp CPU fallback — implemented
+**Status (`feat/m1-cpu`).** Backend `transcribe_cpp` (worker child over JSON lines through transcribe.cpp's ctypes
+binding; crash → that decode fails and the next restarts it; hang → killed at `decode_timeout_s`), BUFFERED, bias
+`NONE` (transcribe.cpp 0.4 has no vocabulary input for Parakeet), anchor == primary. `scripts/fetch-transcribe` builds
+the pinned 0.4.2 from source (tagged 2026-11-11 with a Parakeet mel-frontend fix, no release artifacts or PyPI wheels
+yet; 0.4.1 has prebuilt `transcribe-native-*` archives incl. linux-x86_64-cpu-vulkan, a possible no-compiler option
+for the laptop later) and fetches the pinned GGUF; `scripts/cpu-server-up` + `packaging/systemd/hark-cpu-server.service` run it. Client: `[[providers]]` with
+cached health checks, priority order, `send_context`, `max_latency_ms`; shown in `hark doctor` and history. Bench:
+`docs/bench/2026-11-12-transcribe-cpp-cpu.md`. Not done: the laptop bench itself, incremental decoding on CPU, a
+mid-dictation switch to the next provider.
+
+Original design:
 The laptop needs an offline path. **Design:** a `transcribe_cpp` server backend (Parakeet TDT 0.6B v3 Q4_K_M GGUF,
 485 MB, MIT runtime) run as a long-lived worker child over JSON lines (crash isolation, Superwhisper's pattern);
 BUFFERED streaming first, word timings from the token timestamps; no biasing → pair with #1. The client's provider

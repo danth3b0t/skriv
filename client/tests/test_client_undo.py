@@ -87,7 +87,7 @@ def test_swap_raw_replaces_the_cleaned_text_and_back(
     c, injector = controller
     c.keys_observed = True
     fake_context.snapshots = [snapshot("com.apple.Notes")]
-    c.svc.caps.refresh()  # learns the server's cleanup profiles
+    c.svc.router.refresh()  # learns the server's cleanup profiles
     fake_llm.respond("Please run kubectl get")
     c.handle("start")
     c.on_pcm(pcm(1.0))

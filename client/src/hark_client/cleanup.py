@@ -615,7 +615,10 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     app_category: str,
     language: str,
     deadline_ms: int,
+    send_terms: bool = True,
 ) -> CleanupOutcome:
+    """`send_terms = False` (provider with send_context = false): the shortlist stays here;
+    the server gets only the protected spans, the client still checks edits against it."""
     t0 = time.perf_counter()
 
     def done(
@@ -646,7 +649,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
         language=language,
         context=pb.CleanupContext(app_category=app_category),
         budget_ms=max(1, deadline_ms * 4 // 5),  # leave room for the round trip
-        known_terms=known_terms,
+        known_terms=known_terms if send_terms else [],
     )
     try:
         resp = pb_grpc.TextCleanupStub(channel).Cleanup(request, timeout=deadline_ms / 1000)

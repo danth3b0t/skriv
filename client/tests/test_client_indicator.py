@@ -122,7 +122,7 @@ def test_daemon_drives_the_indicator_through_a_dictation_and_a_cancel(
 ):
     c, _ = controller
     fake_context.snapshots = [snapshot("com.apple.Notes")]  # prose: cleaned up
-    c.svc.caps.refresh()  # learns the server's cleanup profiles
+    c.svc.router.refresh()  # learns the server's cleanup profiles
     backend = FakeBackend()
     c.indicator = ind = Indicator(backend)
     c.svc.on_stage = ind.stage

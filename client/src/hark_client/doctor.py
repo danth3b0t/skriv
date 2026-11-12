@@ -1,24 +1,21 @@
-"""`hark doctor`: server, mic, permissions, paste tools, control socket, context."""
+"""`hark doctor`: ASR providers, mic, permissions, paste tools, control socket, context."""
 
 from __future__ import annotations
 
 import shutil
 import sys
 import time
-from typing import TYPE_CHECKING, cast
-
-import grpc
-from grpc_health.v1 import health_pb2
+from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
-from hark_client import asr, ctl
+from hark_client import ctl
 from hark_client.feedback import sound_player
 from hark_client.inject import detect_method
+from hark_client.providers import Router
 
 if TYPE_CHECKING:
     from hark_client.config import Config
 
-SERVING_STATUS = {0: "UNKNOWN", 1: "SERVING", 2: "NOT_SERVING", 3: "SERVICE_UNKNOWN"}
 TOOLS = {
     "hyprland": ["wl-copy", "wl-paste", "hyprctl"],
     "wtype": ["wl-copy", "wl-paste", "wtype"],
@@ -41,48 +38,58 @@ class Report:
         print(f"  FAIL  {what}: {detail}")
 
 
-def _health(channel: grpc.Channel, service: str) -> str:
-    check = channel.unary_unary(
-        "/grpc.health.v1.Health/Check",
-        request_serializer=health_pb2.HealthCheckRequest.SerializeToString,
-        response_deserializer=health_pb2.HealthCheckResponse.FromString,
-    )
-    resp = check(health_pb2.HealthCheckRequest(service=service), timeout=2.0)
-    status = cast("int", resp.status)  # the generated stub types the enum as Any
-    return SERVING_STATUS.get(status, str(status))
-
-
-def check_server(r: Report, cfg: Config) -> None:
-    print(f"server {cfg.server.address} ({'TLS' if cfg.server.tls_ca else 'plaintext'})")
+def check_providers(r: Report, cfg: Config) -> None:
+    """Every provider's health and capabilities, and which one a dictation would use now."""
     try:
-        channel = asr.open_channel(cfg.server)
+        router = Router(cfg.provider_configs())
     except OSError as e:
+        print("providers")
         r.fail("TLS files", str(e))
         return
-    with channel:
-        try:
-            r.ok("health", _health(channel, "hark.v1.Asr"))
-        except grpc.RpcError as e:
-            r.fail("health", asr.rpc_error_text(e))
-            return
-        caps = asr.Capabilities(channel).refresh()
-        if caps is None:
-            r.fail("capabilities", "GetCapabilities failed")
-            return
-        r.ok(
-            "server",
-            f"{caps.server.name} ({caps.server.implementation}, {caps.server.accelerator or '?'})",
-        )
-        for m in caps.models:
-            state = pb.ModelState.Name(m.state).removeprefix("MODEL_STATE_")
-            bias = pb.BiasMechanism.Name(m.bias.mechanism).removeprefix("BIAS_MECHANISM_")
-            line = f"{m.model_id}{' (default)' if m.is_default else ''}: {state}, bias {bias}"
-            (r.ok if state == "READY" else r.warn)("model", line)
-        r.ok("features", ", ".join(caps.features) or "none")
-        if caps.cleanup_profiles:
-            r.ok("cleanup profiles", ", ".join(p.id for p in caps.cleanup_profiles))
+    try:
+        router.refresh()
+        for p in router.providers:
+            c = p.cfg
+            tls = "TLS" if c.tls_ca else "plaintext"
+            context = "sends context" if c.send_context else "audio only (send_context = false)"
+            print(f"provider {p.name}: {c.address} ({tls}, priority {c.priority}, {context})")
+            h = p.health
+            if h.state == "ok":
+                r.ok("health", f"SERVING in {h.rtt_ms:.0f} ms (max {c.max_latency_ms} ms)")
+            else:
+                r.warn("health", f"{h.state}: {h.detail}")
+                continue
+            caps = p.caps.get()
+            if caps is None:
+                r.warn("capabilities", "GetCapabilities failed")
+                continue
+            _describe(r, caps)
+        print("routing")
+        chosen, route = router.pick()
+        path = " -> ".join(f"{x['name']}:{x['state']}" for x in route)
+        if chosen.health.state == "ok":
+            r.ok("next dictation", f"{chosen.name} (route {path})")
         else:
-            r.warn("cleanup", "server has no TextCleanup; cleanup will be skipped")
+            r.fail("next dictation", f"no provider is healthy (route {path})")
+    finally:
+        router.close()
+
+
+def _describe(r: Report, caps: pb.Capabilities) -> None:
+    r.ok(
+        "server",
+        f"{caps.server.name} ({caps.server.implementation}, {caps.server.accelerator or '?'})",
+    )
+    for m in caps.models:
+        state = pb.ModelState.Name(m.state).removeprefix("MODEL_STATE_")
+        bias = pb.BiasMechanism.Name(m.bias.mechanism).removeprefix("BIAS_MECHANISM_")
+        line = f"{m.model_id}{' (default)' if m.is_default else ''}: {state}, bias {bias}"
+        (r.ok if state == "READY" else r.warn)("model", line)
+    r.ok("features", ", ".join(caps.features) or "none")
+    if caps.cleanup_profiles:
+        r.ok("cleanup profiles", ", ".join(p.id for p in caps.cleanup_profiles))
+    else:
+        r.warn("cleanup", "server has no TextCleanup; cleanup will be skipped")
 
 
 def check_mic(r: Report, cfg: Config) -> None:
@@ -207,7 +214,7 @@ def check_context(r: Report, cfg: Config) -> None:
 def run(cfg: Config, config_path: str) -> int:
     print(f"config {config_path}")
     r = Report()
-    check_server(r, cfg)
+    check_providers(r, cfg)
     check_mic(r, cfg)
     check_permissions(r)
     check_paste(r, cfg)

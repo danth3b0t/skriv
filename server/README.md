@@ -58,7 +58,7 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 | `server.max_audio_ms` | | 300000 | per-utterance cap (`AUDIO_TOO_LONG`) |
 | `server.default_finalize_budget_ms` | | 1000 | used when a client sends 0 |
 | `server.eager_end` | | `true` | advertise and honour `EagerEnd` |
-| `backend.kind` | `--backend` | `mock` | `mock`, `parakeet_mlx`, `nemo_gpupb` |
+| `backend.kind` | `--backend` | `mock` | `mock`, `parakeet_mlx`, `nemo_gpupb`, `transcribe_cpp` |
 | `backend.model` / `backend.model_id` | `--model` / `--model-id` | backend default | model to load / id advertised to clients |
 | `backend.options` | | `{}` | backend constructor kwargs (checked at startup) |
 | `cleanup.base_url` | `--cleanup-url` | `""` (off) | OpenAI-compatible base, e.g. `http://127.0.0.1:8080/v1` |
@@ -72,17 +72,18 @@ Tailscale use.
 
 ## Backends
 
-| | `mock` | `parakeet_mlx` | `nemo_gpupb` |
-|---|---|---|---|
-| Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | Linux + NVIDIA + NeMo. **Stub.** |
-| Streaming | BUFFERED | INCREMENTAL from 30 s of audio (sentence segments decoded while audio streams), BUFFERED below | BUFFERED (planned) |
-| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) |
-| Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FULL_PASS (batch of two) |
-| N-best | up to 3 (unbiased, RANK_ONLY) | 1 | unbiased beam (planned) |
-| Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | yes / yes (planned) |
+| | `mock` | `parakeet_mlx` | `nemo_gpupb` | `transcribe_cpp` |
+|---|---|---|---|---|
+| Runs on | anywhere | macOS / Apple Silicon (`--extra mlx`) | Linux + NVIDIA + NeMo. **Stub.** | anywhere: CPU; Metal / Vulkan / CUDA if built so (`scripts/fetch-transcribe`) |
+| Streaming | BUFFERED | INCREMENTAL from 30 s of audio (sentence segments decoded while audio streams), BUFFERED below | BUFFERED (planned) | BUFFERED |
+| Bias | DECODE_TIME_BOOST (simulated: alias → canonical), native boost 1–5 | DECODE_TIME_BOOST: beam 4 + parakeet-mlx word booster (boost 1–3), greedy anchor from the same encoder pass (see docs/bench/2026-11-11-parakeet-mlx-boost.md) | DECODE_TIME_BOOST via GPU-PB per-stream, boost = α_model·(0.5+w) | NONE (transcribe.cpp has no vocabulary input for Parakeet); terms only for hit detection |
+| Anchor | DECODER_ONLY (second decode) | FREE (== primary) | FULL_PASS (batch of two) | FREE (== primary) |
+| N-best | up to 3 (unbiased, RANK_ONLY) | 1 | unbiased beam (planned) | 1 |
+| Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | yes / yes (planned) | decoder emission, 80 ms / min token probability per word, uncalibrated |
 
 - **mock**: every `word_ms` (200) window of non-silent audio emits the next word of a fixed script. Latency is configurable (`decode_ms`, `decode_ms_per_s`, `load_ms`). The tests use it.
 - **parakeet_mlx**: `from_pretrained` + `get_logmel` → `encoder` → greedy `decode`, all on one worker thread (MLX streams are thread-affine). parakeet-mlx 0.7 *does* have decode-time word boosting, but only in beam search; it is not wired up yet (see the bench doc).
+- **transcribe_cpp**: Parakeet TDT 0.6B v3 GGUF (Q4_K_M by default) on [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) 0.4.2 / ggml, the offline fallback for machines without a GPU server in reach. The model runs in a worker child process (`hark_server.backends.transcribe_worker`, JSON lines): a native crash fails one decode and the next decode restarts the worker; a decode longer than `decode_timeout_s` kills it. `scripts/fetch-transcribe` builds the pinned library into `build/` and downloads the model; `scripts/cpu-server-up` runs it. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
 - **nemo_gpupb**: capabilities, the weight→boost mapping and the intended per-stream GPU-PB call path (as code comments) are in place. Construction fails with a clear error when NeMo is missing; `load()` fails with "stub".
 
 Adding a backend: subclass `hark_server.backends.Backend`, then implement `capabilities()`, `_load_sync`, `_warmup_sync` and

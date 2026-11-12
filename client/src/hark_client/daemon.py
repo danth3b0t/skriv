@@ -472,12 +472,18 @@ def _make_mic(svc: Services, controller: Controller) -> Mic:
 def run(svc: Services) -> int:
     from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
 
-    caps = svc.caps.refresh()
-    if caps is None:
-        log.warning("server %s unreachable; will retry on each dictation", svc.cfg.server.address)
-    else:
+    svc.router.refresh()
+    for p in svc.router.providers:
+        caps, h = p.caps.get(), p.health
+        if caps is None:
+            log.warning("provider %s (%s): %s %s", p.name, p.cfg.address, h.state, h.detail)
+            continue
         models = ", ".join(f"{m.model_id}({pb.ModelState.Name(m.state)})" for m in caps.models)
-        log.info("server %s: %s; features: %s", caps.server.name, models, ", ".join(caps.features))
+        log.info(
+            "provider %s (%s): %s, %s; features: %s",
+            p.name, p.cfg.address, h.state, models, ", ".join(caps.features),
+        )  # fmt: skip
+    svc.router.start_background()
 
     controller = Controller(svc, None)
     try:

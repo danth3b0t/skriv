@@ -77,6 +77,8 @@ def test_show_lists_every_stage():
         spacing={"source": "ax", "leading": True},
         paste_verdict="landed",
         timings_ms={"keyup_to_paste_ms": 400.0},
+        provider={"name": "laptop-cpu", "address": "127.0.0.1:50052", "send_context": False},
+        route=[{"name": "desktop", "state": "down"}, {"name": "laptop-cpu", "state": "ok"}],
     )
     out = historyview.show(rec, kept=True).splitlines()
     assert out[0] == f"id         {ID_A}  (audio kept: hark retry 000000a1)"
@@ -90,6 +92,7 @@ def test_show_lists_every_stage():
         "spacing    source=ax, leading=True",
         "status     pasted  verdict=landed",
         "timings    keyup_to_paste=400.0",
+        "provider   laptop-cpu (127.0.0.1:50052, audio only)  route desktop:down -> laptop-cpu:ok",
     ):
         assert expected in out
 

@@ -312,3 +312,35 @@ def test_protected_span_violation_drops_only_that_edit(
         {"find": "kubectl", "replace": "Kubectl", "by": "client",
          "reason": "touches a protected span"},
     ]  # fmt: skip
+
+
+@pytest.mark.parametrize("send_terms", [True, False])
+def test_known_terms_leave_only_when_the_provider_may_see_context(*, send_terms: bool):
+    seen: list[pb.CleanupRequest] = []
+
+    class Recording(BadCleanup):
+        def Cleanup(
+            self, request: pb.CleanupRequest, context: grpc.ServicerContext
+        ) -> pb.CleanupResponse:
+            seen.append(request)
+            return super().Cleanup(request, context)
+
+    server = grpc.server(ThreadPoolExecutor(max_workers=2))
+    pb_grpc.add_TextCleanupServicer_to_server(Recording(), server)
+    port = server.add_insecure_port("127.0.0.1:0")
+    server.start()
+    try:
+        with grpc.insecure_channel(f"127.0.0.1:{port}") as channel:
+            out = cleanup.run(
+                channel, text="please run kubectl get", terms=[KUBECTL], utterance_id="u1",
+                profile_id="prose", app_category="prose", language="", deadline_ms=2000,
+                send_terms=send_terms,
+            )  # fmt: skip
+    finally:
+        server.stop(0)
+    (request,) = seen
+    assert list(request.known_terms) == (["kubectl"] if send_terms else [])
+    assert len(request.protected_spans) == 1  # spans are offsets into the text: always sent
+    # the client validator keeps the shortlist either way
+    assert {"find": "kubectl", "replace": "Kubectl", "by": "client",
+            "reason": "touches a protected span"} in out.dropped  # fmt: skip

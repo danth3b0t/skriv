@@ -48,7 +48,9 @@ class Args(argparse.Namespace):
 def parse_args(argv: list[str] | None = None) -> Args:
     p = argparse.ArgumentParser(prog="hark", description="context-aware dictation (POC client)")
     p.add_argument("--config", help="config TOML (default: ~/.config/hark/config.toml)")
-    p.add_argument("--server", help="override server.address (host:port or unix:/path)")
+    p.add_argument(
+        "--server", help="use only this server (host:port or unix:/path), not [[providers]]"
+    )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
@@ -209,6 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     if args.server:
         cfg.server.address = args.server
+        cfg.providers = []
     logging.basicConfig(
         level=logging.DEBUG
         if args.verbose
@@ -310,15 +313,15 @@ def cmd_last(args: Args, cfg: Config) -> int:
 
 
 def cmd_pipeline(args: Args, cfg: Config) -> int:
-    from hark_client import asr, ctl, daemon, fields  # noqa: PLC0415
+    from hark_client import ctl, daemon, fields  # noqa: PLC0415
     from hark_client.config import ConfigError, FeedbackConfig, expand  # noqa: PLC0415
     from hark_client.feedback import Feedback  # noqa: PLC0415
     from hark_client.inject import make_injector  # noqa: PLC0415
     from hark_client.learn import LearnedStore, Learner, store_path  # noqa: PLC0415
     from hark_client.pipeline import Services  # noqa: PLC0415
+    from hark_client.providers import Router  # noqa: PLC0415
 
-    channel = asr.open_channel(cfg.server)
-    caps = asr.Capabilities(channel)
+    router = Router(cfg.provider_configs())
     learned = LearnedStore(
         store_path(expand(cfg.history.dir)), cfg.learn.promote_after, cfg.learn.max_terms
     )
@@ -330,9 +333,9 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                     cfg.history.enabled = False
             elif args.copy:
                 cfg.paste.method = "clipboard"
-            caps.refresh()
+            router.refresh()
             svc = Services(
-                cfg, channel, caps,
+                cfg, router,
                 injector=make_injector(cfg.paste, dry_run=args.dry_run),
                 feedback=Feedback(FeedbackConfig(sounds=False, notify=False)),
                 out=print,
@@ -358,7 +361,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                     " learning only from key replay in terminals"
                 )
         svc = Services(
-            cfg, channel, caps, injector=make_injector(cfg.paste), feedback=feedback,
+            cfg, router, injector=make_injector(cfg.paste), feedback=feedback,
             field_reader=reader, learned=learned, learner=learner,
         )  # fmt: skip
         try:
@@ -367,7 +370,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
             print(f"hark: {e}", file=sys.stderr)
             return 1
     finally:
-        channel.close()
+        router.close()
 
 
 if __name__ == "__main__":
