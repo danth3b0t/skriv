@@ -110,6 +110,8 @@ def pill(view: View) -> tuple[str, str, str, str, str]:
          ("alert", "live", "Failed · server timeout", "", KEY), 4.0),
         (Result("u", "error", error="asr: UNAVAILABLE 14: connection refused"), False,
          ("alert", "live", "Failed · server down", "", KEY), 4.0),
+        (Result("u", "error", error="asr: degenerate output (12 unknown tokens)"), False,
+         ("alert", "live", "Failed · garbled transcript", "", KEY), 4.0),
         (Result("u", "error", error="asr: something odd"), False,
          ("alert", "live", "Failed", "", KEY), 4.0),
         (None, False, ("alert", "live", "Failed", "", KEY), 4.0),  # the finish itself crashed
@@ -182,14 +184,14 @@ def test_a_new_recording_wins_over_an_older_dictation_still_finishing():
 def test_notices_never_cover_a_dictation_and_hide_by_themselves():
     ind, _, clock = make(recovery=KEY)
     ind.recording("a")
-    ind.notice("Profile: chat")
+    ind.notice("Profile: terminal")
     ind.mic_lost()  # the watchdog flags it mid-recording: the recording stays on display
     ind.refused("paused")
     assert ind.view is not None
     assert ind.view.state == "recording"
     ind.outcome("a", sent())
-    ind.notice("Profile: chat")
-    assert ind.view == View("info", "info", "fg", "Profile: chat", "Profile: chat")
+    ind.notice("Profile: terminal")
+    assert ind.view == View("info", "info", "fg", "Profile: terminal", "Profile: terminal")
     clock.t += 1.0
     ind.tick()
     assert ind.view is None
@@ -250,19 +252,19 @@ def test_the_meter_shows_the_newest_levels_scaled_and_rate_limited():
 
 def test_recording_shows_hands_free_the_pinned_profile_and_time_after_a_minute():
     ind, _, clock = make()
-    ind.recording("a", "Listening · chat")
+    ind.recording("a", "Listening · terminal")
     assert ind.view is not None
-    assert (ind.view.glyph, ind.view.pinned, ind.view.detail) == ("dot", "chat", "")
+    assert (ind.view.glyph, ind.view.pinned, ind.view.detail) == ("dot", "terminal", "")
     clock.t += 72
-    ind.recording("a", "Hands-free · chat")  # same recording: the clock keeps running
+    ind.recording("a", "Hands-free · terminal")  # same recording: the clock keeps running
     assert ind.view is not None
     assert (ind.view.glyph, ind.view.detail, ind.view.name) == (
-        "lock", "1:12", "Hands-free · chat · 1:12",
+        "lock", "1:12", "Hands-free · terminal · 1:12",
     )  # fmt: skip
     clock.t += 0.1
     ind.level(pcm(0.02))
     assert ind.view is not None
-    assert (ind.view.glyph, ind.view.pinned) == ("lock", "chat")
+    assert (ind.view.glyph, ind.view.pinned) == ("lock", "terminal")
 
 
 def test_recording_counts_down_the_last_seconds_before_the_length_limit():

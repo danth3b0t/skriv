@@ -50,11 +50,13 @@ function lastId(status) {
   return status && status.last ? String(status.last.utterance_id || "") : ""
 }
 
-// A failed or paste-failed dictation the panel has not shown yet.
+// A failed or paste-failed dictation, or a mic that sent a flat signal, the panel has not
+// shown yet.
 function unseenFailure(status, seenId) {
   var last = status && status.last
   if (!last) return false
-  return (last.status === "error" || last.status === "paste_failed") && lastId(status) !== seenId
+  var failed = last.status === "error" || last.status === "paste_failed" || last.flat_signal === true
+  return failed && lastId(status) !== seenId
 }
 
 function attention(status, online, seenId) {
@@ -65,7 +67,7 @@ function attention(status, online, seenId) {
 // Material Design Icons from the Nerd Font Omarchy sets as `monospace`.
 var GLYPHS = {
   alert: 0xF002A, "alert-circle": 0xF05D6, copy: 0xF018F, "mic-off": 0xF036D, power: 0xF0425,
-  refresh: 0xF0450, check: 0xF012C
+  refresh: 0xF0450, check: 0xF012C, close: 0xF0156
 }
 
 function glyphText(name) {
@@ -136,7 +138,11 @@ function sentence(status, online, seenId) {
   if (state === "recording") return "hark · recording"
   if (state === "working") return "hark · working"
   if (unseenFailure(status, seenId)) {
-    return "hark · " + (status.last.status === "error" ? "last dictation failed" : "paste failed, text in clipboard")
+    var last = status.last
+    if (last.flat_signal === true) return "hark · no audio from mic"
+    if (last.status === "paste_failed") return "hark · paste failed, text in clipboard"
+    var reason = FAILURE_WORDS[last.failure] || ""
+    return "hark · last dictation failed" + (reason !== "" ? " · " + reason : "")
   }
   var server = status.server || {}
   var where = [String(server.name || ""), rtt(server)].filter(function(s) { return s !== "" }).join(" ")
@@ -173,15 +179,21 @@ function clockText(ms) {
   return Math.floor(s / 60) + ":" + (rest < 10 ? "0" : "") + rest
 }
 
-// Same words as the pill (hark_client.indicator.failure_reason).
-function failureReason(error) {
-  var e = String(error || "").toLowerCase()
-  if (/within|deadline|timeout|timed out/.test(e)) return "server timeout"
-  if (/unavailable|refused|no stream|closed/.test(e)) return "server down"
-  return ""
+// The category of a history record's error, as `last.failure` (hark_client.status.failure).
+function failureKind(error) {
+  var e = String(error || "")
+  if (e.indexOf("asr: degenerate output") === 0) return "degenerate_output"
+  if (/within|deadline|timeout|timed out/i.test(e)) return "server_timeout"
+  if (/unavailable|refused|no stream|closed/i.test(e)) return "server_down"
+  return "other"
 }
 
-var CLEANUP_APPLIED = { applied: true, partial: true, no_edits: true }
+// Same words as the pill (hark_client.indicator.FAILURE_WORDS).
+var FAILURE_WORDS = {
+  server_timeout: "server timeout", server_down: "server down", degenerate_output: "garbled transcript"
+}
+
+var CLEANUP_APPLIED = { applied: true, no_edits: true }
 
 // The tag after "app · age": mic dropped, stopped at m:ss, cleanup skipped (the cleanup ran
 // and was not kept, or never answered; a profile without cleanup records "skipped" with
@@ -204,21 +216,29 @@ function lastView(record, status, nowMs) {
   var app = String(record.app || record.app_id || "")
   var failed = record.status === "error"
   var pasteFailed = record.status === "paste_failed"
+  var noSpeech = record.status === "no_speech"
   var headline = ""
   var glyph = ""
   var tone = "fg"
   if (failed) {
-    var reason = failureReason(record.error)
+    var reason = FAILURE_WORDS[failureKind(record.error)] || ""
     headline = reason !== "" ? "Failed · " + reason : "Failed"
     glyph = "alert-circle"
     tone = "live"
+  } else if (noSpeech) {
+    // same words as the pill (hark_client.indicator.no_speech_view): quiet is no error, a
+    // flat signal from the mic is
+    var device = String(record.input_device || "")
+    headline = [record.flat_signal ? "No audio from mic" : "No speech", device].filter(function(s) { return s !== "" }).join(" · ")
+    glyph = record.flat_signal ? "mic-off" : "close"
+    tone = record.flat_signal ? "live" : "dim"
   } else if (pasteFailed) {
     var copied = record.delivery === "copied"
     headline = copied ? "Paste failed · in clipboard" : "Paste failed"
     glyph = "copy"
     tone = "warn"
   }
-  var meta = [app, age(record.ts, nowMs), failed ? "" : tag(record)].filter(function(s) { return s !== "" })
+  var meta = [app, age(record.ts, nowMs), failed || noSpeech ? "" : tag(record)].filter(function(s) { return s !== "" })
   var live = status && status.last && lastId(status) === String(record.utterance_id || "") ? status.last : null
   var retry = !!(live && live.retry_available)
   return {
@@ -229,8 +249,9 @@ function lastView(record, status, nowMs) {
     preview: failed ? "" : String(record.final_text || ""),
     meta: meta.join(" · "),
     failed: failed,
-    // Enter: Copy, or Retry on a failed dictation (when its audio is kept)
-    enterVerb: failed ? (retry ? "retry" : "") : "copy",
+    // Enter: Copy, or Retry on a failed dictation (when its audio is kept); nothing to copy
+    // after no speech
+    enterVerb: failed ? (retry ? "retry" : "") : noSpeech ? "" : "copy",
     canPaste: !failed && String(record.final_text || "") !== "",
     canRetry: retry
   }

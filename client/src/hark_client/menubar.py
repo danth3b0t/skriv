@@ -58,7 +58,7 @@ LABELS = {
     "paused": "Paused",
     "error": "Last dictation failed",
 }
-FAILED = frozenset({"error", "paste_failed"})
+FAILED = frozenset({"error", "paste_failed"})  # and no speech from a mic sending a flat signal
 ERROR_SHOW_S = 10.0  # the warning icon stays this long after a failed dictation
 PREVIEW_CHARS = 40
 LOOP_POLL_S = 0.25
@@ -77,7 +77,9 @@ def menu_state(c: Controller, now: float) -> str:
     if st["finishing"]:
         return "finishing"
     last = c.last_result
-    if last is not None and last[1].status in FAILED and now - last[0] < ERROR_SHOW_S:
+    if last is None or now - last[0] >= ERROR_SHOW_S:
+        return "idle"
+    if last[1].status in FAILED or last[1].flat_signal:
         return "error"
     return "idle"
 

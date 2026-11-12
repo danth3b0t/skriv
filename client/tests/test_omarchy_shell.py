@@ -180,10 +180,35 @@ def test_problem_verbs_run_the_right_command():
 
 
 @needs_node
-def test_a_failure_draws_attention_until_the_panel_has_shown_it():
-    s = status(last={"utterance_id": "u1", "status": "error", "retry_available": True})
+@pytest.mark.parametrize(
+    ("last", "sentence"),
+    [
+        ({"status": "error", "failure": "other"}, "hark · last dictation failed"),
+        ({"status": "error", "failure": "degenerate_output"},
+         "hark · last dictation failed · garbled transcript"),
+        ({"status": "paste_failed"}, "hark · paste failed, text in clipboard"),
+        ({"status": "no_speech", "flat_signal": True}, "hark · no audio from mic"),
+    ],
+)  # fmt: skip
+def test_a_failure_draws_attention_until_the_panel_has_shown_it(
+    last: dict[str, object], sentence: str
+):
+    s = status(last={"utterance_id": "u1", "retry_available": True, **last})
     out = model("[M.attention(d.s, true, ''), M.attention(d.s, true, 'u1'), M.sentence(d.s, true, '')]", s=s)  # fmt: skip
-    assert out == [True, False, "hark · last dictation failed"]
+    assert out == [True, False, sentence]
+
+
+@needs_node
+def test_quiet_no_speech_is_no_failure():
+    s = status(last={"utterance_id": "u1", "status": "no_speech", "flat_signal": False})
+    assert model("[M.attention(d.s, true, ''), M.sentence(d.s, true, '')]", s=s) == [
+        False, "hark · ready · desktop 38 ms",
+    ]  # fmt: skip
+
+
+@needs_node
+def test_a_daemon_that_stopped_writing_is_off():
+    s = status()
     assert model("M.isOnline(d.s, 0, d.now)", s=s, now=35_001) is False
     assert model("M.isOnline(d.s, 0, d.now)", s=s, now=35_000) is True
 
@@ -239,7 +264,15 @@ def record(**over: object) -> dict[str, object]:
          "Ghostty · 2m", "copy", True),
         ({"status": "error", "error": "asr: no FinalResult within 4.0 s", "final_text": ""}, True,
          "Failed · server timeout", "Ghostty · 2m", "retry", True),
+        ({"status": "error", "error": "asr: degenerate output (12 unknown tokens)",
+          "final_text": ""}, True, "Failed · garbled transcript", "Ghostty · 2m", "retry", True),
         ({"status": "error", "error": "asr: boom", "final_text": ""}, False, "Failed",
+         "Ghostty · 2m", "", False),
+        ({"status": "no_speech", "final_text": "", "input_device": "USB Mic",
+          "flat_signal": False, "cleanup": None}, False, "No speech · USB Mic", "Ghostty · 2m",
+         "", False),
+        ({"status": "no_speech", "final_text": "", "input_device": "USB Mic",
+          "flat_signal": True, "cleanup": None}, False, "No audio from mic · USB Mic",
          "Ghostty · 2m", "", False),
     ],
 )  # fmt: skip
@@ -302,10 +335,11 @@ def test_shell_tokens_match_the_design(name: str):
 @needs_node
 def test_glyphs_are_nerd_font_codepoints():
     assert model(
-        "['alert-circle', 'copy', 'mic-off', 'nope'].map(g => [...M.glyphText(g)].map(c => c.codePointAt(0)))"
+        "['alert-circle', 'copy', 'mic-off', 'close', 'nope'].map(g => [...M.glyphText(g)].map(c => c.codePointAt(0)))"
     ) == [
         [0xF05D6],
         [0xF018F],
         [0xF036D],
+        [0xF0156],
         [],
     ]
