@@ -3,7 +3,8 @@
   "critical": [],
   "forbidden": [],
   "accepted": [
-    "Write a short summary of what changed on this branch for the PR description. Keep it under five bullet points."
+    "Write a short summary of what changed on this branch for the PR description. Keep it under five bullet points.",
+    "Write a short summary of what changed on this branch for the PR description, keep it under five bullet points."
   ],
   "note": "synthetic (en_IE): macOS say Moira 203 wpm; level -29 dBFS, reverb RT60 0.46 s, cafeteria at SNR 6 dB; app Code (code); context sparse: 3 terms (0 for this clip, 3 distractors from hark); tags prose"
 }

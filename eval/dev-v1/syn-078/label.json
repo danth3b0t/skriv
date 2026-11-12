@@ -5,6 +5,8 @@
     "hark ctl toggle"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Add a Ghostty keybind for Super Alt D that runs hark ctl toggle."
+  ],
   "note": "synthetic (en_US): Kokoro-82M af_sarah speed 0.9; level -28 dBFS, reverb RT60 0.23 s, quiet room (tone -57 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 27 terms (2 for this clip, 25 distractors from hark); tags command; TTS read 'add a ghosty keybind for super alt D that runs hark control toggle'"
 }

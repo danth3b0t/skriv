@@ -5,7 +5,8 @@
   ],
   "forbidden": [],
   "accepted": [
-    "The error says Module not found, can't resolve @/lib/utils."
+    "The error says Module not found, can't resolve @/lib/utils.",
+    "The error says module not found can't resolve @/lib/utils."
   ],
   "note": "synthetic (L2 it): Kokoro-82M im_nicola speed 1.05; level -31 dBFS, laptop mic, office at SNR 16 dB; app Alacritty (Alacritty); context full: 24 terms (2 for this clip, 22 distractors from web); tags path, negation"
 }
