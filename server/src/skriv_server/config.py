@@ -140,7 +140,7 @@ class _Args(argparse.Namespace):
 
 
 def parse_args(argv: list[str] | None = None) -> Config:
-    p = argparse.ArgumentParser(prog="skriv-server", description="hark.v1 gRPC inference server")
+    p = argparse.ArgumentParser(prog="skriv-server", description="skriv.v1 gRPC inference server")
     p.add_argument("--config", help="TOML config file (CLI flags override it)")
     p.add_argument("--listen", help="host:port or unix:/path (default 127.0.0.1:50051)")
     p.add_argument("--backend", choices=["mock", "parakeet_mlx", "transcribe_cpp"])

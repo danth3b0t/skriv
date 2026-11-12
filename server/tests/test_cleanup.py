@@ -12,7 +12,7 @@ import grpc
 import pytest
 from conftest import dig
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_server.cleanup import S1_CONTROL, S1_SYSTEM
 
 if TYPE_CHECKING:
@@ -102,7 +102,7 @@ async def call(
 
 async def test_cleanup_returns_the_s1_rewrite(client: Client, fake_llm: FakeLLM):
     caps = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
-    assert "hark.cleanup" in caps.features
+    assert "skriv.cleanup" in caps.features
     assert [p.id for p in caps.cleanup_profiles] == ["terminal", "chat", "prose"]
     fake_llm.respond_text("So I think the build is not green.")
 

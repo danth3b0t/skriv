@@ -39,7 +39,7 @@ testpaths = ["server/tests", "client/tests"]
 
 [tool.basedpyright]
 include = ["server/src", "server/tests", "client/src", "client/tests", "tools", "scripts"]
-exclude = ["proto-py/src/hark/v1", "**/__pycache__", ".venv"]
+exclude = ["proto-py/src/skriv/v1", "**/__pycache__", ".venv"]
 pythonVersion = "3.12"
 extraPaths = ["server/src", "client/src", "proto-py/src"]  # resolve workspace sources as project code, not as an editable install
 typeCheckingMode = "strict"
@@ -55,7 +55,7 @@ reportExplicitAny = "warning"
 
 [tool.ty.src]
 include = ["server/src", "server/tests", "client/src", "client/tests", "tools", "scripts"]
-exclude = ["proto-py/src/hark/v1"]
+exclude = ["proto-py/src/skriv/v1"]
 
 [tool.ty.environment]
 python-version = "3.12"

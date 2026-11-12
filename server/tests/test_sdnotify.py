@@ -28,7 +28,7 @@ def health_status(target: str) -> int:
             request_serializer=health_pb2.HealthCheckRequest.SerializeToString,
             response_deserializer=health_pb2.HealthCheckResponse.FromString,
         )
-        resp = check(health_pb2.HealthCheckRequest(service="hark.v1.Asr"), timeout=2)
+        resp = check(health_pb2.HealthCheckRequest(service="skriv.v1.Asr"), timeout=2)
         return cast("int", resp.status)
 
 

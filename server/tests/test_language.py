@@ -8,7 +8,7 @@ import grpc
 import pytest
 from conftest import kubectl_term, speech, utterance
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_server import session
 from skriv_server.backends.mock import MockBackend
 from skriv_server.language import implausible

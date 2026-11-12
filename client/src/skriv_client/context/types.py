@@ -101,7 +101,7 @@ class Replacement:
 
 @dataclass(frozen=True, slots=True)
 class WordInfo:
-    """Subset of hark.v1 Word the canonicalizer needs (keeps it proto-independent)."""
+    """Subset of skriv.v1 Word the canonicalizer needs (keeps it proto-independent)."""
 
     text: str
     start_ms: int

@@ -11,8 +11,8 @@ import numpy as np
 import pytest
 from grpc_status import _async as rpc_status_async
 
-from hark.v1 import hark_pb2 as pb
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2 as pb
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 from skriv_server.backends.mock import MockBackend
 from skriv_server.config import Config
 from skriv_server.server import start

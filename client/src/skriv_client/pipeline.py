@@ -24,7 +24,7 @@ from typing import TYPE_CHECKING
 
 from google.protobuf import json_format
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_client import (
     asr,
     cleanup,

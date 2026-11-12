@@ -14,7 +14,7 @@ import numpy as np
 import pytest
 from conftest import utterance
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_server.backends import BackendUnavailable
 from skriv_server.backends.transcribe_cpp import TranscribeCppBackend, WorkerError
 

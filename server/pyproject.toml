@@ -1,7 +1,7 @@
 [project]
 name = "skriv-server"
 version = "0.1.0"
-description = "hark.v1 inference server (gRPC): Asr + TextCleanup, pluggable ASR backends"
+description = "skriv.v1 inference server (gRPC): Asr + TextCleanup, pluggable ASR backends"
 readme = "README.md"
 requires-python = ">=3.12,<3.13"
 dependencies = [
@@ -27,7 +27,7 @@ requires = ["hatchling"]
 build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
-# `hark` holds the generated hark.v1 stubs (protobuf package == Python package).
+# `skriv` holds the generated skriv.v1 stubs (protobuf package == Python package).
 packages = ["src/skriv_server"]
 
 [tool.uv.sources]

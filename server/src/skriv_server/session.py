@@ -26,7 +26,7 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 from . import __version__, language
 from .backends import SAMPLE_RATE, Backend, BiasPlan, DecodeOut
@@ -93,14 +93,14 @@ class AsrCore:
         caps = self.backend.capabilities()
         out: list[str] = []
         if self.settings.eager_end:
-            out.append("hark.eager_end")
+            out.append("skriv.eager_end")
         if caps.bias.midstream_update not in (
             pb.MIDSTREAM_UPDATE_UNSPECIFIED,
             pb.MIDSTREAM_UPDATE_UNSUPPORTED,
         ):
-            out.append("hark.midstream_context")
+            out.append("skriv.midstream_context")
         if self.cleanup_profiles:
-            out.append("hark.cleanup")
+            out.append("skriv.cleanup")
         return out
 
     def capabilities(self) -> pb.Capabilities:

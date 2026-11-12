@@ -16,7 +16,7 @@ from grpc_health.v1._async import (  # pyright: ignore[reportMissingTypeStubs]
     HealthServicer,
 )
 
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 
 from .asr import AsrServicer
 from .backends import Backend, create_backend
@@ -31,8 +31,8 @@ if TYPE_CHECKING:
 log = logging.getLogger("skriv_server")
 
 MAX_MESSAGE_BYTES = 32 * 1024 * 1024
-ASR_SERVICE = "hark.v1.Asr"
-CLEANUP_SERVICE = "hark.v1.TextCleanup"
+ASR_SERVICE = "skriv.v1.Asr"
+CLEANUP_SERVICE = "skriv.v1.TextCleanup"
 # typeshed's health_pb2 stub (basedpyright) types ServingStatus values as Incomplete (Any);
 # grpcio-health-checking's own stub (ty) types them as ServingStatus, an int subclass.
 SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)

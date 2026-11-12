@@ -16,8 +16,8 @@ from typing import TYPE_CHECKING
 
 import grpc
 
-from hark.v1 import hark_pb2 as pb
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2 as pb
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 from skriv_client import fidelity
 from skriv_client.asr import rpc_error_text
 

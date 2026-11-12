@@ -23,7 +23,7 @@ pre-commit:
       skip: [merge, rebase]
     proto-stubs:
       glob: "proto/**/*.proto"
-      run: proto-py/gen-proto && git diff --exit-code -- proto-py/src/hark/v1
+      run: proto-py/gen-proto && git diff --exit-code -- proto-py/src/skriv/v1
       skip: [merge, rebase]
 
 commit-msg:

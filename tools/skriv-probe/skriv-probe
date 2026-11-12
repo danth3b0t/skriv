@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Run skriv-probe inside the server's uv project (it needs the hark.v1 stubs).
+# Run skriv-probe inside the server's uv project (it needs the skriv.v1 stubs).
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 exec uv run --quiet --project "$here/../../server" python "$here/skriv_probe.py" "$@"

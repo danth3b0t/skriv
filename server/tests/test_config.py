@@ -19,7 +19,7 @@ SERVER = Path(__file__).resolve().parents[1]
         (["--listen", "127.0.0.1:50051"], None),
         (["--listen", "[::1]:50051"], None),
         (["--listen", "localhost:50051"], None),
-        (["--listen", "unix:/tmp/hark.sock"], None),
+        (["--listen", "unix:/tmp/skriv.sock"], None),
         (["--listen", "0.0.0.0:50051"], "refusing plaintext"),
         (["--listen", "100.64.1.2:50051"], "refusing plaintext"),
         (["--listen", "0.0.0.0:50051", "--allow-insecure-non-local"], None),
@@ -56,9 +56,9 @@ def test_toml_config_rejects_unknown_keys(tmp_path: Path):
 def test_checked_in_stubs_match_proto(tmp_path: Path):
     gen_proto = SERVER.parent / "proto-py" / "gen-proto"
     subprocess.run([str(gen_proto), str(tmp_path)], check=True)  # noqa: S603 - repo script, fixed argv
-    for name in ("hark_pb2.py", "hark_pb2.pyi", "hark_pb2_grpc.py", "hark_pb2_grpc.pyi"):
+    for name in ("skriv_pb2.py", "skriv_pb2.pyi", "skriv_pb2_grpc.py", "skriv_pb2_grpc.pyi"):
         assert filecmp.cmp(
-            tmp_path / "hark/v1" / name,
-            SERVER.parent / "proto-py/src/hark/v1" / name,
+            tmp_path / "skriv/v1" / name,
+            SERVER.parent / "proto-py/src/skriv/v1" / name,
             shallow=False,
         ), name

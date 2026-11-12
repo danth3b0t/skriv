@@ -11,7 +11,7 @@ from __future__ import annotations
 import string
 from typing import TYPE_CHECKING
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 if TYPE_CHECKING:
     from .backends import WordOut

@@ -14,7 +14,7 @@ import grpc
 import pytest
 from conftest import audio_reqs, eoa_req, kubectl_term, silence, speech, start_req, utterance
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_server.backends.mock import MockBackend
 
 if TYPE_CHECKING:

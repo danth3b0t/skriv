@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
-# Regenerate the checked-in Python stubs for proto/hark/v1/hark.proto.
+# Regenerate the checked-in Python stubs for proto/skriv/v1/skriv.proto.
 # Typed stubs (.pyi) for messages and gRPC services come from mypy-protobuf.
 # Usage: proto-py/gen-proto [OUT_DIR]   (default: proto-py/src)
 set -euo pipefail
 here="$(cd "$(dirname "$0")" && pwd)"
 root="$(cd "$here/.." && pwd)"
 out="${1:-$here/src}"
-mkdir -p "$out/hark/v1"
+mkdir -p "$out/skriv/v1"
 cd "$root"
 uv run python -m grpc_tools.protoc \
   -I "$root/proto" \
   --python_out="$out" --grpc_python_out="$out" \
   --mypy_out="$out" --mypy_grpc_out="$out" \
-  "$root/proto/hark/v1/hark.proto"
-touch "$out/hark/__init__.py" "$out/hark/v1/__init__.py"
+  "$root/proto/skriv/v1/skriv.proto"
+touch "$out/skriv/__init__.py" "$out/skriv/v1/__init__.py"

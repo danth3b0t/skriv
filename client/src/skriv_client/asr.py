@@ -1,4 +1,4 @@
-"""hark.v1 Asr client side: channel, capabilities cache, one Transcribe stream per utterance.
+"""skriv.v1 Asr client side: channel, capabilities cache, one Transcribe stream per utterance.
 
 Uses the synchronous grpcio API: hotkey, audio callback and ctl socket all live on
 threads, so a blocking request iterator fed from a queue is the simplest bridge.
@@ -18,8 +18,8 @@ from typing import TYPE_CHECKING
 
 import grpc
 
-from hark.v1 import hark_pb2 as pb
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2 as pb
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 from skriv_client import __version__
 from skriv_client.context import TermKind, TermSource
 
@@ -38,7 +38,7 @@ CLIENT_VERSION = f"skriv-client/{__version__}"
 _TERM_KINDS = {
     TermKind.IDENTIFIER: pb.TERM_KIND_IDENTIFIER,
     TermKind.PATH: pb.TERM_KIND_PATH,
-    TermKind.FLAG: pb.TERM_KIND_IDENTIFIER,  # no FLAG kind in hark.v1
+    TermKind.FLAG: pb.TERM_KIND_IDENTIFIER,  # no FLAG kind in skriv.v1
     TermKind.COMMAND: pb.TERM_KIND_COMMAND,
     TermKind.NAME: pb.TERM_KIND_PRODUCT,
     TermKind.WORD: pb.TERM_KIND_WORD,
@@ -137,7 +137,7 @@ class Capabilities:
         caps = self.get()
         return (
             caps is not None
-            and "hark.cleanup" in caps.features
+            and "skriv.cleanup" in caps.features
             and any(p.id == profile_id for p in caps.cleanup_profiles)
         )
 
@@ -149,7 +149,7 @@ def rpc_error_text(e: grpc.RpcError) -> str:
 
 
 def bias_list(terms: Sequence[Term]) -> pb.BiasList:
-    """Context shortlist -> hark.v1 BiasList (ranked order kept, ids t0, t1, ...)."""
+    """Context shortlist -> skriv.v1 BiasList (ranked order kept, ids t0, t1, ...)."""
     out = pb.BiasList()
     seen: set[str] = set()
     for t in terms:

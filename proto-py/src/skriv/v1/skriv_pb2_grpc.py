@@ -3,7 +3,7 @@
 import grpc
 import warnings
 
-from hark.v1 import hark_pb2 as hark_dot_v1_dot_hark__pb2
+from skriv.v1 import skriv_pb2 as skriv_dot_v1_dot_skriv__pb2
 
 GRPC_GENERATED_VERSION = '1.85.1'
 GRPC_VERSION = grpc.__version__
@@ -18,7 +18,7 @@ except ImportError:
 if _version_not_supported:
     raise RuntimeError(
         f'The grpc package installed is at version {GRPC_VERSION},'
-        + ' but the generated code in hark/v1/hark_pb2_grpc.py depends on'
+        + ' but the generated code in skriv/v1/skriv_pb2_grpc.py depends on'
         + f' grpcio>={GRPC_GENERATED_VERSION}.'
         + f' Please upgrade your grpc module to grpcio>={GRPC_GENERATED_VERSION}'
         + f' or downgrade your generated code using grpcio-tools<={GRPC_VERSION}.'
@@ -32,7 +32,7 @@ class AsrStub:
 
     Speech recognition. One server process may host several models.
     Also implement grpc.health.v1.Health with service names
-    "" (process), "hark.v1.Asr", "hark.v1.TextCleanup".
+    "" (process), "skriv.v1.Asr", "skriv.v1.TextCleanup".
     """
 
     def __init__(self, channel):
@@ -42,14 +42,14 @@ class AsrStub:
             channel: A grpc.Channel.
         """
         self.GetCapabilities = channel.unary_unary(
-                '/hark.v1.Asr/GetCapabilities',
-                request_serializer=hark_dot_v1_dot_hark__pb2.GetCapabilitiesRequest.SerializeToString,
-                response_deserializer=hark_dot_v1_dot_hark__pb2.Capabilities.FromString,
+                '/skriv.v1.Asr/GetCapabilities',
+                request_serializer=skriv_dot_v1_dot_skriv__pb2.GetCapabilitiesRequest.SerializeToString,
+                response_deserializer=skriv_dot_v1_dot_skriv__pb2.Capabilities.FromString,
                 _registered_method=True)
         self.Transcribe = channel.stream_stream(
-                '/hark.v1.Asr/Transcribe',
-                request_serializer=hark_dot_v1_dot_hark__pb2.TranscribeRequest.SerializeToString,
-                response_deserializer=hark_dot_v1_dot_hark__pb2.TranscribeResponse.FromString,
+                '/skriv.v1.Asr/Transcribe',
+                request_serializer=skriv_dot_v1_dot_skriv__pb2.TranscribeRequest.SerializeToString,
+                response_deserializer=skriv_dot_v1_dot_skriv__pb2.TranscribeResponse.FromString,
                 _registered_method=True)
 
 
@@ -60,7 +60,7 @@ class AsrServicer:
 
     Speech recognition. One server process may host several models.
     Also implement grpc.health.v1.Health with service names
-    "" (process), "hark.v1.Asr", "hark.v1.TextCleanup".
+    "" (process), "skriv.v1.Asr", "skriv.v1.TextCleanup".
     """
 
     def GetCapabilities(self, request, context):
@@ -95,19 +95,19 @@ def add_AsrServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'GetCapabilities': grpc.unary_unary_rpc_method_handler(
                     servicer.GetCapabilities,
-                    request_deserializer=hark_dot_v1_dot_hark__pb2.GetCapabilitiesRequest.FromString,
-                    response_serializer=hark_dot_v1_dot_hark__pb2.Capabilities.SerializeToString,
+                    request_deserializer=skriv_dot_v1_dot_skriv__pb2.GetCapabilitiesRequest.FromString,
+                    response_serializer=skriv_dot_v1_dot_skriv__pb2.Capabilities.SerializeToString,
             ),
             'Transcribe': grpc.stream_stream_rpc_method_handler(
                     servicer.Transcribe,
-                    request_deserializer=hark_dot_v1_dot_hark__pb2.TranscribeRequest.FromString,
-                    response_serializer=hark_dot_v1_dot_hark__pb2.TranscribeResponse.SerializeToString,
+                    request_deserializer=skriv_dot_v1_dot_skriv__pb2.TranscribeRequest.FromString,
+                    response_serializer=skriv_dot_v1_dot_skriv__pb2.TranscribeResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'hark.v1.Asr', rpc_method_handlers)
+            'skriv.v1.Asr', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('hark.v1.Asr', rpc_method_handlers)
+    server.add_registered_method_handlers('skriv.v1.Asr', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -118,7 +118,7 @@ class Asr:
 
     Speech recognition. One server process may host several models.
     Also implement grpc.health.v1.Health with service names
-    "" (process), "hark.v1.Asr", "hark.v1.TextCleanup".
+    "" (process), "skriv.v1.Asr", "skriv.v1.TextCleanup".
     """
 
     @staticmethod
@@ -135,9 +135,9 @@ class Asr:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/hark.v1.Asr/GetCapabilities',
-            hark_dot_v1_dot_hark__pb2.GetCapabilitiesRequest.SerializeToString,
-            hark_dot_v1_dot_hark__pb2.Capabilities.FromString,
+            '/skriv.v1.Asr/GetCapabilities',
+            skriv_dot_v1_dot_skriv__pb2.GetCapabilitiesRequest.SerializeToString,
+            skriv_dot_v1_dot_skriv__pb2.Capabilities.FromString,
             options,
             channel_credentials,
             insecure,
@@ -162,9 +162,9 @@ class Asr:
         return grpc.experimental.stream_stream(
             request_iterator,
             target,
-            '/hark.v1.Asr/Transcribe',
-            hark_dot_v1_dot_hark__pb2.TranscribeRequest.SerializeToString,
-            hark_dot_v1_dot_hark__pb2.TranscribeResponse.FromString,
+            '/skriv.v1.Asr/Transcribe',
+            skriv_dot_v1_dot_skriv__pb2.TranscribeRequest.SerializeToString,
+            skriv_dot_v1_dot_skriv__pb2.TranscribeResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -187,9 +187,9 @@ class TextCleanupStub:
             channel: A grpc.Channel.
         """
         self.Cleanup = channel.unary_unary(
-                '/hark.v1.TextCleanup/Cleanup',
-                request_serializer=hark_dot_v1_dot_hark__pb2.CleanupRequest.SerializeToString,
-                response_deserializer=hark_dot_v1_dot_hark__pb2.CleanupResponse.FromString,
+                '/skriv.v1.TextCleanup/Cleanup',
+                request_serializer=skriv_dot_v1_dot_skriv__pb2.CleanupRequest.SerializeToString,
+                response_deserializer=skriv_dot_v1_dot_skriv__pb2.CleanupResponse.FromString,
                 _registered_method=True)
 
 
@@ -208,14 +208,14 @@ def add_TextCleanupServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'Cleanup': grpc.unary_unary_rpc_method_handler(
                     servicer.Cleanup,
-                    request_deserializer=hark_dot_v1_dot_hark__pb2.CleanupRequest.FromString,
-                    response_serializer=hark_dot_v1_dot_hark__pb2.CleanupResponse.SerializeToString,
+                    request_deserializer=skriv_dot_v1_dot_skriv__pb2.CleanupRequest.FromString,
+                    response_serializer=skriv_dot_v1_dot_skriv__pb2.CleanupResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
-            'hark.v1.TextCleanup', rpc_method_handlers)
+            'skriv.v1.TextCleanup', rpc_method_handlers)
     server.add_generic_rpc_handlers((generic_handler,))
-    server.add_registered_method_handlers('hark.v1.TextCleanup', rpc_method_handlers)
+    server.add_registered_method_handlers('skriv.v1.TextCleanup', rpc_method_handlers)
 
 
  # This class is part of an EXPERIMENTAL API.
@@ -237,9 +237,9 @@ class TextCleanup:
         return grpc.experimental.unary_unary(
             request,
             target,
-            '/hark.v1.TextCleanup/Cleanup',
-            hark_dot_v1_dot_hark__pb2.CleanupRequest.SerializeToString,
-            hark_dot_v1_dot_hark__pb2.CleanupResponse.FromString,
+            '/skriv.v1.TextCleanup/Cleanup',
+            skriv_dot_v1_dot_skriv__pb2.CleanupRequest.SerializeToString,
+            skriv_dot_v1_dot_skriv__pb2.CleanupResponse.FromString,
             options,
             channel_credentials,
             insecure,

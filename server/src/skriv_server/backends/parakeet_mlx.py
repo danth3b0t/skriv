@@ -12,7 +12,7 @@ API used (read from parakeet_mlx 0.7.0 source):
 
 Decode-time bias (TDT/RNNT models): with a BiasPlan the primary decode is a
 beam search whose booster is a character trie over the surface forms below;
-without one it is greedy. Mapping of a hark.v1 term (canonical, aliases, w):
+without one it is greedy. Mapping of a skriv.v1 term (canonical, aliases, w):
   - native boost b = min(boost_max, strength * (boost_min + w * (boost_max - boost_min)))
     (Backend.plan_bias, then clamped; w absent = 1). b is a log-score bonus for completing
     the form at word boundaries; the trie grants it character by character
@@ -83,7 +83,7 @@ from typing import TYPE_CHECKING, Protocol, cast
 import numpy as np
 import numpy.typing as npt
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 from . import SAMPLE_RATE, Backend, BackendUnavailable, BiasPlan, DecodeOut, WordOut
 

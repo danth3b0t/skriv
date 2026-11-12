@@ -56,7 +56,7 @@ from dataclasses import dataclass, replace
 from difflib import SequenceMatcher
 from typing import TYPE_CHECKING
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_client.context import WordInfo
 from skriv_client.context.canon import common_words
 from skriv_client.symbols import SUBCOMMANDS

@@ -1,4 +1,4 @@
-"""skriv-probe: stream a WAV file to a hark.v1 server and report the result.
+"""skriv-probe: stream a WAV file to a skriv.v1 server and report the result.
 
 Prints the FinalResult (protobuf JSON) on stdout and a latency breakdown on
 stderr. "eoa->final" is client-side: from handing EndOfAudio to gRPC until the
@@ -23,13 +23,13 @@ from typing import TYPE_CHECKING, TypedDict, cast
 import grpc
 from google.protobuf import json_format
 
-from hark.v1 import hark_pb2 as pb
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2 as pb
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 
 if TYPE_CHECKING:
     from collections.abc import AsyncIterator
 
-    from hark.v1.hark_pb2_grpc import AsrAsyncStub
+    from skriv.v1.skriv_pb2_grpc import AsrAsyncStub
 
 SAMPLE_RATE = 16000
 

@@ -21,7 +21,7 @@ import numpy.typing as npt
 import pytest
 from conftest import kubectl_term, speech, utterance
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 pytest.importorskip("parakeet_mlx")  # macOS on Apple Silicon, `uv sync --extra mlx`
 

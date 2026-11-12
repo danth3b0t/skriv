@@ -4,7 +4,7 @@
 laptop's own CPU server (scripts/cpu-server-up) last. At the start of every dictation,
 `Router.pick()` walks them in priority order and takes the first that is healthy:
 
-- health = grpc.health.v1 `Check("hark.v1.Asr")` with a deadline of the provider's
+- health = grpc.health.v1 `Check("skriv.v1.Asr")` with a deadline of the provider's
   `max_latency_ms`: SERVING in time -> ok; deadline exceeded -> slow; anything else
   (connection refused, NOT_SERVING while the model loads, TLS failure) -> down;
 - results are cached (ok for 30 s, slow/down for 5 s), and `hark run` refreshes them in the
@@ -90,7 +90,7 @@ class Provider:
         """Health-check now (blocks at most max_latency_ms)."""
         t0 = time.perf_counter()
         try:
-            status = health_status(self.channel, "hark.v1.Asr", self.cfg.max_latency_ms / 1000)
+            status = health_status(self.channel, "skriv.v1.Asr", self.cfg.max_latency_ms / 1000)
         except grpc.RpcError as e:
             slow = isinstance(e, grpc.Call) and e.code() == grpc.StatusCode.DEADLINE_EXCEEDED
             detail = f"no answer in {self.cfg.max_latency_ms} ms" if slow else asr.rpc_error_text(e)

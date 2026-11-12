@@ -7,7 +7,7 @@ import sys
 import time
 from typing import TYPE_CHECKING
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_client import ctl
 from skriv_client.feedback import sound_player
 from skriv_client.inject import detect_method

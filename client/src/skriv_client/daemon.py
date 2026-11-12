@@ -17,7 +17,7 @@ import threading
 import time
 from typing import TYPE_CHECKING, Protocol, cast
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_client import config, context, guardrails, history, indicator, retry
 from skriv_client.asr import SAMPLE_RATE, unix_us
 from skriv_client.audio import PreRoll

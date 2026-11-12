@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 from skriv_client import gate
 from skriv_client.config import GateConfig
 

@@ -13,7 +13,7 @@ from google.protobuf import any_pb2
 from google.rpc.status_pb2 import Status
 from grpc_status import rpc_status
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 E = pb.ErrorCode
 

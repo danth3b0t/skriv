@@ -8,7 +8,7 @@ import grpc
 from conftest import kubectl_term, speech, utterance
 from grpc_health.v1 import health_pb2, health_pb2_grpc
 
-from hark.v1 import hark_pb2 as pb
+from skriv.v1 import skriv_pb2 as pb
 
 if TYPE_CHECKING:
     from conftest import Serve
@@ -36,8 +36,8 @@ async def test_capabilities_describe_model_limits_and_privacy(serve: Serve):
     assert model.state == pb.MODEL_STATE_READY
     assert model.bias.mechanism == pb.BIAS_MECHANISM_DECODE_TIME_BOOST
     assert (model.bias.boost_min, model.bias.boost_max) == (1.0, 5.0)
-    assert "hark.eager_end" in caps.features
-    assert "hark.cleanup" not in caps.features  # no cleanup backend configured
+    assert "skriv.eager_end" in caps.features
+    assert "skriv.cleanup" not in caps.features  # no cleanup backend configured
     assert caps.limits.max_concurrent_sessions == 3
     assert caps.privacy == pb.PrivacyCapabilities()  # retains nothing => supports no allow_* flag
 
@@ -54,7 +54,12 @@ async def test_required_features_that_exist_are_accepted(serve: Serve):
         utterance(
             speech(600),
             context=pb.RecognitionContext(bias=pb.BiasList(terms=[kubectl_term()])),
-            required_features=["bias", "result.anchor", "result.word_timestamps", "hark.eager_end"],
+            required_features=[
+                "bias",
+                "result.anchor",
+                "result.word_timestamps",
+                "skriv.eager_end",
+            ],
         )
     )
     assert out.code == grpc.StatusCode.OK
@@ -66,7 +71,7 @@ async def test_required_features_that_exist_are_accepted(serve: Serve):
 async def test_cold_model_is_not_serving_and_rejects_sessions(serve: Serve):
     client = await serve(warmup_on_start=False)
     health = cast("_HealthStub", health_pb2_grpc.HealthStub(client.channel))
-    check = await health.Check(health_pb2.HealthCheckRequest(service="hark.v1.Asr"))
+    check = await health.Check(health_pb2.HealthCheckRequest(service="skriv.v1.Asr"))
     assert check.status == NOT_SERVING
     cold = await client.asr.GetCapabilities(pb.GetCapabilitiesRequest())
     assert cold.models[0].state == pb.MODEL_STATE_COLD

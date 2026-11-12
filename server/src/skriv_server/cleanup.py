@@ -1,4 +1,4 @@
-"""hark.v1.TextCleanup: "S1-mini" by "Superwhisper" rewrites the text (ADR-001 #6).
+"""skriv.v1.TextCleanup: "S1-mini" by "Superwhisper" rewrites the text (ADR-001 #6).
 
 S1-mini (a Qwen3-0.6B text normalizer, https://huggingface.co/superwhisper/s1-mini) is served
 by an OpenAI-compatible /v1/chat/completions (llama-server). It removes fillers, punctuates,
@@ -23,8 +23,8 @@ from typing import TYPE_CHECKING, TypedDict, cast
 import grpc
 import httpx
 
-from hark.v1 import hark_pb2 as pb
-from hark.v1 import hark_pb2_grpc as pb_grpc
+from skriv.v1 import skriv_pb2 as pb
+from skriv.v1 import skriv_pb2_grpc as pb_grpc
 
 from .errors import E, SkrivError, check_privacy, protocol_violation
 

@@ -1,4 +1,4 @@
-// hark client <-> inference-server protocol, hark.v1 (gRPC + protobuf)
+// skriv client <-> inference-server protocol, skriv.v1 (gRPC + protobuf)
 // Status: FINAL v1.0 (ADR-001). Base: docs/protocol/proposal-a.proto with the
 // ADR-001 amendments applied; differences are listed in
 // docs/protocol/CHANGES.md. Rationale: docs/protocol/proposal-a.md.
@@ -11,9 +11,9 @@
 // - Scalars whose zero value is meaningful use proto3 `optional`.
 // - Every enum's value 0 is *_UNSPECIFIED and means "server default" or
 //   "unknown". Receivers MUST treat unknown enum values like UNSPECIFIED.
-// - Compatibility: additive changes only within package hark.v1 (bump
+// - Compatibility: additive changes only within package skriv.v1 (bump
 //   Capabilities.protocol.minor). Never renumber or reuse a field number;
-//   `reserved` removed ones. Breaking changes => package hark.v2, served
+//   `reserved` removed ones. Breaking changes => package skriv.v2, served
 //   side by side. Enforced in CI with `buf breaking`.
 // - Required-ness is enforced by the receiver's validation code, not by
 //   proto (proto3 has no required). Violations => INVALID_ARGUMENT.
@@ -24,7 +24,7 @@
 
 syntax = "proto3";
 
-package hark.v1;
+package skriv.v1;
 
 // =============================================================================
 // Services
@@ -32,7 +32,7 @@ package hark.v1;
 
 // Speech recognition. One server process may host several models.
 // Also implement grpc.health.v1.Health with service names
-// "" (process), "hark.v1.Asr", "hark.v1.TextCleanup".
+// "" (process), "skriv.v1.Asr", "skriv.v1.TextCleanup".
 service Asr {
   // Cheap and cacheable. Call on connect, on reconnect, and whenever
   // SessionAccepted.capabilities_etag differs from the cached etag.
@@ -66,11 +66,11 @@ service TextCleanup {
 message GetCapabilitiesRequest {
   reserved 2;
   reserved "client_protocol_minor";
-  string client_version = 1;        // e.g. "hark/0.3.1 (linux-x86_64)"
+  string client_version = 1;        // e.g. "skriv/0.3.1 (linux-x86_64)"
 }
 
 message ProtocolVersion {
-  uint32 major = 1; // always 1 in package hark.v1
+  uint32 major = 1; // always 1 in package skriv.v1
   uint32 minor = 2; // additive revisions
 }
 
@@ -84,7 +84,7 @@ message Capabilities {
   // state included). Echoed in SessionAccepted.
   string etag = 6;
   // Small namespaced boolean features. Unknown strings MUST be ignored.
-  // Defined: "hark.midstream_context", "hark.cleanup", "hark.eager_end".
+  // Defined: "skriv.midstream_context", "skriv.cleanup", "skriv.eager_end".
   repeated string features = 7;
   // Which PrivacyFlags permissions this server can act on. Sessions that set
   // an unsupported allow_* flag are rejected (see PrivacyFlags).
@@ -204,7 +204,7 @@ message TranscribeRequest {
     ContextUpdate context_update = 3;
     EndOfAudio end_of_audio = 4;     // at most once; no audio afterwards
     Cancel cancel = 5;
-    EagerEnd eager_end = 6;          // hint; only if feature "hark.eager_end"
+    EagerEnd eager_end = 6;          // hint; only if feature "skriv.eager_end"
   }
 }
 
@@ -291,7 +291,7 @@ message SpokenAlias {
 
 message FreeTextContext {
   // Short natural-language description, already redacted by the client, e.g.
-  // "Terminal in git repo 'hark' (Rust), branch feat/vad."
+  // "Terminal in git repo 'skriv' (Rust), branch feat/vad."
   string description = 1;
   // Text immediately before the caret, already redacted, oldest first.
   string preceding_text = 2;
@@ -556,7 +556,7 @@ message ResultFlags {
 }
 
 // Packed into google.rpc.Status.details (grpc-status-details-bin) on any
-// non-OK status from any hark RPC.
+// non-OK status from any skriv RPC.
 message ErrorDetail {
   ErrorCode code = 1;
   string message = 2;            // never contains user text/context
