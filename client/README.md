@@ -308,6 +308,8 @@ hark history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cl
                               # gate decisions (if recorded), final, spacing decision, paste,
                               # latency (key release -> text sent), timings
 hark last                     # print the last dictated text; --copy puts it on the clipboard
+hark last --raw --copy        # its text before cleanup (spoken symbols, self-corrections and guardrails
+                              # applied, no LLM rewrite), e.g. when the cleanup changed too much
 hark ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
 ```
 

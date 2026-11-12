@@ -46,6 +46,7 @@ class Args(argparse.Namespace):
     json: bool
     id: str | None
     copy: bool
+    raw: bool
     history_action: str
     n: int
     service_action: str
@@ -123,6 +124,9 @@ def parse_args(argv: list[str] | None = None) -> Args:
     h.add_argument("--json", action="store_true", help="list: the full records as a JSON array")
     la = sub.add_parser("last", help="print the last dictated text")
     la.add_argument("--copy", action="store_true", help="copy it to the clipboard instead")
+    la.add_argument(
+        "--raw", action="store_true", help="the text before cleanup (what was said, uncleaned)"
+    )
     sub.add_parser("doctor", help="check server, mic, permissions, paste tools")
     w = sub.add_parser("words", help="spellings the recognizer needs help with ([[words]])")
     w.add_argument("words_action", nargs="?", default="list", choices=["list", "add", "remove"])
@@ -395,9 +399,12 @@ def cmd_last(args: Args, cfg: Config) -> int:
     from hark_client import history  # noqa: PLC0415
     from hark_client.config import expand  # noqa: PLC0415
 
-    text = history.last_text(expand(cfg.history.dir))
+    text = history.last_text(
+        expand(cfg.history.dir), key="uncleaned_text" if args.raw else "final_text"
+    )
     if not text:
-        print("hark last: no dictated text in the history", file=sys.stderr)
+        what = "uncleaned text" if args.raw else "dictated text"
+        print(f"hark last: no {what} in the history", file=sys.stderr)
         return 1
     if not args.copy:
         print(text)

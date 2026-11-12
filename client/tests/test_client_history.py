@@ -104,7 +104,12 @@ def test_history_and_last_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert main([*base, "last"]) == 1  # no history yet
     assert main([*base, "history"]) == 0
     assert "no history" in capsys.readouterr().out
-    history.append(tmp_path, record(ID_A, "2026-11-10T08:30:00Z", final_text="hello there"))
+    history.append(
+        tmp_path,
+        record(
+            ID_A, "2026-11-10T08:30:00Z", final_text="hello there", uncleaned_text="uh hello there"
+        ),
+    )
     history.append(tmp_path, record(ID_B, "2026-11-10T08:31:00Z", status="error", final_text=""))
 
     assert main([*base, "history", "-n", "1", "--json"]) == 0
@@ -120,3 +125,5 @@ def test_history_and_last_commands(tmp_path: Path, capsys: pytest.CaptureFixture
     assert capsys.readouterr().out == "hello there\n"
     assert main([*base, "last", "--copy"]) == 0
     assert "[dry-run] would copy: 'hello there'" in capsys.readouterr().out
+    assert main([*base, "last", "--raw", "--copy"]) == 0
+    assert "[dry-run] would copy: 'uh hello there'" in capsys.readouterr().out
