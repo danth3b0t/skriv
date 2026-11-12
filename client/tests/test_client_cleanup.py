@@ -11,6 +11,7 @@ import pytest
 from hark.v1 import hark_pb2 as pb
 from hark.v1 import hark_pb2_grpc as pb_grpc
 from hark_client import cleanup
+from hark_client.context import Term, TermKind, TermSource
 
 from .conftest import KUBECTL
 
@@ -173,6 +174,27 @@ CORRECTION = "Run kubectl on port 8080, no wait, on port 8081!"
         ("It works!", "works!", "works.", K.EDIT_KIND_PUNCTUATION, "", "exclamation"),
         ("um uh like you know ok", "um uh like you know ok", "ok", K.EDIT_KIND_FILLER_REMOVAL,
          "", "too many words"),
+        # bare cues: the retracted words and the cue's "no" may go ...
+        ("I want it written in C, uh no, in Rust.", "in C, uh no, in", "in",
+         K.EDIT_KIND_SELF_CORRECTION, "I want it written in Rust.", ""),
+        ("Um my name is David. Uh no, uh my name is Dan.", "Um my name is David. Uh no, uh my",
+         "My", K.EDIT_KIND_SELF_CORRECTION, "My name is Dan.", ""),
+        ("Pick the red blue green big car, no, the bus.", "the red blue green big car, no, the",
+         "the", K.EDIT_KIND_SELF_CORRECTION, "Pick the bus.", ""),
+        # ... but not more than 6 words, across a sentence, after a question or with no
+        # retracted words: there the "no" is a protected negation
+        ("Pick the red blue green big old car, no, the bus.",
+         "the red blue green big old car, no, the", "the", K.EDIT_KIND_SELF_CORRECTION, "",
+         "protected span"),
+        ("Use Rust. Then C, no, then Go.", "Use Rust. Then C, no, then", "Then",
+         K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
+        ("Is it done? No, it is not.", "Is it done? No, it", "It", K.EDIT_KIND_SELF_CORRECTION,
+         "", "protected span"),
+        ("No, I don't want C.", "No, I", "I", K.EDIT_KIND_SELF_CORRECTION, "", "protected span"),
+        ("use C not Rust", "C not Rust", "Rust", K.EDIT_KIND_SELF_CORRECTION, "",
+         "protected span"),
+        ("It is, actually, fine.", "It is, actually, fine", "Fine", K.EDIT_KIND_SELF_CORRECTION,
+         "", "invariant"),  # not the same kind: no repeated word, not a single-word slot
     ],
 )  # fmt: skip
 def test_validator_s1_edit_kinds(
@@ -181,6 +203,29 @@ def test_validator_s1_edit_kinds(
     edits, spans = [make_edit(find, replace, kind, text)], cleanup.protected_spans(text, [KUBECTL])
     checked = cleanup.validate_edits(text, edits, spans)
     assert checked.text == (text if error else result)
+    assert [error in why for _, why in checked.dropped] == ([True] if error else [])
+
+
+@pytest.mark.parametrize(
+    ("text", "find", "replace", "terms", "error"),
+    [
+        ("like Super Whisper.", "Super Whisper.", "Superwhisper.", ["Superwhisper"], ""),
+        ("in open pencil But", "open pencil", "OpenPencil.", ["OpenPencil"], ""),
+        ("like Super Whisper.", "Super Whisper.", "Superwhisper.", [], "protected span"),
+        ("like Super Whisperer.", "Super Whisperer.", "Superwhisper.", ["Superwhisper"],
+         "protected span"),  # a letter changes too
+    ],
+)  # fmt: skip
+def test_validator_merges_words_into_known_terms(
+    text: str, find: str, replace: str, terms: list[str], error: str
+):
+    # "Super" and "Whisper" are protected bias terms, as in the real dictation.
+    shortlist = [
+        Term(t, (), 0.5, TermKind.NAME, TermSource.VOCABULARY) for t in ("Super", "Whisper")
+    ]
+    edits = [make_edit(find, replace, K.EDIT_KIND_SPACING, text)]
+    checked = cleanup.validate_edits(text, edits, cleanup.protected_spans(text, shortlist), terms)
+    assert checked.text == (text if error else text.replace(find, replace))
     assert [error in why for _, why in checked.dropped] == ([True] if error else [])
 
 
