@@ -1,6 +1,6 @@
 // Build design/hark-ui.fig in the running OpenPencil app over MCP, then export PNGs headlessly.
 //   node design/src/build.mjs                 full build -> design/hark-ui.fig + design/exports/*.png
-//   node design/src/build.mjs --only glow     scratch build of one page group -> /tmp/hark-scratch/*.png
+//   node design/src/build.mjs --only panel    scratch build of one page group -> /tmp/hark-scratch/*.png
 import { execFileSync } from 'node:child_process'
 import { existsSync, renameSync, rmSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'

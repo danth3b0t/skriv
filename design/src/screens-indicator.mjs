@@ -1,92 +1,71 @@
-import { F, frame, text, icon, rect, ellipse, v, chip, keys, levelBars, annotation, boardTitle, spacer, card } from './lib.mjs'
+// Indicator pill (S1). Glyph + meter + at most three words. Click-through; the action lives in the panel.
+import { F, frame, text, icon, rect, ellipse, v, boardTitle } from './lib.mjs'
 
 export const LEVELS = {
-  speaking: [0.05, 0.12, 0.3, 0.55, 0.8, 0.62, 0.9, 0.7, 0.42, 0.66, 0.85, 0.5],
-  quiet: [0.04, 0.05, 0.1, 0.16, 0.12, 0.08, 0.14, 0.2, 0.12, 0.09, 0.15, 0.1],
-  silent: Array(12).fill(0.02),
-  peak: [0.6, 0.8, 1, 0.95, 1, 0.9, 1, 0.85, 1, 0.97, 1, 0.9]
+  speaking: [0.3, 0.55, 0.85, 0.62, 0.95, 0.7, 0.45, 0.8],
+  quiet: [0.12, 0.2, 0.15, 0.28, 0.18, 0.12, 0.22, 0.16],
+  silent: Array(8).fill(0)
 }
 
-// The pill. Omarchy OSD anatomy: [popups] background @0.97, 2px popups border (accent), Style.cornerRadius,
-// content row padded 12/8; glyph slot 16; label body bold; detail caption text-2.
-export function pill(st) {
-  const glyphs = {
-    recording: frame({ name: 'glyph', w: 16, h: 16, items: 'center', justify: 'center' },
-      ellipse({ name: 'halo', x: 0, y: 0, w: 16, h: 16, bg: v('live-fill') }),
-      ellipse({ name: 'live-dot', x: 4, y: 4, w: 8, h: 8, bg: v('live-ink') })),
-    handsfree: icon('mdi:lock', { size: 15, color: 'live-ink' }),
-    transcribing: icon('mdi:loading', { size: 16, color: 'accent-ink' }),
-    cleaning: icon('mdi:auto-fix', { size: 16, color: 'accent-ink' }),
-    pasted: icon('mdi:check-bold', { size: 16, color: 'ok-ink' }),
-    copied: icon('mdi:clipboard-text-outline', { size: 16, color: 'warn-ink' }),
-    error: icon('mdi:alert-circle-outline', { size: 16, color: 'live-ink' }),
-    cancelled: icon('mdi:close', { size: 16, color: 'text-2' }),
-    warming: icon('mdi:timer-sand', { size: 16, color: 'text-2' }),
-    nosignal: icon('mdi:microphone-off', { size: 16, color: 'warn-ink' })
-  }
-  const working = st.state === 'transcribing' || st.state === 'cleaning'
-  const border = st.state === 'error' ? 'live-ink' : 'accent'
-  const row = frame({ name: 'content', flex: 'row', gap: 10, px: 12, py: 8, items: 'center' },
-    glyphs[st.state],
-    text(st.label, { size: F.body, weight: 'bold' }),
-    st.levels ? levelBars(st.levels) : '',
-    st.elapsed ? text(st.elapsed, { size: F.bodySmall, color: 'text-2' }) : '',
-    st.detail ? text(st.detail, { size: F.bodySmall, color: 'text-2' }) : '',
-    st.warn ? frame({ flex: 'row', gap: 4, items: 'center' }, icon('mdi:alert-outline', { size: 12, color: 'warn-ink' }), text(st.warn, { size: F.bodySmall })) : '',
-    st.keys ? frame({ flex: 'row', gap: 5, items: 'center' }, keys(...st.keys), st.keysLabel ? text(st.keysLabel, { size: F.bodySmall, color: 'text-2' }) : '') : '',
-    st.profile ? chip(st.profile, st.override ? { tone: 'accent', iconName: 'mdi:pin' } : {}) : '')
-  return frame({ name: `pill/${st.state}`, flex: 'col', bg: v('bg'), stroke: v(border), strokeWidth: 2 },
-    row,
-    working ? frame({ name: 'progress', w: 'fill', h: 2, bg: v('fill-selected') },
-      rect({ name: 'sweep', x: 40, y: 0, w: 70, h: 2, bg: v('accent-ink') })) : '')
+// Meter: 8 bars × 2 px, gap 2, max 12 px, newest on the right. Silent bars sit at 2 px in text-2.
+export function meter(levels, { h = 12, color = 'fg' } = {}) {
+  return frame({ name: 'meter', flex: 'row', gap: 2, items: 'center', h },
+    levels.map((l) => rect({ w: 2, h: Math.max(2, Math.round(l * h)), bg: v(l < 0.08 ? 'text-2' : color) })))
 }
 
-export const PILL_STATES = [
-  { id: 'hidden (idle)', when: 'daemon idle; no layer surface is mapped', st: null },
-  { id: 'recording · hold', when: 'key down (ctl start). Level = rolling RMS, 20 Hz; elapsed after 1 s', st: { state: 'recording', label: 'Listening', levels: LEVELS.speaking, elapsed: '0:03', profile: 'terminal' } },
-  { id: 'recording · hands-free', when: 'ctl toggle (Alt+Space) or tap-to-lock; shows how to stop', st: { state: 'handsfree', label: 'Hands-free', levels: LEVELS.quiet, elapsed: '0:42', keys: ['Alt+Space'], keysLabel: 'stop', profile: 'prose' } },
-  { id: 'recording · no input', when: '> 1.5 s below -55 dBFS while recording (proposed mic-health hint)', st: { state: 'nosignal', label: 'Listening', levels: LEVELS.silent, warn: 'No input from “Built-in Mic”', profile: 'prose' } },
-  { id: 'transcribing', when: 'key up → FinalResult. Indeterminate sweep, never a fake %', st: { state: 'transcribing', label: 'Transcribing', detail: '4.1 s audio', profile: 'terminal' } },
-  { id: 'cleaning', when: 'cleanup request sent (profile opts in)', st: { state: 'cleaning', label: 'Cleaning up', detail: 'prose · ≤ 1 s', profile: 'prose' } },
-  { id: 'pasted', when: 'status pasted; linger 0.8 s then hide', st: { state: 'pasted', label: 'Pasted', detail: 'Ghostty · 412 ms' } },
-  { id: 'copied only', when: 'focus_changed / paste.method clipboard; linger 2.5 s', st: { state: 'copied', label: 'Copied · focus moved', keys: ['Super', 'V'], keysLabel: 'to paste' } },
-  { id: 'error', when: 'error / paste_failed; linger 4 s; audio kept for retry', st: { state: 'error', label: 'Transcription failed', detail: 'server timeout · hark retry' } },
-  { id: 'cancelled', when: 'Esc / ctl cancel; also no_speech, too_short, empty; linger 1 s', st: { state: 'cancelled', label: 'Cancelled', detail: 'nothing pasted' } },
-  { id: 'profile override badge', when: 'ctl start --profile chat (proposed). Pin glyph + accent chip', st: { state: 'recording', label: 'Listening', levels: LEVELS.speaking, elapsed: '0:02', profile: 'chat', override: true } },
-  { id: 'warming (proposed)', when: 'server reports MODEL_STATE_COLD at key-down; audio is still captured', st: { state: 'warming', label: 'Loading model', detail: 'recording continues', profile: 'prose' } }
+// Working: three 4 px dots breathing in turn (900 ms cycle). Static (middle dot lit) under reduced motion.
+export function breathe(phase = 1) {
+  return frame({ name: 'working', flex: 'row', gap: 4, items: 'center', h: 12 },
+    [0, 1, 2].map((i) => ellipse({ w: 4, h: 4, bg: v('accent-ink'), opacity: i === phase ? 1 : 0.35 })))
+}
+
+const live = () => ellipse({ name: 'live', w: 6, h: 6, bg: v('live-ink') })
+const g = (name, color, size = 12) => icon(name, { size, color })
+const w = (s, color = 'fg') => text(s, { size: F.bodySmall, color })
+const dim = (s) => text(s, { size: F.caption, color: 'text-2' })
+
+// Every pill state. Words ≤ 3; "·" separates a state from its reason.
+const STATES = () => ({
+  recording: [live(), meter(LEVELS.speaking)],
+  long: [live(), meter(LEVELS.speaking), dim('1:12')],
+  limit: [live(), meter(LEVELS.speaking), text('0:14', { size: F.caption, color: 'warn-ink' })],
+  handsfree: [g('mdi:lock', 'live-ink'), meter(LEVELS.quiet)],
+  override: [live(), meter(LEVELS.speaking), g('mdi:pin-outline', 'text-2', 11), dim('chat')],
+  silent: [g('mdi:microphone-off', 'warn-ink'), meter(LEVELS.silent), w('No input')],
+  serverdown: [live(), meter(LEVELS.speaking), g('mdi:alert-outline', 'warn-ink'), w('Server down · saved')],
+  loading: [live(), meter(LEVELS.quiet), w('Loading model', 'text-2')],
+  working: [breathe()],
+  pasted: [g('mdi:check', 'ok-ink', 14)],
+  fallback: [g('mdi:check', 'ok-ink', 14), dim('via laptop')],
+  raw: [g('mdi:check', 'ok-ink', 14), dim('raw')],
+  stopped: [g('mdi:check', 'ok-ink', 14), w('Stopped at 2:00')],
+  copied: [g('mdi:content-copy', 'warn-ink'), w('Copied · focus moved')],
+  pastefailed: [g('mdi:content-copy', 'warn-ink'), w('Paste failed · copied')],
+  failed: [g('mdi:alert-circle-outline', 'live-ink', 13), w('Failed · timeout')],
+  miclost: [g('mdi:microphone-off', 'live-ink'), w('Mic lost')],
+  paused: [g('mdi:pause', 'text-2'), w('Paused')],
+  starting: [breathe(0), w('Starting', 'text-2')],
+  cancelled: [g('mdi:close', 'text-2'), w('Cancelled', 'text-2')]
+})
+
+// Pill: 28 px, padding 12, gap 8, [popups] background, 1 px border-hover hairline, radius Style.cornerRadius.
+export function pill(state) {
+  return frame({ name: `pill/${state}`, flex: 'row', h: 28, px: 12, gap: 8, items: 'center', bg: v('bg'), stroke: v('border-hover'), strokeWidth: 1 }, STATES()[state])
+}
+
+const GROUPS = [
+  ['Recording', [['hold', 'recording'], ['after 60 s', 'long'], ['near limit', 'limit'], ['hands-free', 'handsfree'], ['pinned profile', 'override']]],
+  ['While recording', [['no input', 'silent'], ['server down', 'serverdown'], ['cold model', 'loading']]],
+  ['After', [['working', 'working'], ['pasted', 'pasted'], ['fallback', 'fallback'], ['cleanup skipped', 'raw'], ['length limit', 'stopped']]],
+  ['Needs you', [['focus moved', 'copied'], ['paste failed', 'pastefailed'], ['failed', 'failed'], ['mic lost', 'miclost'], ['paused', 'paused'], ['not running', 'starting'], ['cancelled', 'cancelled']]]
 ]
 
-export function pillBoard(themeName) {
-  const cells = PILL_STATES.map((p) => frame({ name: `state/${p.id}`, flex: 'col', gap: 8, w: 'fill' },
-    frame({ flex: 'row', gap: 8, items: 'center', w: 'fill' }, text(p.id, { size: F.bodySmall, weight: 'bold' })),
-    text(p.when, { size: F.caption, color: 'text-2', w: 'fill', lineHeight: 14 }),
-    p.st ? pill(p.st) : frame({ name: 'pill/hidden', flex: 'row', px: 12, py: 9, gap: 8, items: 'center', stroke: v('border-normal'), strokeWidth: 1, strokeDash: [4, 4] }, text('no surface', { size: F.bodySmall, color: 'text-2' }))))
-  return frame({ name: `export/indicator-states-${themeName}`, flex: 'col', gap: 24, p: 32, w: 1240, bg: v('dark-bg') },
-    boardTitle(`Recording indicator · all states · ${themeName}`, 'Layer surface `hark-indicator` (overlay, no keyboard, empty input region). Anchored bottom-centre, margin 24 under the Omarchy OSD slot. Border = [popups] border (accent); error borrows polkit `border-error`. Every state = glyph + words, never colour alone.'),
-    frame({ name: 'grid', grid: true, columns: '1fr 1fr', gap: 28, w: 'fill' }, cells))
-}
-
-// Anatomy with measurements
-export function pillAnatomy(themeName) {
-  const p = pill({ state: 'recording', label: 'Listening', levels: LEVELS.speaking, elapsed: '0:03', profile: 'terminal' })
-  const rows = [
-    ['glyph slot', '16×16. recording: 8 px dot live-ink in a 16 px live-fill halo whose scale follows level (1.0–1.35)'],
-    ['label', 'Style.font.body (12), bold, fg. Fixed words per state; read by Orca via Accessible.name'],
-    ['level', '12 bars × 3 px, gap 2, max 16 px; newest right; < 8 % drawn as border-hover floor'],
-    ['elapsed', 'bodySmall, text-2, m:ss; appears after 1 s so short presses stay quiet'],
-    ['profile chip', 'caption bold upper, 1 px border-control; override = accent-fill + accent-ink + pin glyph'],
-    ['card', '[popups] background (OSD uses α 0.97), 2 px [popups] border, radius Style.cornerRadius (0; 6 with corners-rounded), padding 12 × 8, gap 10; height 36 at base-size 12'],
-    ['placement', 'OverlayWindow on the focused output, bottom-centre, margin Style.space(24) (the OSD card sits at 67); `indicator.position = top` mirrors to the top under the bar']
-  ]
-  return frame({ name: `export/indicator-anatomy-${themeName}`, flex: 'col', gap: 20, p: 32, w: 980, bg: v('dark-bg') },
-    boardTitle('Pill anatomy', 'Measurements at Omarchy defaults ([font] base-size 12, [spacing] scale 1). All sizes go through Style.space()/Style.font so `omarchy display text size` scales the pill.'),
-    frame({ flex: 'row', gap: 32, items: 'start', w: 'fill' },
-      frame({ flex: 'col', gap: 10, items: 'start' },
-        p,
-        frame({ name: 'rounded-variant', flex: 'col', gap: 6, pt: 12 },
-          text('corners-rounded toggle (rounding 6)', { size: F.caption, color: 'text-2' }),
-          frame({ flex: 'row', gap: 10, px: 12, py: 8, items: 'center', bg: v('bg'), stroke: v('accent'), strokeWidth: 2, rounded: 6 },
-            ellipse({ w: 8, h: 8, bg: v('live-ink') }), text('Listening', { size: F.body, weight: 'bold' }), levelBars(LEVELS.speaking), text('0:03', { size: F.bodySmall, color: 'text-2' })))),
-      frame({ name: 'spec', flex: 'col', gap: 10, w: 400 },
-        rows.map(([a, b]) => frame({ flex: 'col', gap: 2, w: 400 }, text(a, { size: F.bodySmall, weight: 'bold' }), text(b, { size: F.bodySmall, color: 'text-2', w: 400, lineHeight: 15 }))))))
+export function pillBoard(theme) {
+  return frame({ name: `export/indicator-states-${theme}`, flex: 'col', gap: 40, p: 48, w: 1120, bg: v('dark-bg') },
+    boardTitle('Indicator'),
+    frame({ grid: true, columns: '1fr 1fr', gap: 48, w: 'fill' },
+      GROUPS.map(([title, rows]) => frame({ flex: 'col', gap: 16, w: 'fill' },
+        text(title, { size: F.bodySmall, color: 'text-2' }),
+        frame({ grid: true, columns: '140px 1fr', gap: 14, w: 'fill', items: 'center' },
+          rows.flatMap(([label, s]) => [frame({ h: 28, flex: 'row', items: 'center' }, text(label, { size: F.bodySmall, color: 'text-2' })), frame({ flex: 'row' }, pill(s))]))))))
 }
