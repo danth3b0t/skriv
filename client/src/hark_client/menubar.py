@@ -25,9 +25,10 @@ import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from hark_client import history, service
+from hark_client import history
 from hark_client.config import expand
 from hark_client.indicator.macos import pump, shared_app
+from hark_client.service import macos as service
 
 if sys.platform != "darwin":
     raise ImportError("hark_client.menubar is macOS-only")

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download a pinned prebuilt llama.cpp release (llama-server) into ./models/bin.
+# Download a pinned prebuilt llama.cpp release (llama-server) into ./models/bin ($HARK_MODELS_DIR/bin).
 #
 #   scripts/fetch-llama            # macOS arm64 (Metal) or linux-x64 CPU
 #   scripts/fetch-llama vulkan     # linux-x64 Vulkan
@@ -13,7 +13,14 @@ TAG=b12284 # 2026-11-11, llama.cpp 0.9.0-dev, commit 9e9619d03
 BASE="https://github.com/ggml-org/llama.cpp/releases/download/$TAG"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
-bin="$root/models/bin"
+# A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
+# XDG data dir. HARK_MODELS_DIR overrides both.
+if [[ -f $root/pyproject.toml ]]; then
+  models="${HARK_MODELS_DIR:-$root/models}"
+else
+  models="${HARK_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hark/models}"
+fi
+bin="$models/bin"
 os="$(uname -s)-$(uname -m)"
 gpu="${1:-}"
 
@@ -35,11 +42,11 @@ assets=("llama-$TAG-bin-$variant.tar.gz")
 
 sha_of() {
   case "$1" in
-    llama-$TAG-bin-macos-arm64.tar.gz) echo 7965e7701df311c49cfc629cfe14cc5092fcc590ef8c85f4c436a2973031e9d0 ;;
-    llama-$TAG-bin-ubuntu-x64.tar.gz) echo 50b5f85d45f8ddc7179d1b9b65de6534fbb18dc075942413238cb3471570123f ;;
-    llama-$TAG-bin-ubuntu-vulkan-x64.tar.gz) echo 94bfdf9ad9ab4e5544acc71d8699942fe8013b6c3b39f24570262782619de707 ;;
-    llama-$TAG-bin-ubuntu-cuda-12.8-x64.tar.gz) echo 8c99a2c600135e7f7d26d82a8b691cf945f2a0c86c9dae6f65a39950566b2236 ;;
-    cudart-llama-$TAG-bin-ubuntu-cuda-12.8-x64.tar.gz) echo 0c38a225211653ea910dfb6efe69c72f281da1b66ebda8e43b6af14d55528933 ;;
+    llama-"$TAG"-bin-macos-arm64.tar.gz) echo 7965e7701df311c49cfc629cfe14cc5092fcc590ef8c85f4c436a2973031e9d0 ;;
+    llama-"$TAG"-bin-ubuntu-x64.tar.gz) echo 50b5f85d45f8ddc7179d1b9b65de6534fbb18dc075942413238cb3471570123f ;;
+    llama-"$TAG"-bin-ubuntu-vulkan-x64.tar.gz) echo 94bfdf9ad9ab4e5544acc71d8699942fe8013b6c3b39f24570262782619de707 ;;
+    llama-"$TAG"-bin-ubuntu-cuda-12.8-x64.tar.gz) echo 8c99a2c600135e7f7d26d82a8b691cf945f2a0c86c9dae6f65a39950566b2236 ;;
+    cudart-llama-"$TAG"-bin-ubuntu-cuda-12.8-x64.tar.gz) echo 0c38a225211653ea910dfb6efe69c72f281da1b66ebda8e43b6af14d55528933 ;;
     *) return 1 ;;
   esac
 }

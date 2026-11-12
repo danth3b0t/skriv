@@ -22,6 +22,12 @@ dependencies = [
 [project.optional-dependencies]
 # Linux X11 only: global push-to-talk via pynput (Wayland uses `hark ctl` from compositor binds).
 x11 = ["pynput>=1.8"]
+# Linux desktop: recording indicator (GTK 4 + gtk4-layer-shell) and AT-SPI caret/read-back.
+# Built from sdist (no Linux wheels): needs gobject-introspection, cairo and a C compiler.
+gi = [
+    "PyGObject>=3.52 ; sys_platform == 'linux'",
+    "pycairo>=1.27 ; sys_platform == 'linux'",
+]
 
 [project.scripts]
 hark = "hark_client.__main__:main"

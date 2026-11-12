@@ -100,6 +100,8 @@ the recording indicator it takes focus; closing it hands focus back.
 `hark service install|uninstall|status|restart` manages `~/Library/LaunchAgents/dev.hark.llama.plist` (scripts/llama-up)
 and `dev.hark.server.plist` (`.venv/bin/hark-server`, same flags as scripts/poc-up), `RunAtLoad` + `KeepAlive`,
 logs in `~/Library/Logs/hark/{llama,server}.log`. Options: `--backend`, `--cleanup-model KEY`, `--no-cleanup`.
+Components as on Linux (`hark service install server` = `--no-cleanup`; status/restart default to the installed
+agents; `status` exits 3 unless all run), except `client`: on macOS that is Hark.app and its Launch at Login.
 Stop `scripts/poc-up` first: the agents need ports 8080 and 50051 (install warns if they are taken).
 
 ## Running a second instance for testing

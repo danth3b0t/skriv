@@ -34,10 +34,12 @@ notarization: [packaging/macos/README.md](packaging/macos/README.md).
 
 Try it without a mic: `uv run hark once --wav some.wav --dry-run --profile terminal --cwd ~/some/repo`.
 
-Linux/Hyprland: see [client/README.md](client/README.md) (`hark ctl start|stop` bound with `bind`/`bindr`).
-On Linux without a Mac-class GPU, run `hark-server` on another machine and list it in `[[providers]]`, with the
-laptop's own CPU server as the offline fallback: `scripts/fetch-transcribe && scripts/cpu-server-up`
-(transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of speech on 4 cores of an M5 Pro, see
+Linux (Arch/Omarchy): [docs/linux.md](docs/linux.md): the `hark-git` AUR package, always-on systemd user services
+(`hark service install`), Omarchy/Hyprland keys, and a GPU desktop running `hark-server` for a laptop over
+Tailscale with mTLS. Client details: [client/README.md](client/README.md) (`hark ctl start|stop` bound with
+`bind`/`bindr`). On Linux without a Mac-class GPU, run `hark-server` on another machine and list it in
+`[[providers]]`, with the laptop's own CPU server as the offline fallback: `scripts/fetch-transcribe &&
+scripts/cpu-server-up` (transcribe.cpp, Parakeet v3 Q4_K_M; ~0.5 s for 10 s of speech on 4 cores of an M5 Pro, see
 [the bench](docs/bench/2026-11-12-transcribe-cpp-cpu.md)). Each dictation goes to the first healthy provider; see
 [client/README.md](client/README.md#providers-and-the-offline-fallback).
 
@@ -49,8 +51,8 @@ laptop's own CPU server as the offline fallback: `scripts/fetch-transcribe && sc
 | `server/` | `hark-server`: ASR backends (mock, parakeet_mlx with decode-time boosting, transcribe_cpp CPU/Metal/Vulkan, NeMo GPU-PB stub) + TextCleanup proxy |
 | `client/` | `hark`: hotkey, audio, context engine, streaming, canonicalization, cleanup, guardrails, paste |
 | `proto-py/` | generated Python stubs (`proto-py/gen-proto`) |
-| `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up`, `build-macos-app` |
-| `packaging/` | `macos/` (Hark.app launcher), `systemd/`, `omarchy/` |
+| `scripts/` | `poc-up`, `fetch-llama`, `fetch-models`, `llama-up`, `eval-cleanup`, `fetch-transcribe`, `cpu-server-up`, `build-macos-app`, `hark-certs` (mTLS) |
+| `packaging/` | `macos/` (Hark.app launcher), AUR `hark-git`, `systemd/` user units, `omarchy/` dictation adapter |
 | `docs/` | context, research-driven decisions, protocol, dataset spec, benchmarks |
 
 ## Development

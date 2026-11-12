@@ -1,0 +1,161 @@
+# Maintainer: TODO <todo@example.org>
+#
+# hark: context-aware, local-first push-to-talk dictation. One package for the client daemon, hark-server
+# and their systemd user units (both machines of a laptop + GPU-desktop setup run hark-server; see
+# packaging/aur/README.md for why this is not split).
+#
+# Python dependencies do not come from the Arch repos: hark pins CPython 3.12 (requires-python <3.13)
+# while Arch ships 3.14, and it needs newer grpcio than [extra]. build() makes a self-contained tree in
+# /usr/lib/hark instead: a uv-managed CPython 3.12 (checksummed by uv) plus a venv synced from the
+# committed uv.lock with --frozen (every wheel and sdist hash-checked against the lock).
+#
+# Before the repository is public, build from a local clone:
+#   HARK_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
+
+pkgname=hark-git
+pkgver=0.1.0.r0.g0000000
+pkgrel=1
+pkgdesc='Context-aware, local-first push-to-talk dictation (daemon, inference server, systemd user units)'
+arch=('x86_64' 'aarch64')
+url='https://github.com/danth3b0t/hark'
+license=('LicenseRef-TODO') # TODO: the repository has no LICENSE yet
+depends=(
+  'bash'         # scripts, Omarchy adapter
+  'cairo'        # pycairo
+  'curl'         # hark-llama.service readiness check
+  'libgcc'       # wheels' C/C++ extensions
+  'libstdc++'
+  'glib2'        # PyGObject (girepository-2.0)
+  'gobject-introspection-runtime' # PyGObject's cairo typelib
+  'glibc'
+  'libffi'       # PyGObject
+  'portaudio'    # sounddevice (loaded with ctypes)
+  'wl-clipboard' # paste on Wayland
+  'zlib'
+)
+makedepends=(
+  'git'
+  'gobject-introspection' # PyGObject is built from source (PyPI has no Linux wheels)
+  'pkgconf'
+  'uv'
+)
+optdepends=(
+  'gtk4-layer-shell: recording indicator overlay (Hyprland, sway, KDE)'
+  'at-spi2-core: caret context and paste verification through AT-SPI'
+  'libnotify: desktop notifications'
+  'pipewire: start/stop sounds (pw-play)'
+  'wtype: paste fallback outside Hyprland'
+  'xclip: paste on X11'
+  'xdotool: paste on X11'
+  'tmux: caret and screen context from tmux panes'
+  'llama-cpp: llama-server for text cleanup (hark-llama.service)'
+  'ggml-cuda: run llama-server on an NVIDIA GPU'
+  'ggml-vulkan: run llama-server on other GPUs'
+  'openssl: hark-certs (mTLS certificates for a remote hark-server)'
+  'tailscale: reach a hark-server on another machine'
+)
+provides=('hark' 'hark-server')
+conflicts=('hark' 'hark-server')
+# Prebuilt manylinux wheels (auditwheel/patchelf-edited ELF files) and python-build-standalone: strip can
+# corrupt patchelf'd binaries, and there is nothing of ours to debug.
+options=('!strip' '!debug')
+source=("hark::git+${HARK_REPO:-$url.git}")
+sha256sums=('SKIP')
+
+_python=3.12 # must satisfy requires-python in pyproject.toml
+_prefix=/usr/lib/hark
+
+pkgver() {
+  cd hark
+  if git describe --long --tags --abbrev=7 >/dev/null 2>&1; then
+    git describe --long --tags --abbrev=7 | sed 's/^v//;s/\([^-]*-g\)/r\1/;s/-/./g'
+  else
+    local base
+    base=$(sed -n 's/^version = "\(.*\)"/\1/p' client/pyproject.toml)
+    printf '%s.r%s.g%s' "$base" "$(git rev-list --count HEAD)" "$(git rev-parse --short=7 HEAD)"
+  fi
+}
+
+_uv_env() {
+  export UV_CACHE_DIR="$srcdir/uv-cache"
+  export UV_PYTHON_INSTALL_DIR="$srcdir/uv-python"
+  export UV_PYTHON_PREFERENCE=only-managed # never the system Python 3.14
+  export UV_NO_CONFIG=1                    # ignore the builder's uv.toml
+  export UV_LINK_MODE=copy
+  export UV_NO_PROGRESS=1
+}
+
+_python_home() { # the uv-managed interpreter's installation directory
+  local python
+  python=$(readlink -f "$(uv python find "$_python")")
+  dirname "$(dirname "$python")"
+}
+
+build() {
+  cd hark
+  _uv_env
+  local stage="$srcdir/stage$_prefix"
+  rm -rf "$srcdir/stage"
+  mkdir -p "$stage"
+
+  uv python install "$_python"
+  cp -a "$(_python_home)" "$stage/python"
+  # hark needs no Tk/IDLE (and python-build-standalone's Tcl/Tk libraries carry a /tools RUNPATH)
+  local stdlib="$stage/python/lib/python$_python"
+  rm -rf "$stage"/python/lib/{libtcl,libtk,tcl,tk,itcl,thread}[0-9]* \
+    "$stdlib"/{tkinter,idlelib,turtledemo,turtle.py} "$stdlib"/lib-dynload/_tkinter.*
+
+  # every workspace member (proto, server, client), not editable, no dev tools; the gi extra builds
+  # PyGObject + pycairo against the system's GLib and cairo
+  UV_PROJECT_ENVIRONMENT="$stage/venv" \
+    uv sync --frozen --no-dev --no-editable --all-packages --extra gi --python "$stage/python/bin/python$_python"
+}
+
+check() {
+  local venv="$srcdir/stage$_prefix/venv"
+  export PYTHONDONTWRITEBYTECODE=1
+  "$venv/bin/hark" --help >/dev/null
+  "$venv/bin/hark-server" --help >/dev/null
+  "$venv/bin/python" -c 'import cairo, gi, grpc, numpy, sounddevice, soxr, hark_client.daemon, hark_server.server'
+}
+
+package() {
+  cd hark
+  _uv_env
+  local lib="$pkgdir$_prefix"
+  install -d "$pkgdir/usr/lib" "$pkgdir/usr/bin"
+  cp -a "$srcdir/stage$_prefix" "$lib"
+
+  # Built in $srcdir: point the venv (pyvenv.cfg, script shebangs, activate scripts) and the
+  # interpreter's sysconfig data at the installed locations.
+  grep -rIlZ -e "$srcdir" "$lib" | xargs -0r sed -i -e "s|$srcdir/stage$_prefix|$_prefix|g" \
+    -e "s|$(_python_home)|$_prefix/python|g"
+  ln -sfn "../../python/bin/python$_python" "$lib/venv/bin/python"
+  # PEP 610 records of the local workspace build (they name a build directory), uv's lock file and
+  # the private interpreter's man pages
+  rm -f "$lib"/venv/lib/python*/site-packages/hark_*.dist-info/direct_url.json "$lib/venv/.lock"
+  rm -rf "$lib/python/share"
+  # Bytecode with the installed paths (nothing under /usr/lib/hark is writable at run time); the
+  # interpreter's own caches were written while uv and check() ran it in $srcdir.
+  find "$lib" -type d -name __pycache__ -prune -exec rm -rf {} +
+  "$lib/python/bin/python$_python" -m compileall -q -j0 -s "$pkgdir" -p / "$lib/python/lib" "$lib/venv/lib"
+  if grep -rl -e "$srcdir" "$lib"; then
+    echo "files above still refer to $srcdir" >&2
+    return 1
+  fi
+
+  ln -s "$_prefix/venv/bin/hark" "$pkgdir/usr/bin/hark"
+  ln -s "$_prefix/venv/bin/hark-server" "$pkgdir/usr/bin/hark-server"
+  install -Dm755 scripts/{llama-up,fetch-models,fetch-llama,hark-certs} -t "$lib/scripts"
+  ln -s "$_prefix/scripts/hark-certs" "$pkgdir/usr/bin/hark-certs"
+
+  install -Dm644 packaging/systemd/{hark,hark-server,hark-llama}.service -t "$pkgdir/usr/lib/systemd/user"
+  install -Dm755 packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-hark \
+    -t "$pkgdir/usr/bin"
+
+  install -Dm644 README.md "$pkgdir/usr/share/doc/hark/README.md"
+  install -Dm644 client/README.md "$pkgdir/usr/share/doc/hark/client.md"
+  install -Dm644 server/README.md "$pkgdir/usr/share/doc/hark/server.md"
+  install -Dm644 docs/linux.md "$pkgdir/usr/share/doc/hark/linux.md"
+  install -Dm644 server/hark-server.example.toml "$pkgdir/usr/share/doc/hark/hark-server.example.toml"
+}

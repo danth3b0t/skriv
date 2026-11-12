@@ -1,4 +1,4 @@
-"""`hark service`: launchd agent plists and the install/status/restart/uninstall CLI (fake
+"""`hark service` on macOS: launchd agent plists and the install/status/restart/uninstall CLI (fake
 launchctl, temporary home), and Hark.app's LaunchAgent login-item fallback."""
 
 from __future__ import annotations
@@ -12,8 +12,9 @@ from typing import cast
 
 import pytest
 
-from hark_client import service
 from hark_client.__main__ import main
+from hark_client.service import EXIT_NOT_RUNNING
+from hark_client.service import macos as service
 
 pytestmark = pytest.mark.skipif(sys.platform != "darwin", reason="launchd is macOS-only")
 
@@ -122,8 +123,9 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert main(["service", "uninstall"]) == 0
     assert not list((home / "Library/LaunchAgents").iterdir())
     assert fake.loaded == set()
-    assert main(["service", "status"]) == 1
+    assert main(["service", "status"]) == EXIT_NOT_RUNNING
     assert "no hark services installed" in capsys.readouterr().out
+    assert main(["service", "restart"]) == 1
 
 
 def test_a_qwen_model_uses_the_edit_list_engine(stack: tuple[service.Layout, FakeLaunchctl]):
@@ -155,8 +157,20 @@ def test_status_reports_an_installed_agent_launchd_does_not_know(
     lay, _ = stack
     lay.agents_dir.mkdir(parents=True)
     lay.plist(service.SERVER).write_bytes(b"")
-    assert main(["service", "status"]) == 1
-    assert "not loaded" in capsys.readouterr().out
+    assert main(["service", "status"]) == EXIT_NOT_RUNNING
+    out = capsys.readouterr().out
+    assert "not loaded" in out
+    assert "llama" not in out  # only installed agents unless named
+
+
+def test_the_client_is_not_a_launchd_service(
+    stack: tuple[service.Layout, FakeLaunchctl], capsys: pytest.CaptureFixture[str]
+):
+    _, fake = stack
+    assert main(["service", "install", "client"]) == 2
+    assert "Hark.app" in capsys.readouterr().err
+    assert main(["service", "install", "--dry-run"]) == 2  # a Linux-only flag
+    assert fake.calls == []
 
 
 def test_login_item_falls_back_to_a_launch_agent_outside_an_app_bundle(tmp_path: Path):

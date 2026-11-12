@@ -1,0 +1,144 @@
+#!/usr/bin/env bash
+# Private CA + certificates for hark's mTLS (hark-server on the GPU desktop, hark clients on other
+# machines, e.g. over Tailscale). EC P-256 keys, written 0600; nothing is overwritten.
+#
+#   scripts/hark-certs ca                                    # once, on the machine that keeps the CA key
+#   scripts/hark-certs server desktop desktop.tail1234.ts.net 100.101.102.103 127.0.0.1
+#                                         # NAME (also a DNS name in the cert), then every other name/IP clients dial
+#   scripts/hark-certs client laptop                         # one per client machine
+#
+# Options (before the command): --dir DIR (default ${XDG_CONFIG_HOME:-~/.config}/hark/pki),
+# --days N (leaf validity, default 825; the CA gets 3650).
+# Result in DIR: ca.crt + ca.key, NAME.crt + NAME.key. hark-server needs ca.crt (client_ca),
+# its .crt/.key; a client needs ca.crt (tls_ca) and its own .crt/.key. ca.key never leaves DIR.
+# There is no revocation: to shut a client out, make a new CA and re-issue the others.
+set -euo pipefail
+
+usage() {
+  sed -n '2,15p' "$0" | sed 's/^# \{0,1\}//' >&2
+  exit 2
+}
+
+dir="${XDG_CONFIG_HOME:-$HOME/.config}/hark/pki"
+days=825
+while (($# > 0)); do
+  case $1 in
+    --dir) dir="${2:?--dir needs a value}"; shift 2 ;;
+    --days) days="${2:?--days needs a value}"; shift 2 ;;
+    -h | --help) usage ;;
+    *) break ;;
+  esac
+done
+(($# > 0)) || usage
+cmd=$1
+shift
+[[ $days =~ ^[0-9]+$ ]] || { echo "hark-certs: --days must be a number" >&2; exit 2; }
+
+umask 077
+mkdir -p "$dir"
+cd "$dir"
+tmp=()
+trap 'rm -f ${tmp[@]+"${tmp[@]}"}' EXIT
+
+fresh() { # refuse to replace existing files
+  local f
+  for f in "$@"; do
+    if [[ -e $f ]]; then
+      echo "hark-certs: $dir/$f exists; remove it first to replace it" >&2
+      exit 1
+    fi
+  done
+}
+
+valid_name() {
+  [[ $1 =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ && $1 != ca ]] || {
+    echo "hark-certs: bad name '$1' (letters, digits, . _ -; not 'ca')" >&2
+    exit 2
+  }
+}
+
+newkey() { openssl genpkey -algorithm EC -pkeyopt ec_paramgen_curve:P-256 -out "$1" 2>/dev/null; }
+
+require_ca() {
+  [[ -f ca.crt && -f ca.key ]] || { echo "hark-certs: no CA in $dir; run: hark-certs ca" >&2; exit 1; }
+}
+
+sign() { # name, extensions file
+  local name=$1 ext=$2
+  newkey "$name.key"
+  openssl req -new -key "$name.key" -subj "/CN=$name" -out "$name.csr"
+  openssl x509 -req -in "$name.csr" -CA ca.crt -CAkey ca.key \
+    -set_serial "0x$(openssl rand -hex 16)" -days "$days" -sha256 \
+    -extfile "$ext" -extensions leaf -out "$name.crt" 2>/dev/null
+  rm -f "$name.csr"
+  chmod 0644 "$name.crt"
+  openssl verify -CAfile ca.crt "$name.crt" >/dev/null
+  echo "hark-certs: $dir/$name.crt, $dir/$name.key"
+}
+
+case $cmd in
+  ca)
+    (($# == 0)) || usage
+    fresh ca.key ca.crt
+    newkey ca.key
+    conf=$(mktemp ./ca.cnf.XXXXXX)
+    tmp+=("$conf")
+    cat >"$conf" <<'EOF'
+[req]
+distinguished_name = dn
+[dn]
+[ca]
+basicConstraints = critical, CA:TRUE, pathlen:0
+keyUsage = critical, keyCertSign, cRLSign
+subjectKeyIdentifier = hash
+EOF
+    openssl req -x509 -new -key ca.key -subj "/CN=hark private CA $(hostname -s 2>/dev/null || hostname)" \
+      -days 3650 -sha256 -config "$conf" -extensions ca -out ca.crt
+    chmod 0644 ca.crt
+    echo "hark-certs: $dir/ca.crt, $dir/ca.key (keep ca.key on this machine)"
+    ;;
+  server)
+    (($# >= 1)) || usage
+    name=$1
+    shift
+    valid_name "$name"
+    require_ca
+    fresh "$name.key" "$name.crt"
+    sans=()
+    for san in "$name" "$@"; do
+      if [[ $san =~ ^[0-9.]+$ || $san == *:* ]]; then
+        sans+=("IP:$san")
+      elif [[ $san =~ ^[A-Za-z0-9*]([A-Za-z0-9.-]*[A-Za-z0-9])?$ ]]; then
+        sans+=("DNS:$san")
+      else
+        echo "hark-certs: bad DNS name or IP '$san'" >&2
+        exit 2
+      fi
+    done
+    ext=$(mktemp ./ext.XXXXXX)
+    tmp+=("$ext")
+    {
+      echo "[leaf]"
+      echo "basicConstraints = critical, CA:FALSE"
+      echo "keyUsage = critical, digitalSignature"
+      echo "extendedKeyUsage = serverAuth"
+      echo "authorityKeyIdentifier = keyid"
+      echo "subjectAltName = $(IFS=,; echo "${sans[*]}")"
+    } >"$ext"
+    sign "$name" "$ext"
+    ;;
+  client)
+    (($# == 1)) || usage
+    name=$1
+    valid_name "$name"
+    require_ca
+    fresh "$name.key" "$name.crt"
+    ext=$(mktemp ./ext.XXXXXX)
+    tmp+=("$ext")
+    printf '%s\n' "[leaf]" "basicConstraints = critical, CA:FALSE" \
+      "keyUsage = critical, digitalSignature" "extendedKeyUsage = clientAuth" \
+      "authorityKeyIdentifier = keyid" >"$ext"
+    sign "$name" "$ext"
+    ;;
+  *) usage ;;
+esac

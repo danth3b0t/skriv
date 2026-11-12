@@ -1,6 +1,7 @@
 """macOS launchd user agents for the local inference stack, and Hark.app's login item.
 
-``hark service install`` writes ``~/Library/LaunchAgents/dev.hark.{llama,server}.plist`` and
+The ``hark service`` backend on macOS (components ``server`` and ``llama``; the client is
+Hark.app). ``hark service install`` writes ``~/Library/LaunchAgents/dev.hark.{llama,server}.plist`` and
 bootstraps them into the GUI session: llama-server (cleanup, via scripts/llama-up) and
 hark-server (ASR), the same commands scripts/poc-up starts, kept alive by launchd and logging to
 ``~/Library/Logs/hark/{llama,server}.log``. They run from this source checkout and its venv.
@@ -26,8 +27,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from hark_client.service import InstallOptions, ServiceError, Status
+
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Sequence
 
 log = logging.getLogger("hark.service")
 
@@ -36,10 +39,7 @@ SERVER = "dev.hark.server"
 APP = "dev.hark.app"  # login-item fallback (LaunchAgent)
 LLAMA_URL = "http://127.0.0.1:8080/v1"
 PORTS = {LLAMA: 8080, SERVER: 50051}
-
-
-class ServiceError(RuntimeError):
-    pass
+LABELS = {"server": SERVER, "llama": LLAMA}  # `hark service` component -> agent
 
 
 @dataclass(frozen=True)
@@ -64,13 +64,13 @@ class Layout:
 
 def layout() -> Layout:
     """This interpreter's venv and the checkout hark_client was installed from (editable)."""
-    root = Path(__file__).resolve().parents[3]
+    root = Path(__file__).resolve().parents[4]
     if not (root / "scripts" / "llama-up").is_file():
         raise ServiceError(f"hark service needs a source checkout (no scripts/llama-up in {root})")
     return Layout(root=root, venv=Path(sys.prefix), home=Path.home())
 
 
-def default_backend() -> str:
+def default_asr_backend() -> str:
     return "parakeet_mlx" if (sys.platform, platform.machine()) == ("darwin", "arm64") else "mock"
 
 
@@ -183,10 +183,12 @@ def _remove(lay: Layout, label: str) -> bool:
     return True
 
 
-def uninstall(lay: Layout, out: Callable[[str], None] = print) -> int:
+def uninstall(
+    lay: Layout, labels: Sequence[str] = (LLAMA, SERVER), out: Callable[[str], None] = print
+) -> int:
     """Stop and remove the agents (logs stay); returns how many were installed."""
     n = 0
-    for label in (LLAMA, SERVER):
+    for label in labels:
         if _remove(lay, label):
             out(f"removed {label}")
             n += 1
@@ -194,7 +196,7 @@ def uninstall(lay: Layout, out: Callable[[str], None] = print) -> int:
 
 
 @dataclass(frozen=True)
-class Status:
+class AgentState:
     label: str
     loaded: bool
     state: str  # launchd's "state" (running, not running, ...) or "not loaded"
@@ -202,12 +204,14 @@ class Status:
     last_exit: str | None
 
 
-def status(lay: Layout) -> list[Status]:
-    result: list[Status] = []
+def agent_states(lay: Layout) -> list[AgentState]:
+    result: list[AgentState] = []
     for label in installed(lay):
         r = launchctl("print", f"{_domain()}/{label}")
         if r.returncode != 0:
-            result.append(Status(label, loaded=False, state="not loaded", pid=None, last_exit=None))
+            result.append(
+                AgentState(label, loaded=False, state="not loaded", pid=None, last_exit=None)
+            )
             continue
 
         def field(name: str, text: str = r.stdout) -> str | None:
@@ -216,7 +220,7 @@ def status(lay: Layout) -> list[Status]:
 
         pid = field("pid")
         result.append(
-            Status(
+            AgentState(
                 label, loaded=True, state=field("state") or "?",
                 pid=int(pid) if pid and pid.isdigit() else None,
                 last_exit=field("last exit code"),
@@ -225,13 +229,83 @@ def status(lay: Layout) -> list[Status]:
     return result
 
 
-def restart(lay: Layout) -> list[str]:
-    labels = installed(lay)
+def restart(lay: Layout, labels: Sequence[str]) -> list[str]:
     for label in labels:
         r = launchctl("kickstart", "-k", f"{_domain()}/{label}")
         if r.returncode != 0:
             raise ServiceError(f"launchctl kickstart {label}: {(r.stderr or r.stdout).strip()}")
-    return labels
+    return list(labels)
+
+
+class LaunchdBackend:
+    components: tuple[str, ...] = ("server", "llama")
+    install_default: tuple[str, ...] = ("server", "llama")
+
+    def install(self, components: Sequence[str], opts: InstallOptions) -> int:
+        if not opts.start or opts.force or opts.dry_run:
+            return _fail("--no-start, --force and --dry-run are for systemd units (Linux)", 2)
+        if "server" not in components:
+            return _fail("llama-server runs for hark-server: hark service install server llama", 2)
+        try:
+            lay = layout()
+            model = (
+                (opts.cleanup_model or default_cleanup_model(lay.root))
+                if "llama" in components
+                else None
+            )
+            install(lay, backend=opts.asr_backend or default_asr_backend(), cleanup_model=model)
+        except ServiceError as e:
+            return _fail(str(e), 1)
+        print("check with `hark service status` and `hark doctor`")
+        return 0
+
+    def uninstall(self, components: Sequence[str]) -> int:
+        try:
+            lay = layout()
+        except ServiceError as e:
+            return _fail(str(e), 1)
+        if not uninstall(lay, [LABELS[c] for c in components]):
+            print("no hark services installed")
+        return 0
+
+    def status(self, components: Sequence[str]) -> list[Status]:
+        try:
+            lay = layout()
+        except ServiceError as e:
+            return [Status(c, LABELS[c], installed=False, enabled=False, active=False,
+                           detail=str(e)) for c in components]  # fmt: skip
+        states = {a.label: a for a in agent_states(lay)}
+        rows: list[Status] = []
+        for c in components:
+            a = states.get(LABELS[c])
+            if a is None:
+                rows.append(Status(c, LABELS[c], installed=False, enabled=False, active=False))
+                continue
+            run = f"pid {a.pid}" if a.pid else f"{a.state}, last exit {a.last_exit or '-'}"
+            rows.append(
+                Status(
+                    c, a.label, installed=True, enabled=a.loaded, active=a.state == "running",
+                    detail=f"{run}, {lay.logs_dir / f'{c}.log'}",
+                )
+            )  # fmt: skip
+        return rows
+
+    def restart(self, components: Sequence[str]) -> int:
+        try:
+            labels = restart(layout(), [LABELS[c] for c in components])
+        except ServiceError as e:
+            return _fail(str(e), 1)
+        print(f"restarted {', '.join(labels)}")
+        return 0
+
+
+def _fail(message: str, code: int) -> int:
+    print(f"hark service: {message}", file=sys.stderr)
+    return code
+
+
+def backend() -> LaunchdBackend:
+    return LaunchdBackend()
 
 
 # --- Hark.app launch at login -------------------------------------------------------------

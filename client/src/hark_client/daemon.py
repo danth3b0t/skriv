@@ -519,10 +519,22 @@ def _log_providers(svc: Services) -> None:
         )  # fmt: skip
 
 
+def _main_loop(ui: Indicator | None, extra: AppUi | None, stop: threading.Event) -> None:
+    """This (main) thread until ``stop``: the toolkit's loop, if there is a UI."""
+    if ui is not None:
+        ui.run(stop, extra.tick if extra is not None else None)
+    elif extra is not None:
+        extra.run(stop)
+    else:
+        while not stop.wait(0.5):
+            pass
+
+
 def run(svc: Services, app_ui: Callable[[Controller, threading.Event], AppUi] | None = None) -> int:
     """``app_ui(controller, stop)`` builds a main-thread UI (``hark app``); setting ``stop``
     quits."""
     from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
+    from hark_client.service import linux as systemd  # noqa: PLC0415 - no-ops outside systemd
 
     _log_providers(svc)
     svc.router.start_background()
@@ -545,12 +557,14 @@ def run(svc: Services, app_ui: Callable[[Controller, threading.Event], AppUi] | 
     if svc.cfg.audio.keep_open:
         mic.start()
     server.start()
+    systemd.notify("READY=1")  # Type=notify unit: ready once `hark ctl` gets answers
     if hotkey is not None:
         controller.on_recording = hotkey.recording
         controller.keys_observed = True
         hotkey.start()
 
     stop = threading.Event()
+    systemd.start_watchdog(lambda: ctl.send("ping", timeout=5.0).startswith("ok"), stop)
 
     def on_signal(signum: int, frame: FrameType | None) -> None:
         stop.set()
@@ -559,16 +573,9 @@ def run(svc: Services, app_ui: Callable[[Controller, threading.Event], AppUi] | 
     signal.signal(signal.SIGTERM, on_signal)
     log.info("hark ready (paste: %s)", svc.injector.name)
     try:
-        extra = app_ui(controller, stop) if app_ui is not None else None
-        if ui is not None:
-            # the toolkit's loop on this (main) thread until a signal (or Quit)
-            ui.run(stop, extra.tick if extra is not None else None)
-        elif extra is not None:
-            extra.run(stop)
-        else:
-            while not stop.wait(0.5):
-                pass
+        _main_loop(ui, app_ui(controller, stop) if app_ui is not None else None, stop)
     finally:
+        systemd.notify("STOPPING=1")
         if hotkey is not None:
             hotkey.stop()
         context.stop_prefetch()

@@ -85,3 +85,58 @@ def test_daemon_error_reply_fails(tmp_path: Path):
     code, _, err = run_adapter(tmp_path, "start", hark_exit=1)
     assert code == 1
     assert "error boom" in err
+
+
+INSTALL = ADAPTER.with_name("omarchy-install-dictation-hark")
+REMOVE = ADAPTER.with_name("omarchy-remove-dictation-hark")
+FAKE_TOOL = """#!/bin/sh
+echo "$(basename "$0") $*" >> "$FAKE_LOG"
+exit "${FAKE_EXIT:-0}"
+"""
+
+
+def run_script(tmp_path: Path, script: Path, fake_exit: int = 0) -> tuple[int, list[str], str]:
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir(exist_ok=True)
+    for name in ("hark", "omarchy-dictation-use", "systemctl"):
+        exe = bin_dir / name
+        exe.write_text(FAKE_TOOL)
+        exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
+    log = tmp_path / "log"
+    log.write_text("")
+    env = {
+        "PATH": f"{bin_dir}:/usr/bin:/bin",
+        "HOME": str(tmp_path / "home"),
+        "XDG_CONFIG_HOME": str(tmp_path / "config"),
+        "FAKE_LOG": str(log),
+        "FAKE_EXIT": str(fake_exit),
+    }
+    p = subprocess.run(  # noqa: S603 - fixed argv
+        ["/bin/bash", str(script)], env=env, capture_output=True, text=True, check=False
+    )
+    return p.returncode, log.read_text().splitlines(), p.stderr
+
+
+def test_install_from_a_checkout_links_the_adapter_and_installs_the_service(tmp_path: Path):
+    code, calls, _ = run_script(tmp_path, INSTALL)
+    assert (code, calls) == (0, ["hark service install client", "omarchy-dictation-use hark"])
+    link = tmp_path / "home" / ".local" / "bin" / "omarchy-dictation-hark"
+    assert link.resolve() == ADAPTER.resolve()
+
+
+def test_install_stops_when_the_service_cannot_be_installed(tmp_path: Path):
+    code, calls, _ = run_script(tmp_path, INSTALL, fake_exit=1)
+    assert code == 1
+    assert calls == ["hark service install client"]  # hark is not made the backend
+
+
+def test_remove_uninstalls_the_service_and_unselects_hark(tmp_path: Path):
+    run_script(tmp_path, INSTALL)
+    backend = tmp_path / "config" / "omarchy" / "defaults" / "dictation"
+    backend.parent.mkdir(parents=True)
+    backend.write_text("hark")
+    code, calls, _ = run_script(tmp_path, REMOVE)
+    assert code == 0
+    assert calls[-1] == "hark service uninstall client"
+    assert not backend.exists()
+    assert not (tmp_path / "home" / ".local" / "bin" / "omarchy-dictation-hark").is_symlink()
