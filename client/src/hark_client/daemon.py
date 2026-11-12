@@ -588,7 +588,6 @@ def _last_json(at: float, res: Result, retry_available: bool) -> dict[str, objec
         "utterance_id": res.utterance_id,
         "status": res.status,
         "profile": res.profile,
-        "paste_verdict": res.paste_verdict,
         "keyup_to_paste_ms": res.timings.get("keyup_to_paste_ms"),
         "stop_reason": res.stop_reason or None,
         "provider": res.provider or None,

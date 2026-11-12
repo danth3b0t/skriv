@@ -111,7 +111,7 @@ Terminals get Ctrl+Shift+V. On X11: `xclip` + `xdotool`, and `hotkey.listener = 
 (`start|stop|toggle|cancel|status|ping|paste-last|profile …|reload`), one line out (`ok …` or `error …`).
 `hark ctl` exits 0 on `ok`, 1 on `error`, 2 if no daemon is running. Status bars and scripts can use the versioned
 JSON protocol on the same socket (`hark ctl --json status`, spec: [ctl-v1](../docs/protocol/ctl-v1.md)): state,
-the last dictation's status/paste verdict/latency (never its text) and the profile override.
+the last dictation's status/delivery/latency (never its text) and the profile override.
 
 ## Configuration
 
@@ -163,7 +163,6 @@ check_focus = true            # focus changed since key-down => copy + notify in
 smart_spacing = true          # leading/trailing space + mid-sentence lower case from the caret (see below)
 join_space = true             # older name; false also turns smart spacing off
 join_window_ms = 60000        # shadow buffer (no readable caret) forgets after this long without input
-verify = true                 # read the field back after pasting: landed | missing | not_text | unknown (recorded)
 
 [[words]]                     # spellings the recognizer needs help with; in every shortlist, first
                               # (at most context.max_terms / 3 entries)
@@ -382,15 +381,6 @@ shadow buffer). The shadow buffer cannot see autocomplete, IME composition, mous
 app itself; the AX caret in a terminal is the terminal cursor, which a TUI may park elsewhere. Wide/combined
 characters in tmux rows are mapped to columns approximately.
 
-## Paste verification
-
-After a paste into a non-terminal app, hark reads the focused field of the target app back (macOS: Accessibility;
-Linux: AT-SPI via PyGObject if installed, **untested on real hardware**). History gets `paste_verdict`: `landed`
-(the text is there), `missing` (readable, non-empty, absent twice), `not_text`, or `unknown` (could not look: no
-permission, terminal, secure field, empty read-back, > 64 KiB). The verdict is only recorded for now (web/Electron
-fields can expose stale values); acting on `missing` waits until its false-positive rate is measured. Secure and
-password fields are never read.
-
 ## Dictionary
 
 For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
@@ -410,9 +400,9 @@ including any change outside a hit, goes back to the anchor's words. `history.js
 ## History and recordings
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome, guard events, paste result and `paste_verdict`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+outcome, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
-`keyup_to_paste_ms`, `verify_ms`), the smart-spacing decision (`spacing`, see above),
+`keyup_to_paste_ms`), the smart-spacing decision (`spacing`, see above),
 wall-clock marks `client_unix_us` (`keyup`, `end_enqueued`, `end_dequeued` by the gRPC request iterator, `end_sent`,
 `final_received`; comparable with the server's `server_end_received_unix_us` / `server_final_sent_unix_us`)
 the server's `Timings`, and which provider served it (`provider`: name, address, send_context) with the `route`
@@ -434,7 +424,7 @@ fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine
 cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the protected-span
 fallback against a misbehaving TextCleanup server, config parsing, the ctl socket protocols (text + JSON v1
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
-`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), paste verdicts, dictionary terms reaching the server, the
+`hark`/`systemctl`), the daemon controller (pre-roll, cancel, too short), dictionary terms reaching the server, the
 AT-SPI search (fakes), the indicator state machine (fake backend) and the macOS panel's focus safety, the retry ring
 (retention, permissions, purge) and `hark retry` after a failed dictation, history formatting, `hark last` and
 `paste-last`; the hotkey state machine (tap/hold, Esc swallowing via the tap filter, extra keys) with fake key
@@ -445,7 +435,7 @@ events, the start-cue mask on a synthetic tone, the profile override, pause, the
 
 - Context: without Accessibility permission macOS gives no window title/selection; the terminal/repo/agent context still works. `hark once --cwd DIR` pins the repo for testing; with no focused terminal and no `--cwd` there are no repo bias terms.
 - Untested on real hardware: Hyprland/wtype/X11 paste incl. the `hyprctl repl` re-check (commands are unit-tested
-  only), the Omarchy adapter/installer, AT-SPI read-back, the macOS Cmd+V path, the AX field read-back and the
+  only), the Omarchy adapter/installer, the macOS Cmd+V path and the
   pynput hotkey (need permissions the dev sessions did not have), long-running daemon use.
 - Cleanup only via the hark `TextCleanup` service; no direct OpenAI-compatible adapter yet (ADR-001 #6).
 - No VAD, no `EagerEnd`, no partials, no automatic retry of a failed dictation on the next provider (the next

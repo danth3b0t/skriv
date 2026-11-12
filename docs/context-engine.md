@@ -108,9 +108,7 @@ paths 92 → 102 of 130, identifiers 191 → 192 of 204; first alias fully spoke
 
 ## Open
 
-- The two AT-SPI modules stay separate: `hark_client/atspi.py` (paste read-back, breadth-first node walk used by
-  `fields.py`) and `context/_atspi.py` (Collection API focused-text match used for caret and screen text). Merging
-  them changes `fields.py`, outside this package; both are untested on hardware.
+- `context/_atspi.py` (Collection API focused-text match used for caret and screen text) is untested on hardware.
 - macOS focus uses polling, not `NSWorkspace`/`AXObserver` notifications (they need an AppKit run loop thread).
 - hark's own dictations are user prompts, so they teach the vocabulary (architecture §7.4 self-contamination).
 - Alias collisions are not tracked per list; `canon.py`'s ambiguity guard still applies.

@@ -10,7 +10,7 @@ hotkey up -> Utterance.finish():
     EndOfAudio -> FinalResult -> anchor gate -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
     focus re-check -> caret context / shadow buffer -> smart spacing -> paste ->
-    read-back (verdict) -> history.
+    history.
 """
 
 from __future__ import annotations
@@ -31,7 +31,6 @@ from hark_client import (
     context,
     continuation,
     corrections,
-    fields,
     gate,
     guardrails,
     history,
@@ -51,7 +50,6 @@ if TYPE_CHECKING:
     from hark_client.config import Config
     from hark_client.continuation import ShadowBuffer
     from hark_client.feedback import Feedback
-    from hark_client.fields import FieldReader
     from hark_client.inject import Injector
     from hark_client.providers import Provider, Router
 
@@ -65,7 +63,6 @@ class Services:
     injector: Injector
     feedback: Feedback
     out: Callable[[str], None] | None = None  # per-stage report (`hark once`)
-    field_reader: FieldReader | None = None  # paste read-back; None = verdict "unknown"
     on_stage: Callable[[str, str], None] | None = None  # (utterance id, "cleaning"): indicator
 
 
@@ -86,26 +83,25 @@ class Result:
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
     corrections: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
-    paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
     gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
     pasted_text: str = ""  # exactly what was pasted (smart spacing applied)
     stop_reason: str = ""  # key_up | limit ("" = never got that far)
     provider: str = ""  # the provider that transcribed it
     fallback: bool = False  # ... was not the first in priority order (a failover counts)
     mic_interrupted: bool = False  # the mic dropped out while recording
-    delivery: str = "none"  # confirmed | sent | copied | failed | none (docs/protocol/ctl-v1.md)
+    delivery: str = "none"  # sent | copied | failed | none (docs/protocol/ctl-v1.md)
 
 
 FAILOVER_MIN_S = 0.5  # less time left than this: no failover, the dictation fails
 
 
 def delivery(res: Result) -> str:
-    """Where the text went, from the paste outcome and read-back verdict."""
+    """Where the text went, from the paste outcome."""
     paste = res.paste
     if paste is None:
         return "none"
     if paste.ok and paste.method != "clipboard":
-        return "confirmed" if res.paste_verdict == "landed" else "sent"
+        return "sent"
     return "copied" if paste.in_clipboard else "failed"
 
 
@@ -565,8 +561,6 @@ class Utterance:
         )
         self._report("total", f"key-up->paste {t['keyup_to_paste_ms']:.1f} ms")
         svc.feedback.sound("done" if res.paste.ok else "error")
-        if res.status == "pasted" and not prof.terminal:
-            self._read_back(res, snap.focus, text)
         return res
 
     def _gate(
@@ -624,21 +618,6 @@ class Utterance:
             f" -> {sp.text!r}{f' ({caret.detail})' if caret.detail else ''}",
         )
         return sp.text
-
-    def _read_back(self, res: Result, focus: FocusInfo, pasted: str) -> None:
-        """After the paste (off the latency path): the verdict.
-        ``pasted``: the text as pasted (smart spacing/casing applied)."""
-        svc = self.svc
-        reader = svc.field_reader
-        if reader is None or not svc.cfg.paste.verify:
-            return
-        t1 = time.perf_counter()
-        verdict, _ = fields.verify(reader, focus, pasted)
-        res.timings["verify_ms"] = _ms(t1)
-        res.paste_verdict = verdict
-        self._report("verify", f"{verdict} ({res.timings['verify_ms']:.1f} ms)")
-        if verdict == "missing":
-            log.info("paste not seen in the target field (verdict recorded only)")
 
     def _cleanup(
         self, text: str, snap: ContextSnapshot, profile_name: str, provider: Provider
@@ -705,7 +684,6 @@ class Utterance:
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
-            "paste_verdict": res.paste_verdict,
             "delivery": res.delivery,
             "stop_reason": res.stop_reason,
             "fallback": res.fallback,

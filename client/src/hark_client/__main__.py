@@ -382,7 +382,7 @@ def cmd_last(args: Args, cfg: Config) -> int:
 
 
 def cmd_pipeline(args: Args, cfg: Config) -> int:
-    from hark_client import ctl, daemon, fields  # noqa: PLC0415
+    from hark_client import ctl, daemon  # noqa: PLC0415
     from hark_client.config import (  # noqa: PLC0415
         ConfigError,
         FeedbackConfig,
@@ -415,11 +415,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 print(f"hark: {e}", file=sys.stderr)
                 return 2
         feedback = Feedback(cfg.feedback)
-        reader = fields.make_reader() if cfg.paste.verify else None
-        svc = Services(
-            cfg, router, injector=make_injector(cfg.paste), feedback=feedback,
-            field_reader=reader,
-        )  # fmt: skip
+        svc = Services(cfg, router, injector=make_injector(cfg.paste), feedback=feedback)
         try:
             config_path = Path(args.config) if args.config else default_config_path()
             return daemon.run(

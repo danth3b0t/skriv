@@ -165,23 +165,6 @@ def check_paste(r: Report, cfg: Config) -> None:
     (r.ok if player else r.warn)(
         "sounds", player[0] if player else "no afplay/pw-play/paplay; silent"
     )
-    check_read_back(r, cfg)
-
-
-def check_read_back(r: Report, cfg: Config) -> None:
-    from hark_client import fields  # noqa: PLC0415
-
-    if not cfg.paste.verify:
-        r.ok("read-back", "off (paste.verify = false)")
-    elif fields.make_reader() is not None:
-        r.ok("read-back", "paste verification")
-    else:
-        hint = (
-            "needs the Accessibility permission"
-            if sys.platform == "darwin"
-            else "needs PyGObject with Atspi 2.0 and an accessibility bus"
-        )
-        r.warn("read-back", f"unavailable ({hint}); paste verdicts stay 'unknown'")
 
 
 def check_daemon(r: Report) -> None:

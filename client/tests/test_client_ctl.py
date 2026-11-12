@@ -85,7 +85,6 @@ V1_LAST = {
     "utterance_id": "str",
     "status": "str",
     "profile": "str",
-    "paste_verdict": "str",
     "keyup_to_paste_ms": "float",
     "stop_reason": "str",
     "provider": "str",
@@ -138,11 +137,7 @@ def test_json_v1_contract(sock_path: Path, controller: tuple[Controller, DryRunI
         done = _json(sock_path, {"version": 1, "command": "status"})
         assert _shape(done) == v1_status(V1_LAST)
         last = cast("dict[str, object]", done["last"])
-        assert (last["status"], last["paste_verdict"], last["delivery"]) == (
-            "pasted",
-            "unknown",
-            "sent",
-        )
+        assert (last["status"], last["delivery"]) == ("pasted", "sent")
         assert (done["phase"], last["stop_reason"], last["fallback"]) == ("idle", "key_up", False)
         assert "text" not in json.dumps(last)  # never the dictated text
         again = _json(sock_path, {"version": 1, "command": "paste-last"})

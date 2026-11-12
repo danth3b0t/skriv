@@ -56,7 +56,6 @@ RECOVERY_KEY = "Super Alt D"  # hark-panel on Omarchy (packaging/omarchy)
 OMARCHY_THEME = Path.home() / ".local/state/omarchy/current/theme"  # where Omarchy's shell reads it
 LONG_S = 60  # a recording longer than this shows its elapsed time
 CLEANUP_APPLIED = frozenset({"applied", "partial", "no_edits"})  # cleanup ran and was kept
-SENT = frozenset({"sent", "confirmed"})
 # linger (s) per outcome, design/SPEC.md §4
 LINGER_SENT = 0.5
 LINGER_TAG = 0.8  # ✓ via provider, ✓ cleanup skipped
@@ -182,7 +181,7 @@ def outcome_view(
     if status == "focus_changed":
         label = "Copied · focus moved"
         return View("done", "copy", "warn", label, label), LINGER_FOCUS_MOVED
-    if status == "copied" or delivery not in SENT:
+    if status == "copied" or delivery != "sent":
         return View("done", "copy", "fg", "Copied", "Copied"), LINGER_COPIED
     return _sent(res, cleanup_expected=cleanup_expected)
 

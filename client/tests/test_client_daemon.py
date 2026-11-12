@@ -19,7 +19,6 @@ from hark_client.audio import speech_ms
 from hark_client.config import ProviderConfig
 from hark_client.context import CaretContext
 from hark_client.continuation import PASTE_ECHO_S, KeyPress
-from hark_client.fields import FieldText
 from hark_client.indicator import Indicator
 from hark_client.inject import DryRunInjector, PasteResult
 from hark_client.providers import Router
@@ -34,7 +33,6 @@ if TYPE_CHECKING:
 
     import numpy.typing as npt
 
-    from hark_client.context import FocusInfo
     from hark_client.daemon import Controller
     from hark_client.mic import Mic
 
@@ -304,39 +302,6 @@ def test_forks_do_not_run_grpc_fork_handlers():
         [sys.executable, "-c", script], env=env, capture_output=True, text=True, check=True
     )
     assert "fork" not in out.stderr, out.stderr
-
-
-class EditableField:
-    """The target app's focused field: shows whatever was pasted after `before`, then `edit()`s."""
-
-    def __init__(self, injector: DryRunInjector, before: str = "Dear Ann, ") -> None:
-        self.injector = injector
-        self.before = before
-        self.edited: str | None = None
-
-    def read(self, focus: FocusInfo) -> FieldText:
-        if self.edited is not None:
-            return FieldText("text", self.edited)
-        return FieldText("text", self.before + "".join(t for t, _ in self.injector.pasted))
-
-
-def test_a_paste_missing_from_the_field_is_recorded_only(
-    controller: tuple[Controller, DryRunInjector], fake_context: FakeContext
-):
-    c, injector = controller
-    fake_context.snapshots = [snapshot("com.apple.Notes")]
-    c.svc.field_reader = EditableField(DryRunInjector(out=lambda _: None))  # never shows the paste
-    c.handle("start")
-    c.on_pcm(pcm(0.4))
-    c.handle("stop")
-    wait_idle(c)
-    assert len(injector.pasted) == 1
-    assert injector.copied == []  # the restored clipboard is left alone
-    feedback = c.svc.feedback
-    assert isinstance(feedback, RecordingFeedback)
-    assert feedback.notifications == []
-    last = cast("dict[str, object]", c.status_json()["last"])
-    assert (last["status"], last["paste_verdict"]) == ("pasted", "missing")
 
 
 def test_a_profile_picked_by_hand_applies_to_the_next_dictation(

@@ -43,14 +43,14 @@ auto; no arguments reports the current override.
 {"version": 1, "ok": true, "command": "status",
  "state": "idle", "finishing": 0,
  "last": {"at": 1762950000.123, "utterance_id": "0199…", "status": "pasted", "profile": "prose",
-          "paste_verdict": "landed", "keyup_to_paste_ms": 412.5},
+          "keyup_to_paste_ms": 412.5},
  "profile_override": null}
 ```
 
 - `state`: `idle | recording`. `finishing`: dictations still being transcribed/pasted.
 - `last`: the most recent finished dictation of this daemon, or `null`. `status` is the history status (`pasted`,
-  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `paste_verdict` is
-  `landed | missing | not_text | unknown`; `keyup_to_paste_ms` may be `null`. **Never** contains dictated text,
+  `copied`, `paste_failed`, `focus_changed`, `empty`, `too_short`, `no_speech`, `error`); `keyup_to_paste_ms` may be
+  `null`. **Never** contains dictated text,
   window titles or app content, so a bar module may log it.
 - `profile_override`: the profile picked with `profile` for the next dictation(s), or `null` (by app).
 
@@ -78,8 +78,8 @@ the UI):
 - `last.stop_reason`: `key_up` (release, tap, `stop`) or `limit` (`audio.max_ms`); `null` when the dictation
   never got that far. `last.provider` / `last.fallback`: which provider transcribed it and whether that was
   not the first one (a failover counts). `last.cleanup`: the cleanup outcome (`applied`, `skipped`,
-  `rejected`, `timeout`, `error`, ...; `null` before cleanup). `last.delivery`: `confirmed` (pasted and read
-  back), `sent` (paste shortcut sent, not confirmed: terminals and unreadable fields), `copied` (left in the
+  `rejected`, `timeout`, `error`, ...; `null` before cleanup). `last.delivery`: `sent` (paste shortcut sent;
+  hark does not read the field back), `copied` (left in the
   clipboard: focus moved, paste failed after the copy, or clipboard mode), `failed`, `none` (nothing to
   deliver). `last.retry_available`: its audio is kept for `hark retry`. `last.mic_interrupted`: the mic
   dropped out during the recording (words may be missing).
@@ -130,5 +130,5 @@ e.g. a text `error …` reply), `internal` (exception in the daemon).
 New fields may be added to replies within v1; clients must ignore unknown fields. Retyping a field or changing a
 `code` needs `version: 2`. hark is a personal tool with clients in this repository only, so fields of features
 that were removed are dropped within v1 (removed so far: the `learning` field; the `undo` and `swap-raw`
-commands). The shapes above are pinned by `client/tests/test_client_ctl.py`
+commands; `last.paste_verdict` and the `confirmed` value of `last.delivery`). The shapes above are pinned by `client/tests/test_client_ctl.py`
 (`test_json_v1_contract`), which runs against the real daemon controller.

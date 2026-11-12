@@ -81,7 +81,6 @@ def pill(view: View) -> tuple[str, str, str, str, str]:
     ("res", "expected", "shown", "linger"),
     [
         (sent(), True, ("check", "ok", "", "", ""), 0.5),
-        (sent(delivery="confirmed"), True, ("check", "ok", "", "", ""), 0.5),
         (sent(fallback=True, provider="laptop"), True, ("check", "ok", "", "via laptop", ""), 0.8),
         (sent(cleanup=CleanupOutcome("x", "timeout")), True,
          ("check", "ok", "", "cleanup skipped", ""), 0.8),

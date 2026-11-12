@@ -102,8 +102,7 @@ def show(r: Record, *, kept: bool = False) -> str:
     line("time", t.strftime("%Y-%m-%d %H:%M:%S") if t else _str(r, "ts"))
     app = _str(r, "app") or "?"
     line("app", f"{app} ({_str(r, 'app_id')})  profile={_str(r, 'profile') or '-'}")
-    status = f"{_str(r, 'status')}  verdict={_str(r, 'paste_verdict') or '-'}"
-    line("status", status + (f"  error: {_str(r, 'error')}" if _str(r, "error") else ""))
+    line("status", _str(r, "status") + (f"  error: {_str(r, 'error')}" if _str(r, "error") else ""))
     provider = _dict(r.get("provider"))
     if provider:
         route = " -> ".join(

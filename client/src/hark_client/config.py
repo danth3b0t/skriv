@@ -155,9 +155,6 @@ class PasteConfig:
     # Without a readable caret: hark's last paste + the keys typed since, forgotten after
     # this long without a key or paste in that window.
     join_window_ms: int = 60_000
-    # Read the target field back after pasting (macOS AX, Linux AT-SPI): landed | missing |
-    # not_text | unknown in history (recorded only).
-    verify: bool = True
 
 
 @dataclass
