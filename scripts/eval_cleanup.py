@@ -10,7 +10,8 @@ Metrics:
   words        same words as an expected text (case and punctuation ignored)
   clean damage cases whose input is already expected, but the output is not
   leaked       protected substrings missing from the output (must be 0)
-  status       applied / no_edits / rejected (by the check's reason) / errors
+  status       applied / partly (some sentences kept as said) / no_edits / rejected (by the
+               check's reason) / errors
   latency      client wall time per cleanup (p50/p95), and generation_ms
 """
 
@@ -154,7 +155,8 @@ def report(results: list[Result], cases: list[Case], target_ms: int) -> dict[str
     exact = sum(r.exact for r in results)
     words = sum(r.words for r in results)
     damaged = sum(not r.exact for r in clean)
-    status = Counter(r.status for r in results)
+    # applied with a reason: some sentences stayed as said
+    status = Counter("partly" if r.status == "applied" and r.reason else r.status for r in results)
     reasons = Counter(r.reason.split(maxsplit=1)[0] for r in results if r.status == "rejected")
     summary: dict[str, object] = {
         "cases": total,
