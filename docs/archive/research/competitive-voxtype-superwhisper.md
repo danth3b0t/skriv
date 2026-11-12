@@ -308,8 +308,8 @@ URLs below were retrieved during this research (release-page identities also ver
 
 ### hark [H]
 
-- [Project README](../../README.md), [project context](../00-context.md), [client README](../../client/README.md), [server README](../../server/README.md), [ADR-001](../protocol/ADR-001-protocol.md).
-- Source cross-checks: [MLX Parakeet backend](../../server/src/hark_server/backends/parakeet_mlx.py), [context engine](../../client/src/hark_client/context/engine.py); source file inventory used for adaptation locations.
+- [Project README](../../../README.md), [project context](../00-context.md), [client README](../../../client/README.md), [server README](../../../server/README.md), [ADR-001](../../protocol/ADR-001-protocol.md).
+- Source cross-checks: [MLX Parakeet backend](../../../server/src/hark_server/backends/parakeet_mlx.py), [context engine](../../../client/src/hark_client/context/engine.py); source file inventory used for adaptation locations.
 
 ### Voxtype
 

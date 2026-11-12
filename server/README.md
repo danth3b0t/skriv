@@ -1,12 +1,12 @@
 # hark-server
 
 Python (`grpc.aio`) server for the **hark.v1** protocol: [`proto/hark/v1/hark.proto`](../proto/hark/v1/hark.proto).
-The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a](../docs/protocol/proposal-a.md);
+The design is in [ADR-001](../docs/protocol/ADR-001-protocol.md) and [proposal-a](../docs/archive/protocol/proposal-a.md);
 differences from proposal-a are listed in [CHANGES.md](../docs/protocol/CHANGES.md).
 
 Services:
 - `hark.v1.Asr`: `GetCapabilities`, `Transcribe` (bidi stream, one call per utterance).
-- `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` that returns validated edits. Only registered when `[cleanup] base_url` is set. Two engines: `s1` (default; "S1-mini" by "Superwhisper" rewrites the text, the rewrite is aligned into edits) and `edits` (a Qwen3 instruction model returns a JSON edit list).
+- `hark.v1.TextCleanup`: `Cleanup`, a proxy to an OpenAI-compatible `/v1/chat/completions` where "S1-mini" by "Superwhisper" rewrites the text; the response carries the rewrite (`text`) and the client decides whether to keep it. Only registered when `[cleanup] base_url` is set.
 - `grpc.health.v1.Health`: services `""` and `hark.v1.Asr` are SERVING once the model is READY; `hark.v1.TextCleanup` is SERVING when cleanup is configured.
 
 ## Run
@@ -38,10 +38,13 @@ scripts/eval-cleanup --model s1-mini-q4_k_m --data server/tests/data/cleanup_eva
 On macOS, `uv run hark service install` runs both (llama-server via `scripts/llama-up`, hark-server with the
 same flags as `scripts/poc-up`) as launchd user agents that start at login and restart on crashes; logs in
 `~/Library/Logs/hark/`. `hark service status|restart|uninstall`; see [packaging/macos](../packaging/macos/README.md).
+Known issue: both still pass the removed `--cleanup-engine`, so hark-server exits with a usage error when cleanup is
+on; run the commands above by hand until that is fixed.
 
 The default cleanup model is "S1-mini" by "Superwhisper" ([model card](https://huggingface.co/superwhisper/s1-mini),
-Apache 2.0 plus a term that it keep that name). See [the S1-mini bench](../docs/bench/2026-11-11-cleanup-s1.md)
-and [the Qwen3 bench](../docs/bench/2026-11-11-cleanup.md) for how the models and flags were chosen.
+Apache 2.0 plus a term that it keep that name). Current measurements:
+[cleanup fidelity](../docs/bench/2026-11-13-cleanup-fidelity.md); why S1-mini over Qwen3:
+[archived bench](../docs/archive/bench/2026-11-11-cleanup-s1.md).
 
 `hark-probe` paces audio in real time by default; `--fast` sends it all at once. Other flags: `--repeat N`,
 `--json-summary FILE`, `--budget-ms`, `--anchor`, `--n-best`, `--tls-ca/--tls-cert/--tls-key`. See `--help`.
@@ -52,7 +55,9 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 
 | TOML | CLI | Default | Meaning |
 |---|---|---|---|
+| `log_level` | `--log-level` | `INFO` | |
 | `server.listen` | `--listen` | `127.0.0.1:50051` | `host:port` or `unix:/path` |
+| `server.name` / `server.accelerator` | | host name / `""` | shown to clients in `Capabilities` |
 | `server.tls.cert/key` | `--tls-cert/--tls-key` | — | enable TLS |
 | `server.tls.client_ca` | `--tls-client-ca` | — | require client certs from this CA (mTLS) |
 | `server.allow_insecure_non_local` | `--allow-insecure-non-local` | `false` | allow plaintext on non-loopback addresses |
@@ -67,6 +72,12 @@ See [`hark-server.example.toml`](hark-server.example.toml). Unknown keys are err
 | `cleanup.base_url` | `--cleanup-url` | `""` (off) | OpenAI-compatible base, e.g. `http://127.0.0.1:8080/v1` |
 | `cleanup.model` | `--cleanup-model` | | model name sent upstream |
 | `cleanup.api_key_env` | | | env var holding the upstream bearer token |
+| `cleanup.default_budget_ms` | | 400 | used when a request sets no budget |
+| `cleanup.max_input_bytes` | | 4000 | longer input is refused (`PROTOCOL_VIOLATION`; the client keeps its text) |
+
+**Migrating.** `cleanup.engine`, `cleanup.max_edits` and `--cleanup-engine` are gone (S1-mini's rewrite is the only
+engine), and so is the `nemo_gpupb` backend kind (use `transcribe_cpp`). A config or command line that still has
+them is refused at startup (exit 2).
 
 **Transport security.** Plaintext is accepted only on loopback or `unix:` addresses. Any other address needs TLS, or
 the explicit `allow_insecure_non_local` override. mTLS (private CA + `client_ca`) is the intended default for LAN or
@@ -84,7 +95,7 @@ Tailscale use.
 | Word timings / confidence | yes / yes | decoder emission, 80 ms / entropy-based, min per word, uncalibrated | decoder emission, 80 ms / min token probability per word, uncalibrated |
 
 - **mock**: every `word_ms` (200) window of non-silent audio emits the next word of a fixed script. Latency is configurable (`decode_ms`, `decode_ms_per_s`, `load_ms`). The tests use it.
-- **parakeet_mlx**: `from_pretrained` + `get_logmel` → `encoder` → greedy `decode`, all on one worker thread (MLX streams are thread-affine). parakeet-mlx 0.7 *does* have decode-time word boosting, but only in beam search; it is not wired up yet (see the bench doc).
+- **parakeet_mlx**: `from_pretrained` + `get_logmel` → `encoder` → `decode`, all on one worker thread (MLX streams are thread-affine): greedy without bias terms; with them beam search and parakeet-mlx's word booster, the greedy anchor from the same encoder pass. `english_model` (option) serves the English-only `parakeet-tdt-0.6b-v2` beside v3: sessions that allow only English go to it, and a v3 result implausible for the requested languages is decoded again with it (`language.py`).
 - **transcribe_cpp**: Parakeet TDT 0.6B v3 GGUF (Q4_K_M by default) on [transcribe.cpp](https://github.com/handy-computer/transcribe.cpp) 0.4.2 / ggml, the offline fallback for machines without a GPU server in reach. The model runs in a worker child process (`hark_server.backends.transcribe_worker`, JSON lines): a native crash fails one decode and the next decode restarts the worker; a decode longer than `decode_timeout_s` kills it. `scripts/fetch-transcribe` builds the pinned library into `build/` and downloads the model; `scripts/cpu-server-up` runs it. Latency: [docs/bench/2026-11-12-transcribe-cpp-cpu.md](../docs/bench/2026-11-12-transcribe-cpp-cpu.md).
 
 Adding a backend: subclass `hark_server.backends.Backend`, then implement `capabilities()`, `_load_sync`, `_warmup_sync` and
@@ -107,7 +118,7 @@ eager finalize are handled by the server (`session.py`), not by backends.
 ## Tests
 
 ```sh
-cd server && uv run pytest            # ~65 tests, ~8 s, mock backend + fake OpenAI endpoint, no model needed
+uv run pytest server/tests -q        # ~120 tests, mock backend + fake OpenAI endpoint, no model needed
 ```
 
 The tests run against the in-process server over real gRPC on localhost. They cover capability negotiation (including
@@ -120,9 +131,9 @@ Regenerate stubs after editing the proto: `proto-py/gen-proto` (from the repo ro
 ## Known limitations
 
 - No partials. Below `incremental_min_ms` (30 s) parakeet_mlx decodes at end of audio, so finalize time grows with utterance length up to ~1 s at 30 s with bias terms; longer dictations are decoded a sentence at a time while they stream ([bench](../docs/bench/2026-11-12-parakeet-mlx-incremental.md)). mock and transcribe_cpp are BUFFERED only.
-- One model per process. `backend_params` from clients are ignored (none are used yet). Free-text context is ignored by all backends (`CONTEXT_IGNORED`).
+- One backend kind per process (parakeet_mlx can hold a second, English-only model). `backend_params` from clients are ignored (none are used yet). Free-text context is ignored by all backends (`CONTEXT_IGNORED`).
 - parakeet_mlx: N-best is 1 (beam result + greedy anchor), boosting costs ~2.3× greedy finalize latency, `detected_language` is not reported, and confidence is uncalibrated.
 - Not implemented from the ADR or proposal: bearer-token auth, a client-cert fingerprint allowlist (any cert from `client_ca` is accepted), the replay cache, retention/eval capture, gRPC reflection and server-side session expiry. Partials, Opus, hit scores and `bias_diagnostics` were removed from the proto (no client or server used them).
 - Eager finalize: the speculative result's budget is counted from the speculative start. An invalidated speculative decode cannot be pre-empted and keeps the worker busy until it finishes.
-- Cleanup: no in-budget retry, non-streaming upstream call. `grammar` has no mechanical check, so no profile enables it. The client validator (authoritative) mirrors the per-kind checks, the protected-span rule for self-corrections and the negation/digit/removed-words/`!` rules, but not the changed-bytes budget or the "sloppy result" patterns. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).
+- Cleanup: no in-budget retry, non-streaming upstream call. S1-mini is English-only and inputs over ~1,000 tokens are not chunked (the 4,000-byte input cap keeps them below that).
 - grpcio's *Python* client replaces the server's status with `INTERNAL` if it is still writing when the server ends the call. Clients should rely on the in-band `session_ended`/`final_result` and stop writing after it (tonic does not have this problem).

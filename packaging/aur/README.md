@@ -1,7 +1,8 @@
 # AUR packaging
 
 `hark-git/PKGBUILD` builds hark from git: the client daemon (`hark`), the inference server (`hark-server`), the
-systemd user units, the Omarchy adapter and the helper scripts. User-facing setup: [docs/linux.md](../../docs/linux.md).
+systemd user units, the Omarchy adapter (dictation backend, `hark.shell` bar plugin, `hark-panel`) and the helper
+scripts. User-facing setup: [docs/linux.md](../../docs/linux.md).
 
 ## Build, check, publish
 

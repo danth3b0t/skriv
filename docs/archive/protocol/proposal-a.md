@@ -1,7 +1,7 @@
 # hark protocol — Proposal A: gRPC + protobuf, bidirectional streaming
 
 Status: proposal, written by Designer A (designed without seeing B or C). Date: 2026-11-12.
-Canonical schema: [`proposal-a.proto`](proposal-a.proto). The schema is also reproduced in full in §5.
+Canonical schema: [`proposal-a.proto`](../../protocol/proposal-a.proto). The schema is also reproduced in full in §5.
 `[U]` marks claims I could not verify, or numbers that still need measuring. §17 lists them.
 
 ---
@@ -156,7 +156,7 @@ All `allow_*` flags default to `false`, i.e. the most private behavior.
 
 ## 5. Full `.proto`
 
-Also saved as [`proposal-a.proto`](proposal-a.proto). If the two copies ever disagree, that file is canonical.
+Also saved as [`proposal-a.proto`](../../protocol/proposal-a.proto). If the two copies ever disagree, that file is canonical.
 
 ```proto
 // hark client <-> inference-server protocol — Proposal A (gRPC + protobuf)
