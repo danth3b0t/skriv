@@ -53,6 +53,14 @@ CTC models have no beam search here: bias mechanism NONE, anchor == primary.
 Long utterances (>= incremental_min_ms, default 30 s) are decoded while they
 stream in, a sentence at a time (IncrementalStream); end of audio then decodes
 only the last few seconds. See docs/bench/2026-11-12-parakeet-mlx-incremental.md.
+
+English companion: beside a multilingual model (v3: language auto-detected, which
+turns a short accented "Hi" into "Hej") the English-only v2 (`english_model`) is
+served as a second model on the same worker thread, loaded on first use. The
+server routes sessions with languages ["en"] to it and uses it for the language
+fallback (hark_server.session). Its 1024-token vocabulary goes through the same
+booster code (VocabIndex/TrieBooster are per model). See
+docs/bench/2026-11-12-language.md.
 """
 
 from __future__ import annotations
@@ -81,7 +89,7 @@ from . import SAMPLE_RATE, Backend, BackendUnavailable, BiasPlan, DecodeOut, Wor
 
 if TYPE_CHECKING:
     from collections.abc import Callable
-    from concurrent.futures import Future
+    from concurrent.futures import Future, ThreadPoolExecutor
 
     import mlx.core as mx
     from parakeet_mlx import AlignedToken, DecodingConfig  # pyright: ignore[reportMissingTypeStubs]
@@ -118,6 +126,8 @@ V3_LANGUAGES = [
 ]  # fmt: skip
 
 DEFAULT_MODEL = "mlx-community/parakeet-tdt-0.6b-v3"
+# English-only Parakeet-TDT-0.6B-v2, the parakeet-mlx README's example model.
+DEFAULT_ENGLISH_MODEL = "mlx-community/parakeet-tdt-0.6b-v2"
 # Defaults chosen in docs/bench/2026-11-11-parakeet-mlx-boost.md.
 DEFAULT_BEAM_SIZE = 4
 DEFAULT_PATIENCE = 20.0
@@ -407,7 +417,12 @@ class ParakeetMlxBackend(Backend):
         boost_max: float = DEFAULT_BOOST_MAX,
         incremental_min_ms: int = DEFAULT_INCREMENTAL_MIN_MS,
         incremental_stride_ms: int = Incremental.stride_ms,
+        english_model: str | None = None,
+        executor: ThreadPoolExecutor | None = None,
     ) -> None:
+        """english_model: an English-only model served beside a multilingual `model`
+        (companions()); None: DEFAULT_ENGLISH_MODEL if `model` speaks several languages,
+        "": none. executor: another backend's worker thread (companions share one)."""
         try:  # mlx and parakeet-mlx are imported lazily: macOS on Apple Silicon only
             importlib.import_module("mlx.core")
             importlib.import_module("parakeet_mlx")
@@ -423,12 +438,15 @@ class ParakeetMlxBackend(Backend):
         if incremental_stride_ms < 1000:
             raise ValueError("need incremental_stride_ms >= 1000")
         model = model or DEFAULT_MODEL
-        super().__init__(model_id or model.rstrip("/").rsplit("/", 1)[-1])
+        super().__init__(model_id or model.rstrip("/").rsplit("/", 1)[-1], executor)
         self.hf_model = model
         self.dtype = dtype
         if languages is None:
             languages = V3_LANGUAGES if "v3" in model else ["en"]
         self.languages = languages
+        if english_model is None:
+            english_model = DEFAULT_ENGLISH_MODEL if len(languages) > 1 else ""
+        self.english_model = english_model
         self.beam_size = beam_size
         self.patience = patience
         self.boost_min = boost_min
@@ -496,6 +514,19 @@ class ParakeetMlxBackend(Backend):
             casing=True,
             inverse_text_normalization=False,
         )
+
+    def companions(self) -> list[Backend]:
+        """The English-only model, with this model's decoding knobs, on this worker thread."""
+        if not self.english_model:
+            return []
+        english = ParakeetMlxBackend(
+            self.english_model, dtype=self.dtype, languages=["en"], beam_size=self.beam_size,
+            patience=self.patience, boost_min=self.boost_min, boost_max=self.boost_max,
+            incremental_min_ms=self.incremental.min_ms,
+            incremental_stride_ms=self.incremental.stride_ms, english_model="",
+            executor=self._executor,
+        )  # fmt: skip
+        return [english]
 
     def plan_bias(self, terms: list[pb.BiasTerm], strength: float) -> BiasPlan | None:
         if not self.boosting:

@@ -30,7 +30,9 @@ model_id = ""                     # "" => last path component of `model`
 [backend.options]                 # passed to the backend constructor
 dtype = "bfloat16"
 # parakeet_mlx: incremental_min_ms = 30000 (decode while streaming from this length; -1: never),
-# incremental_stride_ms = 6000, beam_size, patience, boost_min, boost_max
+# incremental_stride_ms = 6000, beam_size, patience, boost_min, boost_max,
+# english_model = "mlx-community/parakeet-tdt-0.6b-v2" (English-only model served beside a multilingual
+# `model` for sessions with languages ["en"] and the language fallback; loaded on first use; "" = none)
 # transcribe_cpp (model = path to a GGUF, scripts/fetch-transcribe): device = "cpu" (| metal | vulkan |
 # cuda | auto), threads = 0 (library default), library = "" ($TRANSCRIBE_LIBRARY), binding = ""
 # ($HARK_TRANSCRIBE_BINDING), load_timeout_s = 120, decode_timeout_s = 60. scripts/cpu-server-up runs it.

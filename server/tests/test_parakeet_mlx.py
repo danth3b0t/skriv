@@ -31,6 +31,7 @@ from parakeet_mlx import parakeet as pp  # pyright: ignore[reportMissingTypeStub
 from parakeet_mlx.audio import PreprocessArgs  # pyright: ignore[reportMissingTypeStubs]
 
 from hark_server.backends.parakeet_mlx import (
+    DEFAULT_ENGLISH_MODEL,
     DEFAULT_INCREMENTAL_MIN_MS,
     ParakeetMlxBackend,
     TrieBooster,
@@ -325,9 +326,29 @@ def test_trie_booster_matches_parakeet_mlx_words():
     assert np.array_equal(generic, np.array(table(start), np.float32))
 
 
+def test_multilingual_model_brings_an_english_only_companion_on_its_thread():
+    v3 = ParakeetMlxBackend()
+    (v2,) = v3.companions()
+    assert isinstance(v2, ParakeetMlxBackend)
+    assert (v2.hf_model, v2.model_id) == (DEFAULT_ENGLISH_MODEL, "parakeet-tdt-0.6b-v2")
+    caps = v2.capabilities()
+    assert (list(caps.languages), caps.language_detection) == (["en"], False)
+    assert v2._executor is v3._executor  # pyright: ignore[reportPrivateUsage] - one MLX thread
+    assert (v2.beam_size, v2.boost_max) == (v3.beam_size, v3.boost_max)
+    assert v2.companions() == []
+    assert ParakeetMlxBackend(english_model="").companions() == []
+    assert ParakeetMlxBackend(DEFAULT_ENGLISH_MODEL).companions() == []  # English-only already
+
+
 @pytest.mark.skipif(os.environ.get("HARK_SLOW") != "1", reason="set HARK_SLOW=1 (real model)")
 @pytest.mark.skipif(shutil.which("say") is None, reason="needs macOS `say`")
-async def test_slow_real_model_boosts_kubectl(serve: Serve, tmp_path: Path):
+@pytest.mark.parametrize(
+    ("languages", "model_id"),
+    [([], "parakeet-tdt-0.6b-v3"), (["en"], "parakeet-tdt-0.6b-v2")],  # v2: loaded on first use
+)
+async def test_slow_real_model_boosts_kubectl(
+    serve: Serve, tmp_path: Path, languages: list[str], model_id: str
+):
     aiff, wav = tmp_path / "k.aiff", tmp_path / "k.wav"
     text = "Please run kubectl get pods in the default namespace."
     for cmd in (
@@ -339,9 +360,9 @@ async def test_slow_real_model_boosts_kubectl(serve: Serve, tmp_path: Path):
         pcm = np.frombuffer(w.readframes(w.getnframes()), dtype="<i2")
 
     client = await serve(backend=ParakeetMlxBackend())
-    final = (
-        await client.transcribe(utterance(pcm, context=bias_ctx(kubectl_term(weight=0.8))))
-    ).final
+    ctx = bias_ctx(kubectl_term(weight=0.8))
+    final = (await client.transcribe(utterance(pcm, context=ctx, languages=languages))).final
+    assert final.model_id == model_id
     assert "kubectl" in final.n_best[0].text
     assert "kubectl" not in final.anchor.text.lower()
     (hit,) = final.bias_hits
