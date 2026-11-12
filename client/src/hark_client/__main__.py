@@ -1,6 +1,6 @@
 """hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
 (pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
-learned vocabulary).
+learned vocabulary), `service` (macOS launchd agents for the servers).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -20,6 +20,7 @@ if TYPE_CHECKING:
     from hark_client.config import Config
     from hark_client.context import ContextSnapshot
     from hark_client.pipeline import Services
+    from hark_client.service import Layout
 
 
 class Args(argparse.Namespace):
@@ -42,6 +43,10 @@ class Args(argparse.Namespace):
     copy: bool
     history_action: str
     n: int
+    service_action: str
+    backend: str | None
+    cleanup_model: str | None
+    no_cleanup: bool
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -96,6 +101,17 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
     )
     lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
+    sv = sub.add_parser(
+        "service", help="macOS: llama-server + hark-server as launchd agents (start at login)"
+    )
+    sv.add_argument("service_action", choices=["install", "uninstall", "status", "restart"])
+    sv.add_argument(
+        "--backend", help="install: ASR backend (default parakeet_mlx on Apple Silicon)"
+    )
+    sv.add_argument(
+        "--cleanup-model", help="install: a scripts/fetch-models key (default: its DEFAULT)"
+    )
+    sv.add_argument("--no-cleanup", action="store_true", help="install: no llama-server")
     return p.parse_args(argv, namespace=Args())
 
 
@@ -121,6 +137,50 @@ def cmd_ctl(args: Args) -> int:
         return 2
     print(reply)
     return 0 if reply.startswith("ok") else 1
+
+
+def cmd_service(args: Args) -> int:
+    from hark_client import service  # noqa: PLC0415
+
+    if sys.platform != "darwin":
+        print("hark service: macOS only (Linux: packaging/systemd/hark.service)", file=sys.stderr)
+        return 2
+    try:
+        lay = service.layout()
+        if args.service_action == "install":
+            model = None if args.no_cleanup else (
+                args.cleanup_model or service.default_cleanup_model(lay.root)
+            )  # fmt: skip
+            backend = args.backend or service.default_backend()
+            service.install(lay, backend=backend, cleanup_model=model)
+            print("check with `hark service status` and `hark doctor`")
+            return 0
+        if args.service_action == "uninstall":
+            if not service.uninstall(lay):
+                print("no hark services installed")
+            return 0
+        if args.service_action == "restart":
+            labels = service.restart(lay)
+            print(f"restarted {', '.join(labels)}" if labels else "no hark services installed")
+            return 0 if labels else 1
+    except service.ServiceError as e:
+        print(f"hark service: {e}", file=sys.stderr)
+        return 1
+    return _service_status(lay)
+
+
+def _service_status(lay: Layout) -> int:
+    from hark_client import service  # noqa: PLC0415
+
+    states = service.status(lay)
+    if not states:
+        print("no hark services installed (`hark service install`)")
+        return 1
+    for st in states:
+        detail = f"pid {st.pid}" if st.pid else f"last exit {st.last_exit or '-'}"
+        log = lay.logs_dir / ("llama.log" if st.label == service.LLAMA else "server.log")
+        print(f"{st.label:<16} {st.state:<12} {detail:<14} {log}")
+    return 0 if all(st.state == "running" for st in states) else 1
 
 
 def run_pcm(
@@ -191,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "ctl":
         return cmd_ctl(args)
+    if args.command == "service":
+        return cmd_service(args)
 
     from hark_client import config  # noqa: PLC0415
 
