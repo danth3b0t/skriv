@@ -5,6 +5,8 @@
     "three seconds",
     "3 seconds"
   ],
-  "accepted": [],
+  "accepted": [
+    "Set the timeout to 5 seconds."
+  ],
   "note": "synthetic (en_GB): Kokoro-82M bf_alice speed 1.21; level -24 dBFS, reverb RT60 0.39 s, quiet room (tone -61 dBFS); app kitty (kitty); context empty: 0 terms; tags correction"
 }

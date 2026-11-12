@@ -4,6 +4,8 @@
     "user_id"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Add an index on user_id in the sessions table."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_onyx speed 0.9; level -20 dBFS, reverb RT60 0.56 s, quiet room (tone -62 dBFS); app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags identifier"
 }

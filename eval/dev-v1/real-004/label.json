@@ -1,9 +1,11 @@
 {
-  "said": "oh god i know it's so hard especially in edinburgh like most of the windows it's just easier to sit at home",
+  "said": "oh god i know it's so hard especially in edinburgh like most of the winter it was just easier to sit at home",
   "critical": [],
   "forbidden": [
     "hark"
   ],
-  "accepted": [],
-  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00001 row group 0 row 53; speaker EDACC-C05-B, Indian English, L1 Indian English, female); license CC-BY-SA-4.0; app Ghostty (com.mitchellh.ghostty); context full: 17 terms (1 for this clip, 16 distractors from hark); trap terms on the list: hark"
+  "accepted": [
+    "Oh god, I know it's so hard, especially in Edinburgh. Like most of the winter was just easier to sit at home."
+  ],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00001 row group 0 row 53; speaker EDACC-C05-B, Indian English, L1 Indian English, female); license CC-BY-SA-4.0; app Ghostty (com.mitchellh.ghostty); context full: 17 terms (1 for this clip, 16 distractors from hark); trap terms on the list: hark; said corrected 2026-11-13 from the dataset's \"most of the windows it's just easier\": parakeet-tdt-0.6b-v3 (biased and anchor) and whisper large-v3-turbo all hear \"winter … (it) was\""
 }

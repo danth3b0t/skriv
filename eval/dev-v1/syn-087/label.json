@@ -5,6 +5,8 @@
     "Qwen3"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Meeting notes, we decided to keep S1-mini as the default cleanup model and not switch to Qwen3 for now."
+  ],
   "note": "synthetic (L2 pt): Kokoro-82M pm_alex speed 0.87; level -23 dBFS, laptop mic, keyboard at SNR 21 dB; app Obsidian (obsidian); context full: 23 terms (3 for this clip, 20 distractors from hark); tags negation; TTS read 'meeting notes: we decided to keep S one mini as the default cleanup model and not switch to kwen three for now'"
 }

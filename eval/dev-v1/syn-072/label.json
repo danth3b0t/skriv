@@ -5,6 +5,8 @@
     "ten",
     "10"
   ],
-  "accepted": [],
+  "accepted": [
+    "Make the limit 20 megabytes."
+  ],
   "note": "synthetic (en_AU): macOS say Karen 158 wpm; level -27 dBFS, fan at SNR 15 dB; app Code (code); context full: 16 terms (0 for this clip, 16 distractors from hark); tags correction, number"
 }

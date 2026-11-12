@@ -4,6 +4,8 @@
     "node:22-alpine"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "Bump the Docker image to node:22-alpine."
+  ],
   "note": "synthetic (en_US): Kokoro-82M am_liam speed 0.88; level -24 dBFS, reverb RT60 0.36 s, laptop mic, fan at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context full: 21 terms (2 for this clip, 19 distractors from ops); tags number"
 }

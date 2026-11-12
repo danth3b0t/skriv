@@ -5,6 +5,8 @@
     "-n staging"
   ],
   "forbidden": [],
-  "accepted": [],
+  "accepted": [
+    "kubectl get pods -n staging."
+  ],
   "note": "synthetic (en_GB): Kokoro-82M bf_emma speed 0.97; level -27 dBFS, fan at SNR 18 dB; app Alacritty (Alacritty); context empty: 0 terms; tags short, command, flag"
 }
