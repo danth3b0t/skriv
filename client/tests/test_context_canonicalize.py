@@ -1,3 +1,5 @@
+import pytest
+
 from hark_client.context import Term, TermKind, TermSource, WordInfo, canonicalize
 from hark_client.context.aliases import extract_terms
 from hark_client.context.rank import Candidate, Origin, rank
@@ -9,8 +11,8 @@ def term(
     return Term(canonical, spoken, weight, kind, TermSource.REPO_RECENT)
 
 
-USE_STORE = term("useSessionStore", "use session store")
-STORE = term("SessionStore", "session store")
+USE_STORE = term("useSnapshotStore", "use snapshot store")
+STORE = term("SnapshotStore", "snapshot store")
 
 
 def words(text: str, conf: dict[str, float]) -> list[WordInfo]:
@@ -21,36 +23,38 @@ def words(text: str, conf: dict[str, float]) -> list[WordInfo]:
 
 
 def test_rewrites_alias_case_and_punctuation_insensitively():
-    text, reps = canonicalize("Please fix Use Session-Store.", [], [USE_STORE])
-    assert text == "Please fix useSessionStore."
-    assert [(r.before, r.after) for r in reps] == [("Use Session-Store", "useSessionStore")]
+    text, reps = canonicalize("Please fix Use Snapshot-Store.", [], [USE_STORE])
+    assert text == "Please fix useSnapshotStore."
+    assert [(r.before, r.after) for r in reps] == [("Use Snapshot-Store", "useSnapshotStore")]
 
 
 def test_longest_alias_wins():
-    text, _ = canonicalize("call use session store now", [], [STORE, USE_STORE])
-    assert text == "call useSessionStore now"
+    text, _ = canonicalize("call use snapshot store now", [], [STORE, USE_STORE])
+    assert text == "call useSnapshotStore now"
 
 
 def test_match_does_not_cross_sentence_boundary():
-    assert canonicalize("I use session. Store it", [], [USE_STORE])[0] == "I use session. Store it"
+    assert (
+        canonicalize("I use snapshot. Store it", [], [USE_STORE])[0] == "I use snapshot. Store it"
+    )
 
 
 def test_match_does_not_split_a_written_word():
     assert (
-        canonicalize("the session store_v2 table", [], [STORE])[0] == "the session store_v2 table"
+        canonicalize("the snapshot store_v2 table", [], [STORE])[0] == "the snapshot store_v2 table"
     )
 
 
 def test_low_confidence_word_blocks_replacement():
-    text = "fix the session store"
+    text = "fix the snapshot store"
     out, reps = canonicalize(text, words(text, {"store": 0.3}), [STORE])
     assert (out, reps) == (text, [])
 
 
 def test_confident_words_allow_replacement_and_reason_reports_confidence():
-    text = "fix the session store"
-    out, reps = canonicalize(text, words(text, {"session": 0.91}), [STORE])
-    assert out == "fix the SessionStore"
+    text = "fix the snapshot store"
+    out, reps = canonicalize(text, words(text, {"snapshot": 0.91}), [STORE])
+    assert out == "fix the SnapshotStore"
     assert reps[0].reason == "alias match conf=0.91"
 
 
@@ -60,18 +64,18 @@ def test_plain_single_word_alias_is_ignored_but_mixed_case_one_applies():
 
 
 def test_ambiguous_alias_is_skipped():
-    terms = [term("sessionStore", "session store"), term("session_store", "session store")]
-    assert canonicalize("the session store", [], terms) == ("the session store", [])
+    terms = [term("snapshotStore", "snapshot store"), term("snapshot_store", "snapshot store")]
+    assert canonicalize("the snapshot store", [], terms) == ("the snapshot store", [])
 
 
 def test_higher_weight_wins_shared_alias():
-    terms = [term("sessionStore", "session store", weight=0.5), STORE]
-    assert canonicalize("the session store", [], terms)[0] == "the SessionStore"
+    terms = [term("snapshotStore", "snapshot store", weight=0.5), STORE]
+    assert canonicalize("the snapshot store", [], terms)[0] == "the SnapshotStore"
 
 
 def test_offsets_are_utf8_byte_offsets():
-    _, reps = canonicalize("café: session store", [], [STORE])
-    assert (reps[0].start, reps[0].end) == (7, 20)
+    _, reps = canonicalize("café: snapshot store", [], [STORE])
+    assert (reps[0].start, reps[0].end) == (7, 21)
 
 
 def test_already_canonical_text_reports_no_replacement():
@@ -101,3 +105,51 @@ def test_names_from_an_agent_reply_fix_the_real_misrecognitions():
 def test_rewrite_that_only_lowercases_is_skipped():
     doctor = term("hark doctor", "hark doctor", kind=TermKind.COMMAND)
     assert canonicalize("Hark doctor works.", [], [doctor]) == ("Hark doctor works.", [])
+
+
+EACH_OTHER = term("each_other", "each other")
+SESSION_START = term("SessionStart", "session start")
+
+
+@pytest.mark.parametrize(
+    ("heard", "written"),
+    [
+        ("we'll see each other soon", "we'll see each other soon"),
+        ("we need a session start and end time", "we need a session start and end time"),
+        ("Session start is slow.", "Session start is slow."),  # a sentence capital
+        ("add a field called session start", "add a field called SessionStart"),
+        ("the session start hook fires twice", "the SessionStart hook fires twice"),
+        ("when session start is false", "when SessionStart is false"),
+        ("we need a Session Start event", "we need a SessionStart event"),
+        ("log each underscore other", "log each_other"),
+    ],
+)
+def test_alias_of_everyday_words_needs_evidence(heard: str, written: str):
+    assert canonicalize(heard, [], [EACH_OTHER, SESSION_START])[0] == written
+
+
+@pytest.mark.parametrize(
+    ("heard", "canonical", "kind", "written"),
+    [
+        ("keep S1 Mini as default", "S1-mini", TermKind.NAME, "keep S1-mini as default"),
+        ("not switch to Quen 3 now", "Qwen3", TermKind.NAME, "not switch to Qwen3 now"),
+        ("it is tdt zero point six b", "tdt-0.6b", TermKind.NAME, "it is tdt-0.6b"),
+        ("it is tdt 0.6 B", "tdt-0.6b", TermKind.NAME, "it is tdt-0.6b"),
+        ("bump to node 22 Alpine", "node:22-alpine", TermKind.NAME, "bump to node:22-alpine"),
+        ("node twenty two alpine", "node:22-alpine", TermKind.NAME, "node:22-alpine"),
+        ("it's not hyperland", "Hyprland", TermKind.NAME, "it's not Hyprland"),
+        ("run Hyper-Control clients", "hyprctl", TermKind.NAME, "run hyprctl clients"),
+        ("a ghosty keybind", "Ghostty", TermKind.NAME, "a Ghostty keybind"),
+        ("read the source", "src", TermKind.NAME, "read the source"),  # an everyday word
+        ("from tilde slash dot kube slash config", "~/.kube/config", TermKind.PATH,
+         "from ~/.kube/config"),
+        # part of a spoken path that did not match as a whole stays as said
+        ("from slash dot kube slash config", "~/.kube/config", TermKind.PATH,
+         "from slash dot kube slash config"),
+        ("add it to Hark history list", "hark history", TermKind.COMMAND,
+         "add it to hark history list"),
+    ],
+)  # fmt: skip
+def test_derived_spoken_forms_match(heard: str, canonical: str, kind: TermKind, written: str):
+    """Only the derived spoken forms (none on the term): lexicon, numbers, prefixes."""
+    assert canonicalize(heard, [], [term(canonical, kind=kind)])[0] == written

@@ -11,6 +11,10 @@ expected to transcribe someone *saying* the term:
 - names: ``Qwen3-ASR`` -> ``qwen three asr``; ``RTX 3060`` -> ``rtx thirty sixty``,
   ``rtx three zero six zero``; ``Terminal.app`` -> ``terminal dot app``; ``NeMo`` -> ``nemo``
 - commands: ``hark doctor`` -> ``hark doctor``, ``harkdoctor`` (ASR sometimes glues words)
+- names not said as spelled (:data:`LEXICON`): ``hyprctl`` -> ``hyper control``,
+  ``SQLite`` -> ``sequel light``, ``read_wav`` -> ``read wave``
+- versions with "point": ``0.6b`` -> ``zero point six b``; a leading prefix is said too:
+  ``~/.kube/config`` -> ``tilde slash dot kube slash config`` (and ``kube slash config``)
 """
 
 from __future__ import annotations
@@ -48,11 +52,44 @@ _SEPARATORS: dict[str, tuple[str, ...]] = {
     "-": ("", "dash"),
     ".": ("dot",),
     "/": ("slash",),
-    ":": ("colon",),
+    ":": ("colon", ""),  # node:22-alpine is said "node twenty two alpine"
     "@": ("at",),
     "+": ("plus",),
     "#": ("hash",),
     "~": ("tilde",),
+    "$": ("dollar",),
+}
+# Developer names that are not said as spelled: written word (lower case) -> spoken forms,
+# as a recognizer writes them. Looked up for a whole alphanumeric run (``SQLite``) and for
+# each word of it (``ctl`` in ``hark ctl``).
+LEXICON: dict[str, tuple[str, ...]] = {
+    "hyprland": ("hyper land", "hyperland"),
+    "hyprctl": ("hyper control", "hyper c t l", "hyper cuttle"),
+    "ctl": ("control", "cuttle"),
+    "kubectl": ("kube control", "cube control", "kube c t l", "kube cuttle", "cube cuttle"),
+    "systemctl": ("system control", "system c t l"),
+    "journalctl": ("journal control", "journal c t l"),
+    "ghostty": ("ghosty", "ghost tea"),
+    "basedpyright": ("based pyright", "based pie right"),
+    "pyright": ("pie right",),
+    "pytest": ("py test", "pie test"),
+    "mypy": ("my pie",),
+    "numpy": ("num pie",),
+    "sqlite": ("sequel light", "sequel lite", "sql lite", "s q lite"),
+    "postgres": ("post gres", "postgress"),
+    "postgresql": ("postgres q l", "postgres sequel"),
+    "qwen": ("quen", "kwen"),
+    "wav": ("wave",),
+    "uv": ("u v",),
+    "uvx": ("u v x",),
+    "nvim": ("neovim", "neo vim"),
+    "tmux": ("t mux", "tee mux"),
+    "zsh": ("z shell", "zee shell"),
+    "nginx": ("engine x",),
+    "regex": ("reg ex",),
+    "src": ("source",),
+    "async": ("a sync",),
+    "omarchy": ("oh marchy",),
 }
 _FLAG_PREFIX: dict[str, tuple[str, ...]] = {
     "--": ("dash dash", "double dash"),
@@ -147,8 +184,8 @@ def _word_options(word: str, *, is_ext: bool, shouting: bool) -> tuple[str, ...]
     if word.isdigit():
         return number_forms(word)
     if _is_acronym(word, shouting=shouting):
-        return (low, " ".join(low))
-    return (low,)
+        return (low, " ".join(low), *LEXICON.get(low, ()))
+    return (low, *LEXICON.get(low, ()))
 
 
 def _word_kind(word: str) -> TermKind:
@@ -175,17 +212,35 @@ def _pieces(canonical: str, kind: TermKind) -> list[tuple[str, ...]]:
     # ALL_CAPS constants: the words are words (MAX_TERMS), not acronyms to spell
     shouting = body.upper() == body and len(split_words(body)) > 1
     pos = 0
+    prev_digit = False
     for m in _ALNUM_RE.finditer(body):
         sep = body[pos : m.start()]
         if sep and pieces:
             # names: hyphens are silent (Qwen3-ASR), dots are said (Terminal.app)
             silent = kind is TermKind.NAME and sep.strip("-_ ") == ""
-            pieces.append(("",) if silent else _separator_options(sep))
+            if sep == "." and prev_digit and m.group()[0].isdigit():
+                pieces.append(("point", "dot"))  # versions: 0.6, 3.12
+            else:
+                pieces.append(("",) if silent else _separator_options(sep))
+        elif sep:
+            pieces.append(_prefix_options(sep))
         is_ext = last_dot >= 0 and m.start() == last_dot + 1
-        words = [w.group() for w in _WORD_RE.finditer(m.group())]
-        pieces.extend(_word_options(w, is_ext=is_ext, shouting=shouting) for w in words)
+        run = m.group()
+        words = [w.group() for w in _WORD_RE.finditer(run)]
+        if len(words) > 1 and run.lower() in LEXICON:  # SQLite, not SQ + Lite
+            pieces.append((run.lower(), *LEXICON[run.lower()]))
+        else:
+            pieces.extend(_word_options(w, is_ext=is_ext, shouting=shouting) for w in words)
+        prev_digit = run[-1].isdigit()
         pos = m.end()
     return pieces
+
+
+def _prefix_options(sep: str) -> tuple[str, ...]:
+    """A leading ``~/.``, ``@/``, ``./``, ``/`` or ``$`` is said symbol by symbol (``tilde slash
+    dot``), or left out; leading underscores and dashes stay silent."""
+    said = [_SEPARATORS[c][0] for c in sep if c in _SEPARATORS and c not in "_-"]
+    return (" ".join(said), "") if said else ("",)
 
 
 def _separator_options(sep: str) -> tuple[str, ...]:
