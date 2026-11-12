@@ -763,5 +763,4 @@ class Session:
         timings.postprocess_ms = int((time.perf_counter() - t_post) * 1000)
         result.timings.CopyFrom(timings)
         result.flags.CopyFrom(flags)
-        result.privacy.CopyFrom(pb.PrivacyAck())  # nothing retained, logged or cached
         return result, warnings

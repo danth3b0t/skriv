@@ -476,7 +476,6 @@ class ParakeetMlxBackend(Backend):
                 case_insensitive=True,
                 midstream_update=pb.MIDSTREAM_UPDATE_FULL,  # incremental windows are redone
                 bias_with_n_best=False,
-                hit_scores=False,
                 boost_min=self.boost_min,
                 boost_max=self.boost_max,
             )

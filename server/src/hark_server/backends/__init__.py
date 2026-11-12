@@ -106,7 +106,7 @@ class Backend(abc.ABC):
         """Map normalized weights to the native scale. None => decoder gets no bias.
 
         Default: linear [0,1] -> [boost_min, boost_max], times strength
-        (ADR-001 #1). Backends with mechanism NONE/PROMPT override or never
+        (ADR-001 #1). Backends with mechanism NONE override or never
         reach here.
         """
         bias = self.capabilities().bias

@@ -86,7 +86,6 @@ class MockBackend(Backend):
                 case_insensitive=True,
                 midstream_update=pb.MIDSTREAM_UPDATE_FULL,
                 bias_with_n_best=False,
-                hit_scores=False,
                 boost_min=1.0,
                 boost_max=5.0,
             ),

@@ -20,9 +20,7 @@ Conventions (normative)
   side by side. Enforced in CI with `buf breaking`.
 - Required-ness is enforced by the receiver's validation code, not by
   proto (proto3 has no required). Violations => INVALID_ARGUMENT.
-- Audio default (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks
-  (640 samples). Opus stays optional and is advertised only after its
-  accuracy cost has been measured.
+- Audio (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks (640 samples).
 - Security (ADR-001 #9): mTLS with a private CA is the default; a bearer
   token is optional; plaintext is for loopback/UDS only. Tailscale is the
   network layer, not authentication.

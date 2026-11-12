@@ -79,7 +79,6 @@ async def test_streaming_happy_path_with_bias(serve: Serve):
     assert final.timings.audio_ms == 1200
     assert final.context_revision == 1
     assert final.utterance_id == "utt-1"
-    assert final.privacy == pb.PrivacyAck()
 
 
 async def test_start_sample_gap_is_zero_filled_flagged_and_acked(serve: Serve):

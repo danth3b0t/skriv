@@ -20,9 +20,7 @@ Conventions (normative)
   side by side. Enforced in CI with `buf breaking`.
 - Required-ness is enforced by the receiver's validation code, not by
   proto (proto3 has no required). Violations => INVALID_ARGUMENT.
-- Audio default (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks
-  (640 samples). Opus stays optional and is advertised only after its
-  accuracy cost has been measured.
+- Audio (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks (640 samples).
 - Security (ADR-001 #9): mTLS with a private CA is the default; a bearer
   token is optional; plaintext is for loopback/UDS only. Tailscale is the
   network layer, not authentication.
@@ -100,15 +98,11 @@ class _AudioEncodingEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_AudioEn
     DESCRIPTOR: _descriptor.EnumDescriptor
     AUDIO_ENCODING_UNSPECIFIED: _AudioEncoding.ValueType  # 0
     AUDIO_ENCODING_PCM_S16LE: _AudioEncoding.ValueType  # 1
-    AUDIO_ENCODING_OPUS: _AudioEncoding.ValueType  # 2
-    """raw packets, no Ogg container"""
 
 class AudioEncoding(_AudioEncoding, metaclass=_AudioEncodingEnumTypeWrapper): ...
 
 AUDIO_ENCODING_UNSPECIFIED: AudioEncoding.ValueType  # 0
 AUDIO_ENCODING_PCM_S16LE: AudioEncoding.ValueType  # 1
-AUDIO_ENCODING_OPUS: AudioEncoding.ValueType  # 2
-"""raw packets, no Ogg container"""
 Global___AudioEncoding: _TypeAlias = AudioEncoding  # noqa: Y015
 
 class _BiasMechanism:
@@ -121,10 +115,6 @@ class _BiasMechanismEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_BiasMec
     BIAS_MECHANISM_NONE: _BiasMechanism.ValueType  # 1
     BIAS_MECHANISM_DECODE_TIME_BOOST: _BiasMechanism.ValueType  # 2
     """shallow-fusion boosting (GPU-PB, Riva)"""
-    BIAS_MECHANISM_ACOUSTIC_RESCORE: _BiasMechanism.ValueType  # 3
-    """post-decode CTC spotting (FluidAudio)"""
-    BIAS_MECHANISM_PROMPT: _BiasMechanism.ValueType  # 4
-    """prompt/keyword conditioning (LLM-ASR)"""
 
 class BiasMechanism(_BiasMechanism, metaclass=_BiasMechanismEnumTypeWrapper): ...
 
@@ -132,10 +122,6 @@ BIAS_MECHANISM_UNSPECIFIED: BiasMechanism.ValueType  # 0
 BIAS_MECHANISM_NONE: BiasMechanism.ValueType  # 1
 BIAS_MECHANISM_DECODE_TIME_BOOST: BiasMechanism.ValueType  # 2
 """shallow-fusion boosting (GPU-PB, Riva)"""
-BIAS_MECHANISM_ACOUSTIC_RESCORE: BiasMechanism.ValueType  # 3
-"""post-decode CTC spotting (FluidAudio)"""
-BIAS_MECHANISM_PROMPT: BiasMechanism.ValueType  # 4
-"""prompt/keyword conditioning (LLM-ASR)"""
 Global___BiasMechanism: _TypeAlias = BiasMechanism  # noqa: Y015
 
 class _MidstreamUpdate:
@@ -149,8 +135,6 @@ class _MidstreamUpdateEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Midst
     """only SessionStart context is used"""
     MIDSTREAM_UPDATE_FULL: _MidstreamUpdate.ValueType  # 2
     """latest revision applies to all audio"""
-    MIDSTREAM_UPDATE_FORWARD_ONLY: _MidstreamUpdate.ValueType  # 3
-    """applies to audio decoded after update"""
 
 class MidstreamUpdate(_MidstreamUpdate, metaclass=_MidstreamUpdateEnumTypeWrapper): ...
 
@@ -159,8 +143,6 @@ MIDSTREAM_UPDATE_UNSUPPORTED: MidstreamUpdate.ValueType  # 1
 """only SessionStart context is used"""
 MIDSTREAM_UPDATE_FULL: MidstreamUpdate.ValueType  # 2
 """latest revision applies to all audio"""
-MIDSTREAM_UPDATE_FORWARD_ONLY: MidstreamUpdate.ValueType  # 3
-"""applies to audio decoded after update"""
 Global___MidstreamUpdate: _TypeAlias = MidstreamUpdate  # noqa: Y015
 
 class _ScoreKind:
@@ -170,24 +152,12 @@ class _ScoreKind:
 class _ScoreKindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_ScoreKind.ValueType], _builtins.type):
     DESCRIPTOR: _descriptor.EnumDescriptor
     SCORE_KIND_UNSPECIFIED: _ScoreKind.ValueType  # 0
-    SCORE_KIND_LOG_PROB: _ScoreKind.ValueType  # 1
-    """total log-probability (natural log)"""
-    SCORE_KIND_LOG_PROB_PER_TOKEN: _ScoreKind.ValueType  # 2
-    """length-normalized"""
-    SCORE_KIND_POSTERIOR: _ScoreKind.ValueType  # 3
-    """[0, 1]"""
     SCORE_KIND_RANK_ONLY: _ScoreKind.ValueType  # 4
     """order meaningful, values are not"""
 
 class ScoreKind(_ScoreKind, metaclass=_ScoreKindEnumTypeWrapper): ...
 
 SCORE_KIND_UNSPECIFIED: ScoreKind.ValueType  # 0
-SCORE_KIND_LOG_PROB: ScoreKind.ValueType  # 1
-"""total log-probability (natural log)"""
-SCORE_KIND_LOG_PROB_PER_TOKEN: ScoreKind.ValueType  # 2
-"""length-normalized"""
-SCORE_KIND_POSTERIOR: ScoreKind.ValueType  # 3
-"""[0, 1]"""
 SCORE_KIND_RANK_ONLY: ScoreKind.ValueType  # 4
 """order meaningful, values are not"""
 Global___ScoreKind: _TypeAlias = ScoreKind  # noqa: Y015
@@ -202,10 +172,6 @@ class _TimestampSourceEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Times
     TIMESTAMP_SOURCE_NONE: _TimestampSource.ValueType  # 1
     TIMESTAMP_SOURCE_DECODER_EMISSION: _TimestampSource.ValueType  # 2
     """frame of emission (TDT/RNNT/CTC)"""
-    TIMESTAMP_SOURCE_FORCED_ALIGNMENT: _TimestampSource.ValueType  # 3
-    """separate aligner pass"""
-    TIMESTAMP_SOURCE_PROVIDER: _TimestampSource.ValueType  # 4
-    """opaque third-party"""
 
 class TimestampSource(_TimestampSource, metaclass=_TimestampSourceEnumTypeWrapper): ...
 
@@ -213,10 +179,6 @@ TIMESTAMP_SOURCE_UNSPECIFIED: TimestampSource.ValueType  # 0
 TIMESTAMP_SOURCE_NONE: TimestampSource.ValueType  # 1
 TIMESTAMP_SOURCE_DECODER_EMISSION: TimestampSource.ValueType  # 2
 """frame of emission (TDT/RNNT/CTC)"""
-TIMESTAMP_SOURCE_FORCED_ALIGNMENT: TimestampSource.ValueType  # 3
-"""separate aligner pass"""
-TIMESTAMP_SOURCE_PROVIDER: TimestampSource.ValueType  # 4
-"""opaque third-party"""
 Global___TimestampSource: _TypeAlias = TimestampSource  # noqa: Y015
 
 class _AnchorCost:
@@ -344,8 +306,6 @@ class _HypothesisOriginEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Hypo
     """decode without any context"""
     HYPOTHESIS_ORIGIN_BEAM: _HypothesisOrigin.ValueType  # 3
     """additional beam entry"""
-    HYPOTHESIS_ORIGIN_RESCORED: _HypothesisOrigin.ValueType  # 4
-    """base text modified by acoustic rescoring"""
 
 class HypothesisOrigin(_HypothesisOrigin, metaclass=_HypothesisOriginEnumTypeWrapper): ...
 
@@ -356,8 +316,6 @@ HYPOTHESIS_ORIGIN_UNBIASED: HypothesisOrigin.ValueType  # 2
 """decode without any context"""
 HYPOTHESIS_ORIGIN_BEAM: HypothesisOrigin.ValueType  # 3
 """additional beam entry"""
-HYPOTHESIS_ORIGIN_RESCORED: HypothesisOrigin.ValueType  # 4
-"""base text modified by acoustic rescoring"""
 Global___HypothesisOrigin: _TypeAlias = HypothesisOrigin  # noqa: Y015
 
 class _ContextSource:
@@ -375,8 +333,6 @@ class _ContextSourceEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_Context
     CONTEXT_SOURCE_TERMINAL_TEXT: _ContextSource.ValueType  # 6
     CONTEXT_SOURCE_GIT_REPO: _ContextSource.ValueType  # 7
     CONTEXT_SOURCE_AGENT_SESSION: _ContextSource.ValueType  # 8
-    CONTEXT_SOURCE_OCR: _ContextSource.ValueType  # 9
-    CONTEXT_SOURCE_APP_PROFILE: _ContextSource.ValueType  # 10
 
 class ContextSource(_ContextSource, metaclass=_ContextSourceEnumTypeWrapper): ...
 
@@ -389,8 +345,6 @@ CONTEXT_SOURCE_WINDOW_TITLE: ContextSource.ValueType  # 5
 CONTEXT_SOURCE_TERMINAL_TEXT: ContextSource.ValueType  # 6
 CONTEXT_SOURCE_GIT_REPO: ContextSource.ValueType  # 7
 CONTEXT_SOURCE_AGENT_SESSION: ContextSource.ValueType  # 8
-CONTEXT_SOURCE_OCR: ContextSource.ValueType  # 9
-CONTEXT_SOURCE_APP_PROFILE: ContextSource.ValueType  # 10
 Global___ContextSource: _TypeAlias = ContextSource  # noqa: Y015
 
 class _TermKind:
@@ -401,11 +355,9 @@ class _TermKindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_TermKind.Val
     DESCRIPTOR: _descriptor.EnumDescriptor
     TERM_KIND_UNSPECIFIED: _TermKind.ValueType  # 0
     TERM_KIND_WORD: _TermKind.ValueType  # 1
-    TERM_KIND_PERSON_NAME: _TermKind.ValueType  # 2
     TERM_KIND_PRODUCT: _TermKind.ValueType  # 3
     TERM_KIND_IDENTIFIER: _TermKind.ValueType  # 4
     """code symbol: snake_case, camelCase, ..."""
-    TERM_KIND_ACRONYM: _TermKind.ValueType  # 5
     TERM_KIND_PATH: _TermKind.ValueType  # 6
     TERM_KIND_COMMAND: _TermKind.ValueType  # 7
     """CLI tool / subcommand"""
@@ -414,11 +366,9 @@ class TermKind(_TermKind, metaclass=_TermKindEnumTypeWrapper): ...
 
 TERM_KIND_UNSPECIFIED: TermKind.ValueType  # 0
 TERM_KIND_WORD: TermKind.ValueType  # 1
-TERM_KIND_PERSON_NAME: TermKind.ValueType  # 2
 TERM_KIND_PRODUCT: TermKind.ValueType  # 3
 TERM_KIND_IDENTIFIER: TermKind.ValueType  # 4
 """code symbol: snake_case, camelCase, ..."""
-TERM_KIND_ACRONYM: TermKind.ValueType  # 5
 TERM_KIND_PATH: TermKind.ValueType  # 6
 TERM_KIND_COMMAND: TermKind.ValueType  # 7
 """CLI tool / subcommand"""
@@ -433,20 +383,12 @@ class _AliasKindEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_AliasKind.V
     ALIAS_KIND_UNSPECIFIED: _AliasKind.ValueType  # 0
     ALIAS_KIND_SPOKEN_FORM: _AliasKind.ValueType  # 1
     """how it is said: "pie torch" """
-    ALIAS_KIND_SPELLED: _AliasKind.ValueType  # 2
-    """letter by letter: "k u b e c t l" """
-    ALIAS_KIND_MISRECOGNITION: _AliasKind.ValueType  # 3
-    """learned ASR error: "pie charm" -> PyCharm"""
 
 class AliasKind(_AliasKind, metaclass=_AliasKindEnumTypeWrapper): ...
 
 ALIAS_KIND_UNSPECIFIED: AliasKind.ValueType  # 0
 ALIAS_KIND_SPOKEN_FORM: AliasKind.ValueType  # 1
 """how it is said: "pie torch" """
-ALIAS_KIND_SPELLED: AliasKind.ValueType  # 2
-"""letter by letter: "k u b e c t l" """
-ALIAS_KIND_MISRECOGNITION: AliasKind.ValueType  # 3
-"""learned ASR error: "pie charm" -> PyCharm"""
 Global___AliasKind: _TypeAlias = AliasKind  # noqa: Y015
 
 class _EndReason:
@@ -457,17 +399,13 @@ class _EndReasonEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_EndReason.V
     DESCRIPTOR: _descriptor.EnumDescriptor
     END_REASON_UNSPECIFIED: _EndReason.ValueType  # 0
     END_REASON_KEY_UP: _EndReason.ValueType  # 1
-    END_REASON_VAD_ENDPOINT: _EndReason.ValueType  # 2
     END_REASON_MAX_DURATION: _EndReason.ValueType  # 3
-    END_REASON_TOGGLE: _EndReason.ValueType  # 4
 
 class EndReason(_EndReason, metaclass=_EndReasonEnumTypeWrapper): ...
 
 END_REASON_UNSPECIFIED: EndReason.ValueType  # 0
 END_REASON_KEY_UP: EndReason.ValueType  # 1
-END_REASON_VAD_ENDPOINT: EndReason.ValueType  # 2
 END_REASON_MAX_DURATION: EndReason.ValueType  # 3
-END_REASON_TOGGLE: EndReason.ValueType  # 4
 Global___EndReason: _TypeAlias = EndReason  # noqa: Y015
 
 class _CancelReason:
@@ -479,16 +417,12 @@ class _CancelReasonEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_CancelRe
     CANCEL_REASON_UNSPECIFIED: _CancelReason.ValueType  # 0
     CANCEL_REASON_USER_ABORT: _CancelReason.ValueType  # 1
     CANCEL_REASON_TOO_SHORT: _CancelReason.ValueType  # 2
-    CANCEL_REASON_SWITCHED_PROVIDER: _CancelReason.ValueType  # 3
-    CANCEL_REASON_SHUTDOWN: _CancelReason.ValueType  # 4
 
 class CancelReason(_CancelReason, metaclass=_CancelReasonEnumTypeWrapper): ...
 
 CANCEL_REASON_UNSPECIFIED: CancelReason.ValueType  # 0
 CANCEL_REASON_USER_ABORT: CancelReason.ValueType  # 1
 CANCEL_REASON_TOO_SHORT: CancelReason.ValueType  # 2
-CANCEL_REASON_SWITCHED_PROVIDER: CancelReason.ValueType  # 3
-CANCEL_REASON_SHUTDOWN: CancelReason.ValueType  # 4
 Global___CancelReason: _TypeAlias = CancelReason  # noqa: Y015
 
 class _BiasHitDecision:
@@ -502,8 +436,6 @@ class _BiasHitDecisionEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_BiasH
     """term in n_best[0], not in anchor"""
     BIAS_HIT_DECISION_ALREADY_IN_ANCHOR: _BiasHitDecision.ValueType  # 2
     """term present without bias too"""
-    BIAS_HIT_DECISION_REJECTED: _BiasHitDecision.ValueType  # 3
-    """candidate considered, not applied"""
 
 class BiasHitDecision(_BiasHitDecision, metaclass=_BiasHitDecisionEnumTypeWrapper): ...
 
@@ -512,8 +444,6 @@ BIAS_HIT_DECISION_APPLIED: BiasHitDecision.ValueType  # 1
 """term in n_best[0], not in anchor"""
 BIAS_HIT_DECISION_ALREADY_IN_ANCHOR: BiasHitDecision.ValueType  # 2
 """term present without bias too"""
-BIAS_HIT_DECISION_REJECTED: BiasHitDecision.ValueType  # 3
-"""candidate considered, not applied"""
 Global___BiasHitDecision: _TypeAlias = BiasHitDecision  # noqa: Y015
 
 class _WarningCode:
@@ -525,24 +455,20 @@ class _WarningCodeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_WarningCo
     WARNING_CODE_UNSPECIFIED: _WarningCode.ValueType  # 0
     WARNING_CODE_BIAS_TERMS_TRUNCATED: _WarningCode.ValueType  # 1
     WARNING_CODE_ALIASES_DROPPED: _WarningCode.ValueType  # 2
-    WARNING_CODE_FREE_TEXT_TRUNCATED: _WarningCode.ValueType  # 3
     WARNING_CODE_FEATURE_DEGRADED: _WarningCode.ValueType  # 4
     WARNING_CODE_AUDIO_GAP: _WarningCode.ValueType  # 5
     WARNING_CODE_LANGUAGE_FALLBACK: _WarningCode.ValueType  # 6
     WARNING_CODE_CONTEXT_IGNORED: _WarningCode.ValueType  # 7
-    WARNING_CODE_FINALIZE_BUDGET_TIGHT: _WarningCode.ValueType  # 8
 
 class WarningCode(_WarningCode, metaclass=_WarningCodeEnumTypeWrapper): ...
 
 WARNING_CODE_UNSPECIFIED: WarningCode.ValueType  # 0
 WARNING_CODE_BIAS_TERMS_TRUNCATED: WarningCode.ValueType  # 1
 WARNING_CODE_ALIASES_DROPPED: WarningCode.ValueType  # 2
-WARNING_CODE_FREE_TEXT_TRUNCATED: WarningCode.ValueType  # 3
 WARNING_CODE_FEATURE_DEGRADED: WarningCode.ValueType  # 4
 WARNING_CODE_AUDIO_GAP: WarningCode.ValueType  # 5
 WARNING_CODE_LANGUAGE_FALLBACK: WarningCode.ValueType  # 6
 WARNING_CODE_CONTEXT_IGNORED: WarningCode.ValueType  # 7
-WARNING_CODE_FINALIZE_BUDGET_TIGHT: WarningCode.ValueType  # 8
 Global___WarningCode: _TypeAlias = WarningCode  # noqa: Y015
 
 class _ErrorCode:
@@ -570,10 +496,6 @@ class _ErrorCodeEnumTypeWrapper(_enum_type_wrapper._EnumTypeWrapper[_ErrorCode.V
     """OUT_OF_RANGE"""
     ERROR_CODE_BACKEND_FAILURE: _ErrorCode.ValueType  # 9
     """INTERNAL, retryable"""
-    ERROR_CODE_SUPERSEDED: _ErrorCode.ValueType  # 10
-    """ABORTED: newer attempt arrived"""
-    ERROR_CODE_UNAUTHENTICATED: _ErrorCode.ValueType  # 11
-    """UNAUTHENTICATED"""
     ERROR_CODE_PRIVACY_UNSATISFIABLE: _ErrorCode.ValueType  # 12
     """FAILED_PRECONDITION"""
     ERROR_CODE_CANCELLED: _ErrorCode.ValueType  # 13
@@ -600,10 +522,6 @@ ERROR_CODE_AUDIO_TOO_LONG: ErrorCode.ValueType  # 8
 """OUT_OF_RANGE"""
 ERROR_CODE_BACKEND_FAILURE: ErrorCode.ValueType  # 9
 """INTERNAL, retryable"""
-ERROR_CODE_SUPERSEDED: ErrorCode.ValueType  # 10
-"""ABORTED: newer attempt arrived"""
-ERROR_CODE_UNAUTHENTICATED: ErrorCode.ValueType  # 11
-"""UNAUTHENTICATED"""
 ERROR_CODE_PRIVACY_UNSATISFIABLE: ErrorCode.ValueType  # 12
 """FAILED_PRECONDITION"""
 ERROR_CODE_CANCELLED: ErrorCode.ValueType  # 13
@@ -751,20 +669,16 @@ class GetCapabilitiesRequest(_message.Message):
     DESCRIPTOR: _descriptor.Descriptor
 
     CLIENT_VERSION_FIELD_NUMBER: _builtins.int
-    CLIENT_PROTOCOL_MINOR_FIELD_NUMBER: _builtins.int
     client_version: _builtins.str
     """e.g. "hark/0.3.1 (linux-x86_64)" """
-    client_protocol_minor: _builtins.int
-    """highest hark.v1 minor the client knows"""
     def __init__(
         self,
         *,
         client_version: _builtins.str = ...,
-        client_protocol_minor: _builtins.int = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["client_protocol_minor", b"client_protocol_minor", "client_version", b"client_version"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["client_version", b"client_version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -825,9 +739,7 @@ class Capabilities(_message.Message):
     @_builtins.property
     def features(self) -> _containers.RepeatedScalarFieldContainer[_builtins.str]:
         """Small namespaced boolean features. Unknown strings MUST be ignored.
-        Defined in v1.0: "hark.opus", "hark.partials", "hark.replay_cache",
-        "hark.midstream_context", "hark.cleanup",
-        "hark.eager_end".
+        Defined: "hark.midstream_context", "hark.cleanup", "hark.eager_end".
         """
 
     @_builtins.property
@@ -1070,21 +982,17 @@ class BiasCapabilities(_message.Message):
     MAX_TERMS_FIELD_NUMBER: _builtins.int
     MAX_ALIASES_PER_TERM_FIELD_NUMBER: _builtins.int
     MAX_TERM_BYTES_FIELD_NUMBER: _builtins.int
-    MAX_TOTAL_TOKENS_FIELD_NUMBER: _builtins.int
     PER_TERM_WEIGHT_FIELD_NUMBER: _builtins.int
     ALIASES_SUPPORTED_FIELD_NUMBER: _builtins.int
     CASE_INSENSITIVE_FIELD_NUMBER: _builtins.int
     MIDSTREAM_UPDATE_FIELD_NUMBER: _builtins.int
     BIAS_WITH_N_BEST_FIELD_NUMBER: _builtins.int
-    HIT_SCORES_FIELD_NUMBER: _builtins.int
     BOOST_MIN_FIELD_NUMBER: _builtins.int
     BOOST_MAX_FIELD_NUMBER: _builtins.int
     mechanism: Global___BiasMechanism.ValueType
     max_terms: _builtins.int
     max_aliases_per_term: _builtins.int
     max_term_bytes: _builtins.int
-    max_total_tokens: _builtins.int
-    """backend token budget, 0 = n/a"""
     per_term_weight: _builtins.bool
     aliases_supported: _builtins.bool
     """aliases influence recognition/matching"""
@@ -1093,14 +1001,11 @@ class BiasCapabilities(_message.Message):
     midstream_update: Global___MidstreamUpdate.ValueType
     bias_with_n_best: _builtins.bool
     """N-best comes from the biased decode"""
-    hit_scores: _builtins.bool
-    """BiasHit.term_score/anchor_score populated"""
     boost_min: _builtins.float
     """Native boost scale of this backend (e.g. Riva SpeechContext.boost, GPU-PB
     per-phrase alpha). BiasTerm.weight w in [0,1] maps by default to
     boost_min + w * (boost_max - boost_min); the applied value per term is
-    reported in AppliedConfig.term_boosts. Both 0 when mechanism has no
-    numeric boost (NONE, PROMPT).
+    reported in AppliedConfig.term_boosts. Both 0 for mechanism NONE.
     """
     boost_max: _builtins.float
     def __init__(
@@ -1110,19 +1015,17 @@ class BiasCapabilities(_message.Message):
         max_terms: _builtins.int = ...,
         max_aliases_per_term: _builtins.int = ...,
         max_term_bytes: _builtins.int = ...,
-        max_total_tokens: _builtins.int = ...,
         per_term_weight: _builtins.bool = ...,
         aliases_supported: _builtins.bool = ...,
         case_insensitive: _builtins.bool = ...,
         midstream_update: Global___MidstreamUpdate.ValueType = ...,
         bias_with_n_best: _builtins.bool = ...,
-        hit_scores: _builtins.bool = ...,
         boost_min: _builtins.float = ...,
         boost_max: _builtins.float = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["aliases_supported", b"aliases_supported", "bias_with_n_best", b"bias_with_n_best", "boost_max", b"boost_max", "boost_min", b"boost_min", "case_insensitive", b"case_insensitive", "hit_scores", b"hit_scores", "max_aliases_per_term", b"max_aliases_per_term", "max_term_bytes", b"max_term_bytes", "max_terms", b"max_terms", "max_total_tokens", b"max_total_tokens", "mechanism", b"mechanism", "midstream_update", b"midstream_update", "per_term_weight", b"per_term_weight"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["aliases_supported", b"aliases_supported", "bias_with_n_best", b"bias_with_n_best", "boost_max", b"boost_max", "boost_min", b"boost_min", "case_insensitive", b"case_insensitive", "max_aliases_per_term", b"max_aliases_per_term", "max_term_bytes", b"max_term_bytes", "max_terms", b"max_terms", "mechanism", b"mechanism", "midstream_update", b"midstream_update", "per_term_weight", b"per_term_weight"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1135,23 +1038,19 @@ class FreeTextCapabilities(_message.Message):
     DESCRIPTION_FIELD_NUMBER: _builtins.int
     PRECEDING_TEXT_FIELD_NUMBER: _builtins.int
     MAX_BYTES_FIELD_NUMBER: _builtins.int
-    ECHO_RISK_FIELD_NUMBER: _builtins.int
     description: _builtins.bool
     preceding_text: _builtins.bool
     max_bytes: _builtins.int
-    echo_risk: _builtins.bool
-    """model may copy context into output (e.g. Qwen3-ASR)"""
     def __init__(
         self,
         *,
         description: _builtins.bool = ...,
         preceding_text: _builtins.bool = ...,
         max_bytes: _builtins.int = ...,
-        echo_risk: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["description", b"description", "echo_risk", b"echo_risk", "max_bytes", b"max_bytes", "preceding_text", b"preceding_text"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["description", b"description", "max_bytes", b"max_bytes", "preceding_text", b"preceding_text"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1216,23 +1115,19 @@ class PerfEstimate(_message.Message):
 
     RTFX_FIELD_NUMBER: _builtins.int
     FINALIZE_MS_10S_FIELD_NUMBER: _builtins.int
-    BIAS_COMPILE_MS_FIELD_NUMBER: _builtins.int
     rtfx: _builtins.float
     """audio seconds per wall second, one stream"""
     finalize_ms_10s: _builtins.int
     """EndOfAudio -> FinalResult, 10 s audio, p50"""
-    bias_compile_ms: _builtins.int
-    """cold compile of a 100-term list, p50"""
     def __init__(
         self,
         *,
         rtfx: _builtins.float = ...,
         finalize_ms_10s: _builtins.int = ...,
-        bias_compile_ms: _builtins.int = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["bias_compile_ms", b"bias_compile_ms", "finalize_ms_10s", b"finalize_ms_10s", "rtfx", b"rtfx"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["finalize_ms_10s", b"finalize_ms_10s", "rtfx", b"rtfx"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1316,7 +1211,6 @@ class SessionStart(_message.Message):
         def WhichOneof(self, oneof_group: _Never) -> None: ...
 
     UTTERANCE_ID_FIELD_NUMBER: _builtins.int
-    ATTEMPT_FIELD_NUMBER: _builtins.int
     MODEL_ID_FIELD_NUMBER: _builtins.int
     LANGUAGES_FIELD_NUMBER: _builtins.int
     AUDIO_FORMAT_FIELD_NUMBER: _builtins.int
@@ -1329,8 +1223,6 @@ class SessionStart(_message.Message):
     BACKEND_PARAMS_FIELD_NUMBER: _builtins.int
     utterance_id: _builtins.str
     """client UUIDv7; idempotency/correlation key"""
-    attempt: _builtins.int
-    """0 first try; +1 per retry of same utterance"""
     model_id: _builtins.str
     """empty => server default model"""
     @_builtins.property
@@ -1369,7 +1261,6 @@ class SessionStart(_message.Message):
         self,
         *,
         utterance_id: _builtins.str = ...,
-        attempt: _builtins.int = ...,
         model_id: _builtins.str = ...,
         languages: _abc.Iterable[_builtins.str] | None = ...,
         audio_format: Global___AudioFormat | None = ...,
@@ -1383,7 +1274,7 @@ class SessionStart(_message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["audio_format", b"audio_format", "client", b"client", "context", b"context", "deadlines", b"deadlines", "options", b"options", "privacy", b"privacy"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["attempt", b"attempt", "audio_format", b"audio_format", "backend_params", b"backend_params", "client", b"client", "context", b"context", "deadlines", b"deadlines", "languages", b"languages", "model_id", b"model_id", "options", b"options", "privacy", b"privacy", "required_features", b"required_features", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["audio_format", b"audio_format", "backend_params", b"backend_params", "client", b"client", "context", b"context", "deadlines", b"deadlines", "languages", b"languages", "model_id", b"model_id", "options", b"options", "privacy", b"privacy", "required_features", b"required_features", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1404,7 +1295,6 @@ class AudioFormat(_message.Message):
     PREROLL_MS_FIELD_NUMBER: _builtins.int
     encoding: Global___AudioEncoding.ValueType
     sample_rate_hz: _builtins.int
-    """PCM: sample rate. OPUS: decode rate (16000)"""
     channels: _builtins.int
     """MUST be 1 (or 0 => 1) in v1"""
     preroll_ms: _builtins.int
@@ -1612,10 +1502,9 @@ class PrivacyFlags(_message.Message):
     ALLOW_CONTEXT_LOGGING_FIELD_NUMBER: _builtins.int
     ALLOW_EVAL_CAPTURE_FIELD_NUMBER: _builtins.int
     ALLOW_REPLAY_CACHE_FIELD_NUMBER: _builtins.int
-    MINIMAL_METADATA_FIELD_NUMBER: _builtins.int
     allow_audio_retention: _builtins.bool
     """All false (the default) == most private. A server MUST NOT do anything
-    not allowed here and MUST report what it did in PrivacyAck.
+    not allowed here.
     Rejection rule (ADR-001 #7): if an allow_* flag is true and the server
     cannot act on it (not implemented or disabled; see
     Capabilities.privacy), or if the server would retain/log something
@@ -1634,8 +1523,6 @@ class PrivacyFlags(_message.Message):
     """write a dataset record"""
     allow_replay_cache: _builtins.bool
     """keep FinalResult in RAM for TTL"""
-    minimal_metadata: _builtins.bool
-    """client stripped provenance/description"""
     def __init__(
         self,
         *,
@@ -1644,11 +1531,10 @@ class PrivacyFlags(_message.Message):
         allow_context_logging: _builtins.bool = ...,
         allow_eval_capture: _builtins.bool = ...,
         allow_replay_cache: _builtins.bool = ...,
-        minimal_metadata: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["allow_audio_retention", b"allow_audio_retention", "allow_context_logging", b"allow_context_logging", "allow_eval_capture", b"allow_eval_capture", "allow_replay_cache", b"allow_replay_cache", "allow_transcript_retention", b"allow_transcript_retention", "minimal_metadata", b"minimal_metadata"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["allow_audio_retention", b"allow_audio_retention", "allow_context_logging", b"allow_context_logging", "allow_eval_capture", b"allow_eval_capture", "allow_replay_cache", b"allow_replay_cache", "allow_transcript_retention", b"allow_transcript_retention"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1659,40 +1545,32 @@ class ResultOptions(_message.Message):
     DESCRIPTOR: _descriptor.Descriptor
 
     PARTIALS_FIELD_NUMBER: _builtins.int
-    PARTIAL_INTERVAL_MS_FIELD_NUMBER: _builtins.int
     N_BEST_FIELD_NUMBER: _builtins.int
     WORD_TIMESTAMPS_FIELD_NUMBER: _builtins.int
     WORD_CONFIDENCE_FIELD_NUMBER: _builtins.int
     ANCHOR_FIELD_NUMBER: _builtins.int
-    BIAS_DIAGNOSTICS_FIELD_NUMBER: _builtins.int
     N_BEST_WORDS_FIELD_NUMBER: _builtins.int
     partials: _builtins.bool
-    partial_interval_ms: _builtins.int
-    """0 => server default"""
     n_best: _builtins.int
     """0 or 1 => best only"""
     word_timestamps: _builtins.bool
     word_confidence: _builtins.bool
     anchor: Global___AnchorMode.ValueType
-    bias_diagnostics: _builtins.bool
-    """also report rejected candidates"""
     n_best_words: _builtins.bool
     """words for every N-best entry, not only [0]"""
     def __init__(
         self,
         *,
         partials: _builtins.bool = ...,
-        partial_interval_ms: _builtins.int = ...,
         n_best: _builtins.int = ...,
         word_timestamps: _builtins.bool = ...,
         word_confidence: _builtins.bool = ...,
         anchor: Global___AnchorMode.ValueType = ...,
-        bias_diagnostics: _builtins.bool = ...,
         n_best_words: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "bias_diagnostics", b"bias_diagnostics", "n_best", b"n_best", "n_best_words", b"n_best_words", "partial_interval_ms", b"partial_interval_ms", "partials", b"partials", "word_confidence", b"word_confidence", "word_timestamps", b"word_timestamps"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "n_best", b"n_best", "n_best_words", b"n_best_words", "partials", b"partials", "word_confidence", b"word_confidence", "word_timestamps", b"word_timestamps"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1730,19 +1608,15 @@ class ClientInfo(_message.Message):
     DESCRIPTOR: _descriptor.Descriptor
 
     CLIENT_VERSION_FIELD_NUMBER: _builtins.int
-    DEVICE_ID_FIELD_NUMBER: _builtins.int
     client_version: _builtins.str
-    device_id: _builtins.str
-    """random per install, never hardware-derived"""
     def __init__(
         self,
         *,
         client_version: _builtins.str = ...,
-        device_id: _builtins.str = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["client_version", b"client_version", "device_id", b"device_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["client_version", b"client_version"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1768,17 +1642,14 @@ class AudioChunk(_message.Message):
     SEQ_FIELD_NUMBER: _builtins.int
     START_SAMPLE_FIELD_NUMBER: _builtins.int
     NUM_SAMPLES_FIELD_NUMBER: _builtins.int
-    VAD_SPEECH_PROB_FIELD_NUMBER: _builtins.int
     data: _builtins.bytes
-    """PCM_S16LE: samples; OPUS: exactly one packet"""
+    """PCM_S16LE samples"""
     seq: _builtins.int
     """0, 1, 2, ... strictly increasing"""
     start_sample: _builtins.int
     """index of first sample at AudioFormat rate"""
     num_samples: _builtins.int
     """samples this chunk represents (decoded, mono)"""
-    vad_speech_prob: _builtins.float
-    """client Silero VAD, max over chunk"""
     def __init__(
         self,
         *,
@@ -1786,15 +1657,12 @@ class AudioChunk(_message.Message):
         seq: _builtins.int = ...,
         start_sample: _builtins.int = ...,
         num_samples: _builtins.int = ...,
-        vad_speech_prob: _builtins.float | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_vad_speech_prob", b"_vad_speech_prob", "vad_speech_prob", b"vad_speech_prob"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_vad_speech_prob", b"_vad_speech_prob", "data", b"data", "num_samples", b"num_samples", "seq", b"seq", "start_sample", b"start_sample", "vad_speech_prob", b"vad_speech_prob"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["data", b"data", "num_samples", b"num_samples", "seq", b"seq", "start_sample", b"start_sample"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType__vad_speech_prob: _TypeAlias = _typing.Literal["vad_speech_prob"]  # noqa: Y015
-    _WhichOneofArgType__vad_speech_prob: _TypeAlias = _typing.Literal["_vad_speech_prob", b"_vad_speech_prob"]  # noqa: Y015
-    def WhichOneof(self, oneof_group: _WhichOneofArgType__vad_speech_prob) -> _WhichOneofReturnType__vad_speech_prob | None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___AudioChunk: _TypeAlias = AudioChunk  # noqa: Y015
 
@@ -1866,22 +1734,18 @@ class EagerEnd(_message.Message):
     DESCRIPTOR: _descriptor.Descriptor
 
     TOTAL_SAMPLES_FIELD_NUMBER: _builtins.int
-    SPEECH_END_SAMPLE_FIELD_NUMBER: _builtins.int
     total_samples: _builtins.int
     """Samples sent before this message (== start_sample + num_samples of the
     last chunk). A mismatch makes the server ignore this hint.
     """
-    speech_end_sample: _builtins.int
-    """Client VAD's end of speech (informational, <= total_samples)."""
     def __init__(
         self,
         *,
         total_samples: _builtins.int = ...,
-        speech_end_sample: _builtins.int = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["speech_end_sample", b"speech_end_sample", "total_samples", b"total_samples"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["total_samples", b"total_samples"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -1916,7 +1780,6 @@ class TranscribeResponse(_message.Message):
     DESCRIPTOR: _descriptor.Descriptor
 
     ACCEPTED_FIELD_NUMBER: _builtins.int
-    PARTIAL_FIELD_NUMBER: _builtins.int
     FINAL_RESULT_FIELD_NUMBER: _builtins.int
     STATUS_FIELD_NUMBER: _builtins.int
     WARNING_FIELD_NUMBER: _builtins.int
@@ -1925,8 +1788,6 @@ class TranscribeResponse(_message.Message):
     def accepted(self) -> Global___SessionAccepted:
         """exactly once, first"""
 
-    @_builtins.property
-    def partial(self) -> Global___PartialResult: ...
     @_builtins.property
     def final_result(self) -> Global___FinalResult:
         """terminal (success)"""
@@ -1943,17 +1804,16 @@ class TranscribeResponse(_message.Message):
         self,
         *,
         accepted: Global___SessionAccepted | None = ...,
-        partial: Global___PartialResult | None = ...,
         final_result: Global___FinalResult | None = ...,
         status: Global___StreamStatus | None = ...,
         warning: Global___ServerWarning | None = ...,
         session_ended: Global___SessionEnded | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result", "msg", b"msg", "partial", b"partial", "session_ended", b"session_ended", "status", b"status", "warning", b"warning"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result", "msg", b"msg", "session_ended", b"session_ended", "status", b"status", "warning", b"warning"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result", "msg", b"msg", "partial", b"partial", "session_ended", b"session_ended", "status", b"status", "warning", b"warning"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["accepted", b"accepted", "final_result", b"final_result", "msg", b"msg", "session_ended", b"session_ended", "status", b"status", "warning", b"warning"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType_msg: _TypeAlias = _typing.Literal["accepted", "partial", "final_result", "status", "warning", "session_ended"]  # noqa: Y015
+    _WhichOneofReturnType_msg: _TypeAlias = _typing.Literal["accepted", "final_result", "status", "warning", "session_ended"]  # noqa: Y015
     _WhichOneofArgType_msg: _TypeAlias = _typing.Literal["msg", b"msg"]  # noqa: Y015
     def WhichOneof(self, oneof_group: _WhichOneofArgType_msg) -> _WhichOneofReturnType_msg | None: ...
 
@@ -2001,15 +1861,10 @@ class SessionAccepted(_message.Message):
     APPLIED_FIELD_NUMBER: _builtins.int
     SERVER_TIME_UNIX_MS_FIELD_NUMBER: _builtins.int
     CAPABILITIES_ETAG_FIELD_NUMBER: _builtins.int
-    REPLAYED_FIELD_NUMBER: _builtins.int
     session_id: _builtins.str
     model_id: _builtins.str
     server_time_unix_ms: _builtins.int
     capabilities_etag: _builtins.str
-    replayed: _builtins.bool
-    """A cached FinalResult for (utterance_id) follows immediately; the client
-    SHOULD stop sending audio and send end_of_audio.
-    """
     @_builtins.property
     def applied(self) -> Global___AppliedConfig: ...
     def __init__(
@@ -2020,11 +1875,10 @@ class SessionAccepted(_message.Message):
         applied: Global___AppliedConfig | None = ...,
         server_time_unix_ms: _builtins.int = ...,
         capabilities_etag: _builtins.str = ...,
-        replayed: _builtins.bool = ...,
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _typing.Literal["applied", b"applied"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["applied", b"applied", "capabilities_etag", b"capabilities_etag", "model_id", b"model_id", "replayed", b"replayed", "server_time_unix_ms", b"server_time_unix_ms", "session_id", b"session_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["applied", b"applied", "capabilities_etag", b"capabilities_etag", "model_id", b"model_id", "server_time_unix_ms", b"server_time_unix_ms", "session_id", b"session_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -2105,7 +1959,7 @@ class AppliedConfig(_message.Message):
     def term_boosts(self) -> _containers.ScalarMap[_builtins.str, _builtins.float]:
         """BiasTerm.id -> boost actually applied, in the backend's native scale
         (BiasCapabilities.boost_min..boost_max, after BiasList.strength). Only
-        for terms that reach the decoder; empty for mechanism NONE/PROMPT.
+        for terms that reach the decoder; empty for mechanism NONE.
         """
 
     def __init__(
@@ -2129,39 +1983,6 @@ class AppliedConfig(_message.Message):
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___AppliedConfig: _TypeAlias = AppliedConfig  # noqa: Y015
-
-@_typing.final
-class PartialResult(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    TEXT_FIELD_NUMBER: _builtins.int
-    STABLE_BYTES_FIELD_NUMBER: _builtins.int
-    AUDIO_PROCESSED_MS_FIELD_NUMBER: _builtins.int
-    CONTEXT_REVISION_FIELD_NUMBER: _builtins.int
-    SEQ_FIELD_NUMBER: _builtins.int
-    text: _builtins.str
-    stable_bytes: _builtins.int
-    """prefix of text the server will not revise"""
-    audio_processed_ms: _builtins.int
-    context_revision: _builtins.int
-    seq: _builtins.int
-    """strictly increasing"""
-    def __init__(
-        self,
-        *,
-        text: _builtins.str = ...,
-        stable_bytes: _builtins.int = ...,
-        audio_processed_ms: _builtins.int = ...,
-        context_revision: _builtins.int = ...,
-        seq: _builtins.int = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["audio_processed_ms", b"audio_processed_ms", "context_revision", b"context_revision", "seq", b"seq", "stable_bytes", b"stable_bytes", "text", b"text"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___PartialResult: _TypeAlias = PartialResult  # noqa: Y015
 
 @_typing.final
 class StreamStatus(_message.Message):
@@ -2229,20 +2050,15 @@ class FinalResult(_message.Message):
     ANCHOR_FIELD_NUMBER: _builtins.int
     BIAS_HITS_FIELD_NUMBER: _builtins.int
     DETECTED_LANGUAGE_FIELD_NUMBER: _builtins.int
-    LANGUAGE_CONFIDENCE_FIELD_NUMBER: _builtins.int
     CONTEXT_REVISION_FIELD_NUMBER: _builtins.int
     TIMINGS_FIELD_NUMBER: _builtins.int
     FLAGS_FIELD_NUMBER: _builtins.int
-    PRIVACY_FIELD_NUMBER: _builtins.int
-    REPLAYED_FIELD_NUMBER: _builtins.int
     MODEL_ID_FIELD_NUMBER: _builtins.int
     utterance_id: _builtins.str
     detected_language: _builtins.str
     """BCP-47"""
-    language_confidence: _builtins.float
     context_revision: _builtins.int
     """context revision actually used"""
-    replayed: _builtins.bool
     model_id: _builtins.str
     """Model that produced n_best[0] (v1.1). Differs from SessionAccepted.model_id
     after a language fallback (WARNING_CODE_LANGUAGE_FALLBACK). Empty: the
@@ -2264,8 +2080,6 @@ class FinalResult(_message.Message):
     def timings(self) -> Global___Timings: ...
     @_builtins.property
     def flags(self) -> Global___ResultFlags: ...
-    @_builtins.property
-    def privacy(self) -> Global___PrivacyAck: ...
     def __init__(
         self,
         *,
@@ -2274,21 +2088,16 @@ class FinalResult(_message.Message):
         anchor: Global___Hypothesis | None = ...,
         bias_hits: _abc.Iterable[Global___BiasHit] | None = ...,
         detected_language: _builtins.str = ...,
-        language_confidence: _builtins.float | None = ...,
         context_revision: _builtins.int = ...,
         timings: Global___Timings | None = ...,
         flags: Global___ResultFlags | None = ...,
-        privacy: Global___PrivacyAck | None = ...,
-        replayed: _builtins.bool = ...,
         model_id: _builtins.str = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence", "anchor", b"anchor", "flags", b"flags", "language_confidence", b"language_confidence", "privacy", b"privacy", "timings", b"timings"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "flags", b"flags", "timings", b"timings"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence", "anchor", b"anchor", "bias_hits", b"bias_hits", "context_revision", b"context_revision", "detected_language", b"detected_language", "flags", b"flags", "language_confidence", b"language_confidence", "model_id", b"model_id", "n_best", b"n_best", "privacy", b"privacy", "replayed", b"replayed", "timings", b"timings", "utterance_id", b"utterance_id"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "bias_hits", b"bias_hits", "context_revision", b"context_revision", "detected_language", b"detected_language", "flags", b"flags", "model_id", b"model_id", "n_best", b"n_best", "timings", b"timings", "utterance_id", b"utterance_id"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType__language_confidence: _TypeAlias = _typing.Literal["language_confidence"]  # noqa: Y015
-    _WhichOneofArgType__language_confidence: _TypeAlias = _typing.Literal["_language_confidence", b"_language_confidence"]  # noqa: Y015
-    def WhichOneof(self, oneof_group: _WhichOneofArgType__language_confidence) -> _WhichOneofReturnType__language_confidence | None: ...
+    def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___FinalResult: _TypeAlias = FinalResult  # noqa: Y015
 
@@ -2391,8 +2200,6 @@ class BiasHit(_message.Message):
     START_MS_FIELD_NUMBER: _builtins.int
     END_MS_FIELD_NUMBER: _builtins.int
     ANCHOR_TEXT_FIELD_NUMBER: _builtins.int
-    TERM_SCORE_FIELD_NUMBER: _builtins.int
-    ANCHOR_SCORE_FIELD_NUMBER: _builtins.int
     BOOST_FIELD_NUMBER: _builtins.int
     term_id: _builtins.str
     matched_form: _builtins.str
@@ -2401,16 +2208,12 @@ class BiasHit(_message.Message):
     decision: Global___BiasHitDecision.ValueType
     mechanism: Global___BiasMechanism.ValueType
     text_byte_start: _builtins.int
-    """span in n_best[0].text (0,0 if REJECTED)"""
+    """span in n_best[0].text"""
     text_byte_end: _builtins.int
     start_ms: _builtins.int
     end_ms: _builtins.int
     anchor_text: _builtins.str
     """anchor words overlapping [start_ms, end_ms)"""
-    term_score: _builtins.float
-    """backend log-score of term over the span"""
-    anchor_score: _builtins.float
-    """backend log-score of anchor_text there"""
     boost: _builtins.float
     """effective boost, backend scale"""
     def __init__(
@@ -2426,26 +2229,15 @@ class BiasHit(_message.Message):
         start_ms: _builtins.int = ...,
         end_ms: _builtins.int = ...,
         anchor_text: _builtins.str = ...,
-        term_score: _builtins.float | None = ...,
-        anchor_score: _builtins.float | None = ...,
         boost: _builtins.float | None = ...,
     ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _typing.Literal["_anchor_score", b"_anchor_score", "_boost", b"_boost", "_term_score", b"_term_score", "anchor_score", b"anchor_score", "boost", b"boost", "term_score", b"term_score"]  # noqa: Y015
+    _HasFieldArgType: _TypeAlias = _typing.Literal["_boost", b"_boost", "boost", b"boost"]  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["_anchor_score", b"_anchor_score", "_boost", b"_boost", "_term_score", b"_term_score", "anchor_score", b"anchor_score", "anchor_text", b"anchor_text", "boost", b"boost", "decision", b"decision", "end_ms", b"end_ms", "matched_form", b"matched_form", "mechanism", b"mechanism", "start_ms", b"start_ms", "term_id", b"term_id", "term_score", b"term_score", "text_byte_end", b"text_byte_end", "text_byte_start", b"text_byte_start", "via_alias", b"via_alias"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["_boost", b"_boost", "anchor_text", b"anchor_text", "boost", b"boost", "decision", b"decision", "end_ms", b"end_ms", "matched_form", b"matched_form", "mechanism", b"mechanism", "start_ms", b"start_ms", "term_id", b"term_id", "text_byte_end", b"text_byte_end", "text_byte_start", b"text_byte_start", "via_alias", b"via_alias"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    _WhichOneofReturnType__anchor_score: _TypeAlias = _typing.Literal["anchor_score"]  # noqa: Y015
-    _WhichOneofArgType__anchor_score: _TypeAlias = _typing.Literal["_anchor_score", b"_anchor_score"]  # noqa: Y015
     _WhichOneofReturnType__boost: _TypeAlias = _typing.Literal["boost"]  # noqa: Y015
     _WhichOneofArgType__boost: _TypeAlias = _typing.Literal["_boost", b"_boost"]  # noqa: Y015
-    _WhichOneofReturnType__term_score: _TypeAlias = _typing.Literal["term_score"]  # noqa: Y015
-    _WhichOneofArgType__term_score: _TypeAlias = _typing.Literal["_term_score", b"_term_score"]  # noqa: Y015
-    @_typing.overload
-    def WhichOneof(self, oneof_group: _WhichOneofArgType__anchor_score) -> _WhichOneofReturnType__anchor_score | None: ...
-    @_typing.overload
     def WhichOneof(self, oneof_group: _WhichOneofArgType__boost) -> _WhichOneofReturnType__boost | None: ...
-    @_typing.overload
-    def WhichOneof(self, oneof_group: _WhichOneofArgType__term_score) -> _WhichOneofReturnType__term_score | None: ...
 
 Global___BiasHit: _TypeAlias = BiasHit  # noqa: Y015
 
@@ -2476,14 +2268,11 @@ class Timings(_message.Message):
     AUDIO_MS_FIELD_NUMBER: _builtins.int
     QUEUE_MS_FIELD_NUMBER: _builtins.int
     BIAS_PREPARE_MS_FIELD_NUMBER: _builtins.int
-    BIAS_CACHE_HIT_FIELD_NUMBER: _builtins.int
-    LAG_AT_END_MS_FIELD_NUMBER: _builtins.int
     END_TO_FINAL_MS_FIELD_NUMBER: _builtins.int
     ENCODER_MS_FIELD_NUMBER: _builtins.int
     DECODE_MS_FIELD_NUMBER: _builtins.int
     ANCHOR_MS_FIELD_NUMBER: _builtins.int
     N_BEST_MS_FIELD_NUMBER: _builtins.int
-    ALIGNMENT_MS_FIELD_NUMBER: _builtins.int
     POSTPROCESS_MS_FIELD_NUMBER: _builtins.int
     SERVER_END_RECEIVED_UNIX_US_FIELD_NUMBER: _builtins.int
     SERVER_FINAL_SENT_UNIX_US_FIELD_NUMBER: _builtins.int
@@ -2492,16 +2281,12 @@ class Timings(_message.Message):
     audio_ms: _builtins.int
     queue_ms: _builtins.int
     bias_prepare_ms: _builtins.int
-    bias_cache_hit: _builtins.bool
-    lag_at_end_ms: _builtins.int
-    """audio unprocessed when EndOfAudio arrived"""
     end_to_final_ms: _builtins.int
     """EndOfAudio received -> FinalResult written"""
     encoder_ms: _builtins.int
     decode_ms: _builtins.int
     anchor_ms: _builtins.int
     n_best_ms: _builtins.int
-    alignment_ms: _builtins.int
     postprocess_ms: _builtins.int
     server_end_received_unix_us: _builtins.int
     server_final_sent_unix_us: _builtins.int
@@ -2515,14 +2300,11 @@ class Timings(_message.Message):
         audio_ms: _builtins.int = ...,
         queue_ms: _builtins.int = ...,
         bias_prepare_ms: _builtins.int = ...,
-        bias_cache_hit: _builtins.bool = ...,
-        lag_at_end_ms: _builtins.int = ...,
         end_to_final_ms: _builtins.int = ...,
         encoder_ms: _builtins.int = ...,
         decode_ms: _builtins.int = ...,
         anchor_ms: _builtins.int = ...,
         n_best_ms: _builtins.int = ...,
-        alignment_ms: _builtins.int = ...,
         postprocess_ms: _builtins.int = ...,
         server_end_received_unix_us: _builtins.int = ...,
         server_final_sent_unix_us: _builtins.int = ...,
@@ -2531,7 +2313,7 @@ class Timings(_message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["alignment_ms", b"alignment_ms", "anchor_ms", b"anchor_ms", "audio_ms", b"audio_ms", "backend_ms", b"backend_ms", "bias_cache_hit", b"bias_cache_hit", "bias_prepare_ms", b"bias_prepare_ms", "decode_ms", b"decode_ms", "eager_hit", b"eager_hit", "encoder_ms", b"encoder_ms", "end_to_final_ms", b"end_to_final_ms", "lag_at_end_ms", b"lag_at_end_ms", "n_best_ms", b"n_best_ms", "postprocess_ms", b"postprocess_ms", "queue_ms", b"queue_ms", "server_end_received_unix_us", b"server_end_received_unix_us", "server_final_sent_unix_us", b"server_final_sent_unix_us"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor_ms", b"anchor_ms", "audio_ms", b"audio_ms", "backend_ms", b"backend_ms", "bias_prepare_ms", b"bias_prepare_ms", "decode_ms", b"decode_ms", "eager_hit", b"eager_hit", "encoder_ms", b"encoder_ms", "end_to_final_ms", b"end_to_final_ms", "n_best_ms", b"n_best_ms", "postprocess_ms", b"postprocess_ms", "queue_ms", b"queue_ms", "server_end_received_unix_us", b"server_end_received_unix_us", "server_final_sent_unix_us", b"server_final_sent_unix_us"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
@@ -2551,7 +2333,6 @@ class ResultFlags(_message.Message):
 
     FINALIZE_BUDGET_EXCEEDED_FIELD_NUMBER: _builtins.int
     CONTEXT_TRUNCATED_FIELD_NUMBER: _builtins.int
-    CONTEXT_ECHO_SUSPECTED_FIELD_NUMBER: _builtins.int
     NO_SPEECH_FIELD_NUMBER: _builtins.int
     AUDIO_GAP_FIELD_NUMBER: _builtins.int
     N_BEST_FIELD_NUMBER: _builtins.int
@@ -2562,7 +2343,6 @@ class ResultFlags(_message.Message):
     finalize_budget_exceeded: _builtins.bool
     """end_to_final_ms > finalize_budget_ms (the primary decode is never shed)."""
     context_truncated: _builtins.bool
-    context_echo_suspected: _builtins.bool
     no_speech: _builtins.bool
     audio_gap: _builtins.bool
     """start_sample gap; server zero-filled"""
@@ -2578,7 +2358,6 @@ class ResultFlags(_message.Message):
         *,
         finalize_budget_exceeded: _builtins.bool = ...,
         context_truncated: _builtins.bool = ...,
-        context_echo_suspected: _builtins.bool = ...,
         no_speech: _builtins.bool = ...,
         audio_gap: _builtins.bool = ...,
         n_best: Global___FieldStatus.ValueType = ...,
@@ -2589,42 +2368,11 @@ class ResultFlags(_message.Message):
     ) -> None: ...
     _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
     def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "audio_gap", b"audio_gap", "bias_hits", b"bias_hits", "context_echo_suspected", b"context_echo_suspected", "context_truncated", b"context_truncated", "finalize_budget_exceeded", b"finalize_budget_exceeded", "n_best", b"n_best", "no_speech", b"no_speech", "word_confidence", b"word_confidence", "word_timestamps", b"word_timestamps"]  # noqa: Y015
+    _ClearFieldArgType: _TypeAlias = _typing.Literal["anchor", b"anchor", "audio_gap", b"audio_gap", "bias_hits", b"bias_hits", "context_truncated", b"context_truncated", "finalize_budget_exceeded", b"finalize_budget_exceeded", "n_best", b"n_best", "no_speech", b"no_speech", "word_confidence", b"word_confidence", "word_timestamps", b"word_timestamps"]  # noqa: Y015
     def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
     def WhichOneof(self, oneof_group: _Never) -> None: ...
 
 Global___ResultFlags: _TypeAlias = ResultFlags  # noqa: Y015
-
-@_typing.final
-class PrivacyAck(_message.Message):
-    DESCRIPTOR: _descriptor.Descriptor
-
-    AUDIO_RETAINED_FIELD_NUMBER: _builtins.int
-    TRANSCRIPT_RETAINED_FIELD_NUMBER: _builtins.int
-    CONTEXT_LOGGED_FIELD_NUMBER: _builtins.int
-    EVAL_CAPTURED_FIELD_NUMBER: _builtins.int
-    REPLAY_CACHED_FIELD_NUMBER: _builtins.int
-    audio_retained: _builtins.bool
-    transcript_retained: _builtins.bool
-    context_logged: _builtins.bool
-    eval_captured: _builtins.bool
-    replay_cached: _builtins.bool
-    def __init__(
-        self,
-        *,
-        audio_retained: _builtins.bool = ...,
-        transcript_retained: _builtins.bool = ...,
-        context_logged: _builtins.bool = ...,
-        eval_captured: _builtins.bool = ...,
-        replay_cached: _builtins.bool = ...,
-    ) -> None: ...
-    _HasFieldArgType: _TypeAlias = _Never  # noqa: Y015
-    def HasField(self, field_name: _HasFieldArgType) -> _builtins.bool: ...
-    _ClearFieldArgType: _TypeAlias = _typing.Literal["audio_retained", b"audio_retained", "context_logged", b"context_logged", "eval_captured", b"eval_captured", "replay_cached", b"replay_cached", "transcript_retained", b"transcript_retained"]  # noqa: Y015
-    def ClearField(self, field_name: _ClearFieldArgType) -> None: ...
-    def WhichOneof(self, oneof_group: _Never) -> None: ...
-
-Global___PrivacyAck: _TypeAlias = PrivacyAck  # noqa: Y015
 
 @_typing.final
 class ErrorDetail(_message.Message):

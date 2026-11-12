@@ -17,9 +17,7 @@
 //   side by side. Enforced in CI with `buf breaking`.
 // - Required-ness is enforced by the receiver's validation code, not by
 //   proto (proto3 has no required). Violations => INVALID_ARGUMENT.
-// - Audio default (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks
-//   (640 samples). Opus stays optional and is advertised only after its
-//   accuracy cost has been measured.
+// - Audio (ADR-001 #8): PCM s16le, 16 kHz, mono, 40 ms chunks (640 samples).
 // - Security (ADR-001 #9): mTLS with a private CA is the default; a bearer
 //   token is optional; plaintext is for loopback/UDS only. Tailscale is the
 //   network layer, not authentication.
@@ -66,8 +64,9 @@ service TextCleanup {
 // =============================================================================
 
 message GetCapabilitiesRequest {
+  reserved 2;
+  reserved "client_protocol_minor";
   string client_version = 1;        // e.g. "hark/0.3.1 (linux-x86_64)"
-  uint32 client_protocol_minor = 2; // highest hark.v1 minor the client knows
 }
 
 message ProtocolVersion {
@@ -85,9 +84,7 @@ message Capabilities {
   // state included). Echoed in SessionAccepted.
   string etag = 6;
   // Small namespaced boolean features. Unknown strings MUST be ignored.
-  // Defined in v1.0: "hark.opus", "hark.partials", "hark.replay_cache",
-  // "hark.midstream_context", "hark.cleanup",
-  // "hark.eager_end".
+  // Defined: "hark.midstream_context", "hark.cleanup", "hark.eager_end".
   repeated string features = 7;
   // Which PrivacyFlags permissions this server can act on. Sessions that set
   // an unsupported allow_* flag are rejected (see PrivacyFlags).
@@ -150,31 +147,31 @@ message AudioFormatSupport {
 }
 
 message BiasCapabilities {
+  reserved 5, 11;
+  reserved "max_total_tokens", "hit_scores";
   BiasMechanism mechanism = 1;
   uint32 max_terms = 2;
   uint32 max_aliases_per_term = 3;
   uint32 max_term_bytes = 4;
-  uint32 max_total_tokens = 5;   // backend token budget, 0 = n/a
   bool per_term_weight = 6;
   bool aliases_supported = 7;    // aliases influence recognition/matching
   bool case_insensitive = 8;     // canonical casing need not match model casing
   MidstreamUpdate midstream_update = 9;
   bool bias_with_n_best = 10;    // N-best comes from the biased decode
-  bool hit_scores = 11;          // BiasHit.term_score/anchor_score populated
   // Native boost scale of this backend (e.g. Riva SpeechContext.boost, GPU-PB
   // per-phrase alpha). BiasTerm.weight w in [0,1] maps by default to
   // boost_min + w * (boost_max - boost_min); the applied value per term is
-  // reported in AppliedConfig.term_boosts. Both 0 when mechanism has no
-  // numeric boost (NONE, PROMPT).
+  // reported in AppliedConfig.term_boosts. Both 0 for mechanism NONE.
   float boost_min = 12;
   float boost_max = 13;
 }
 
 message FreeTextCapabilities {
+  reserved 4;
+  reserved "echo_risk";
   bool description = 1;
   bool preceding_text = 2;
   uint32 max_bytes = 3;
-  bool echo_risk = 4; // model may copy context into output (e.g. Qwen3-ASR)
 }
 
 message NBestCapabilities {
@@ -190,9 +187,10 @@ message TimestampCapabilities {
 }
 
 message PerfEstimate {
+  reserved 3;
+  reserved "bias_compile_ms";
   float rtfx = 1;               // audio seconds per wall second, one stream
   uint32 finalize_ms_10s = 2;   // EndOfAudio -> FinalResult, 10 s audio, p50
-  uint32 bias_compile_ms = 3;   // cold compile of a 100-term list, p50
 }
 
 // =============================================================================
@@ -211,8 +209,9 @@ message TranscribeRequest {
 }
 
 message SessionStart {
+  reserved 2;
+  reserved "attempt";
   string utterance_id = 1;       // client UUIDv7; idempotency/correlation key
-  uint32 attempt = 2;            // 0 first try; +1 per retry of same utterance
   string model_id = 3;           // empty => server default model
   repeated string languages = 4; // BCP-47; empty => detect; [0] = primary
   AudioFormat audio_format = 5;
@@ -238,7 +237,7 @@ message SessionStart {
 // all defaults.
 message AudioFormat {
   AudioEncoding encoding = 1;
-  uint32 sample_rate_hz = 2; // PCM: sample rate. OPUS: decode rate (16000)
+  uint32 sample_rate_hz = 2;
   uint32 channels = 3;       // MUST be 1 (or 0 => 1) in v1
   uint32 preroll_ms = 4;     // audio captured before hotkey-down (ring buffer)
 }
@@ -299,8 +298,10 @@ message FreeTextContext {
 }
 
 message PrivacyFlags {
+  reserved 6;
+  reserved "minimal_metadata";
   // All false (the default) == most private. A server MUST NOT do anything
-  // not allowed here and MUST report what it did in PrivacyAck.
+  // not allowed here.
   // Rejection rule (ADR-001 #7): if an allow_* flag is true and the server
   // cannot act on it (not implemented or disabled; see
   // Capabilities.privacy), or if the server would retain/log something
@@ -314,17 +315,16 @@ message PrivacyFlags {
   bool allow_context_logging = 3;      // log bias list/free text (any level)
   bool allow_eval_capture = 4;         // write a dataset record
   bool allow_replay_cache = 5;         // keep FinalResult in RAM for TTL
-  bool minimal_metadata = 6;           // client stripped provenance/description
 }
 
 message ResultOptions {
+  reserved 2, 7;
+  reserved "partial_interval_ms", "bias_diagnostics";
   bool partials = 1;
-  uint32 partial_interval_ms = 2; // 0 => server default
   uint32 n_best = 3;              // 0 or 1 => best only
   bool word_timestamps = 4;
   bool word_confidence = 5;
   AnchorMode anchor = 6;
-  bool bias_diagnostics = 7;      // also report rejected candidates
   bool n_best_words = 8;          // words for every N-best entry, not only [0]
 }
 
@@ -338,8 +338,9 @@ message Deadlines {
 }
 
 message ClientInfo {
+  reserved 2;
+  reserved "device_id";
   string client_version = 1;
-  string device_id = 2;  // random per install, never hardware-derived
 }
 
 // Placement is by `start_sample` (ADR-001 #2). Let `received` be the end of
@@ -353,11 +354,12 @@ message ClientInfo {
 // lost before sending); it is for correlation and acks only.
 // For PCM_S16LE, num_samples MUST equal len(data) / 2.
 message AudioChunk {
-  bytes data = 1;          // PCM_S16LE: samples; OPUS: exactly one packet
+  reserved 5;
+  reserved "vad_speech_prob";
+  bytes data = 1;          // PCM_S16LE samples
   uint64 seq = 2;          // 0, 1, 2, ... strictly increasing
   uint64 start_sample = 3; // index of first sample at AudioFormat rate
   uint32 num_samples = 4;  // samples this chunk represents (decoded, mono)
-  optional float vad_speech_prob = 5; // client Silero VAD, max over chunk
 }
 
 message ContextUpdate {
@@ -383,11 +385,11 @@ message EndOfAudio {
 // non-speech and send them only if speech resumes; at key-up send
 // EndOfAudio for the audio actually sent. Hint only: never required.
 message EagerEnd {
+  reserved 2;
+  reserved "speech_end_sample";
   // Samples sent before this message (== start_sample + num_samples of the
   // last chunk). A mismatch makes the server ignore this hint.
   uint64 total_samples = 1;
-  // Client VAD's end of speech (informational, <= total_samples).
-  uint64 speech_end_sample = 2;
 }
 
 message Cancel {
@@ -399,9 +401,10 @@ message Cancel {
 // =============================================================================
 
 message TranscribeResponse {
+  reserved 2;
+  reserved "partial";
   oneof msg {
     SessionAccepted accepted = 1;     // exactly once, first
-    PartialResult partial = 2;
     FinalResult final_result = 3;     // terminal (success)
     StreamStatus status = 4;
     ServerWarning warning = 5;
@@ -418,14 +421,13 @@ message SessionEnded {
 }
 
 message SessionAccepted {
+  reserved 6;
+  reserved "replayed";
   string session_id = 1;
   string model_id = 2;
   AppliedConfig applied = 3;
   uint64 server_time_unix_ms = 4;
   string capabilities_etag = 5;
-  // A cached FinalResult for (utterance_id) follows immediately; the client
-  // SHOULD stop sending audio and send end_of_audio.
-  bool replayed = 6;
 }
 
 message AppliedConfig {
@@ -442,16 +444,8 @@ message AppliedConfig {
   map<string, string> backend_params = 9;
   // BiasTerm.id -> boost actually applied, in the backend's native scale
   // (BiasCapabilities.boost_min..boost_max, after BiasList.strength). Only
-  // for terms that reach the decoder; empty for mechanism NONE/PROMPT.
+  // for terms that reach the decoder; empty for mechanism NONE.
   map<string, float> term_boosts = 10;
-}
-
-message PartialResult {
-  string text = 1;
-  uint32 stable_bytes = 2;       // prefix of text the server will not revise
-  uint32 audio_processed_ms = 3;
-  uint32 context_revision = 4;
-  uint32 seq = 5;                // strictly increasing
 }
 
 message StreamStatus {
@@ -468,6 +462,8 @@ message ServerWarning {
 }
 
 message FinalResult {
+  reserved 6, 10, 11;
+  reserved "language_confidence", "privacy", "replayed";
   string utterance_id = 1;
   // n_best[0] is the primary result. Always present (empty text on silence).
   repeated Hypothesis n_best = 2;
@@ -476,12 +472,9 @@ message FinalResult {
   Hypothesis anchor = 3;
   repeated BiasHit bias_hits = 4;
   string detected_language = 5;  // BCP-47
-  optional float language_confidence = 6;
   uint32 context_revision = 7;   // context revision actually used
   Timings timings = 8;
   ResultFlags flags = 9;
-  PrivacyAck privacy = 10;
-  bool replayed = 11;
   // Model that produced n_best[0] (v1.1). Differs from SessionAccepted.model_id
   // after a language fallback (WARNING_CODE_LANGUAGE_FALLBACK). Empty: the
   // accepted model (servers before v1.1).
@@ -508,33 +501,32 @@ message Word {
 }
 
 message BiasHit {
+  reserved 11, 12;
+  reserved "term_score", "anchor_score";
   string term_id = 1;
   string matched_form = 2;       // canonical or alias text that matched
   bool via_alias = 3;
   BiasHitDecision decision = 4;
   BiasMechanism mechanism = 5;
-  uint32 text_byte_start = 6;    // span in n_best[0].text (0,0 if REJECTED)
+  uint32 text_byte_start = 6;    // span in n_best[0].text
   uint32 text_byte_end = 7;
   uint32 start_ms = 8;
   uint32 end_ms = 9;
   string anchor_text = 10;       // anchor words overlapping [start_ms, end_ms)
-  optional float term_score = 11;   // backend log-score of term over the span
-  optional float anchor_score = 12; // backend log-score of anchor_text there
   optional float boost = 13;        // effective boost, backend scale
 }
 
 message Timings {
+  reserved 4, 5, 11;
+  reserved "bias_cache_hit", "lag_at_end_ms", "alignment_ms";
   uint32 audio_ms = 1;
   uint32 queue_ms = 2;
   uint32 bias_prepare_ms = 3;
-  bool bias_cache_hit = 4;
-  uint32 lag_at_end_ms = 5;      // audio unprocessed when EndOfAudio arrived
   uint32 end_to_final_ms = 6;    // EndOfAudio received -> FinalResult written
   uint32 encoder_ms = 7;
   uint32 decode_ms = 8;
   uint32 anchor_ms = 9;
   uint32 n_best_ms = 10;
-  uint32 alignment_ms = 11;
   uint32 postprocess_ms = 12;
   uint64 server_end_received_unix_us = 13;
   uint64 server_final_sent_unix_us = 14;
@@ -549,12 +541,11 @@ message Timings {
 // confidence_calibrated, anchor_cost, bias_with_n_best) plus
 // Hypothesis.origin and AppliedConfig for this session.
 message ResultFlags {
-  reserved 2, 3, 4;
-  reserved "n_best_skipped", "anchor_skipped", "timestamps_skipped";
+  reserved 2, 3, 4, 6;
+  reserved "n_best_skipped", "anchor_skipped", "timestamps_skipped", "context_echo_suspected";
   // end_to_final_ms > finalize_budget_ms (the primary decode is never shed).
   bool finalize_budget_exceeded = 1;
   bool context_truncated = 5;
-  bool context_echo_suspected = 6;
   bool no_speech = 7;
   bool audio_gap = 8;            // start_sample gap; server zero-filled
   FieldStatus n_best = 9;        // entries >= 1 of FinalResult.n_best
@@ -562,14 +553,6 @@ message ResultFlags {
   FieldStatus word_timestamps = 11;
   FieldStatus word_confidence = 12;
   FieldStatus bias_hits = 13;    // PRESENT even if the list is empty
-}
-
-message PrivacyAck {
-  bool audio_retained = 1;
-  bool transcript_retained = 2;
-  bool context_logged = 3;
-  bool eval_captured = 4;
-  bool replay_cached = 5;
 }
 
 // Packed into google.rpc.Status.details (grpc-status-details-bin) on any
@@ -681,40 +664,41 @@ enum StreamingMode {
 }
 
 enum AudioEncoding {
+  reserved 2;
+  reserved "AUDIO_ENCODING_OPUS";
   AUDIO_ENCODING_UNSPECIFIED = 0;
   AUDIO_ENCODING_PCM_S16LE = 1;
-  AUDIO_ENCODING_OPUS = 2;        // raw packets, no Ogg container
 }
 
 enum BiasMechanism {
+  reserved 3, 4;
+  reserved "BIAS_MECHANISM_ACOUSTIC_RESCORE", "BIAS_MECHANISM_PROMPT";
   BIAS_MECHANISM_UNSPECIFIED = 0;
   BIAS_MECHANISM_NONE = 1;
   BIAS_MECHANISM_DECODE_TIME_BOOST = 2; // shallow-fusion boosting (GPU-PB, Riva)
-  BIAS_MECHANISM_ACOUSTIC_RESCORE = 3;  // post-decode CTC spotting (FluidAudio)
-  BIAS_MECHANISM_PROMPT = 4;            // prompt/keyword conditioning (LLM-ASR)
 }
 
 enum MidstreamUpdate {
+  reserved 3;
+  reserved "MIDSTREAM_UPDATE_FORWARD_ONLY";
   MIDSTREAM_UPDATE_UNSPECIFIED = 0;
   MIDSTREAM_UPDATE_UNSUPPORTED = 1;  // only SessionStart context is used
   MIDSTREAM_UPDATE_FULL = 2;         // latest revision applies to all audio
-  MIDSTREAM_UPDATE_FORWARD_ONLY = 3; // applies to audio decoded after update
 }
 
 enum ScoreKind {
+  reserved 1, 2, 3;
+  reserved "SCORE_KIND_LOG_PROB", "SCORE_KIND_LOG_PROB_PER_TOKEN", "SCORE_KIND_POSTERIOR";
   SCORE_KIND_UNSPECIFIED = 0;
-  SCORE_KIND_LOG_PROB = 1;           // total log-probability (natural log)
-  SCORE_KIND_LOG_PROB_PER_TOKEN = 2; // length-normalized
-  SCORE_KIND_POSTERIOR = 3;          // [0, 1]
   SCORE_KIND_RANK_ONLY = 4;          // order meaningful, values are not
 }
 
 enum TimestampSource {
+  reserved 3, 4;
+  reserved "TIMESTAMP_SOURCE_FORCED_ALIGNMENT", "TIMESTAMP_SOURCE_PROVIDER";
   TIMESTAMP_SOURCE_UNSPECIFIED = 0;
   TIMESTAMP_SOURCE_NONE = 1;
   TIMESTAMP_SOURCE_DECODER_EMISSION = 2; // frame of emission (TDT/RNNT/CTC)
-  TIMESTAMP_SOURCE_FORCED_ALIGNMENT = 3; // separate aligner pass
-  TIMESTAMP_SOURCE_PROVIDER = 4;         // opaque third-party
 }
 
 enum AnchorCost {
@@ -750,14 +734,17 @@ enum SessionEndReason {
 }
 
 enum HypothesisOrigin {
+  reserved 4;
+  reserved "HYPOTHESIS_ORIGIN_RESCORED";
   HYPOTHESIS_ORIGIN_UNSPECIFIED = 0;
   HYPOTHESIS_ORIGIN_BIASED = 1;    // decode with bias and/or free-text context
   HYPOTHESIS_ORIGIN_UNBIASED = 2;  // decode without any context
   HYPOTHESIS_ORIGIN_BEAM = 3;      // additional beam entry
-  HYPOTHESIS_ORIGIN_RESCORED = 4;  // base text modified by acoustic rescoring
 }
 
 enum ContextSource {
+  reserved 9, 10;
+  reserved "CONTEXT_SOURCE_OCR", "CONTEXT_SOURCE_APP_PROFILE";
   CONTEXT_SOURCE_UNSPECIFIED = 0;
   CONTEXT_SOURCE_USER_DICTIONARY = 1;
   CONTEXT_SOURCE_HISTORY = 2;
@@ -767,64 +754,65 @@ enum ContextSource {
   CONTEXT_SOURCE_TERMINAL_TEXT = 6;
   CONTEXT_SOURCE_GIT_REPO = 7;
   CONTEXT_SOURCE_AGENT_SESSION = 8;
-  CONTEXT_SOURCE_OCR = 9;
-  CONTEXT_SOURCE_APP_PROFILE = 10;
 }
 
 enum TermKind {
+  reserved 2, 5;
+  reserved "TERM_KIND_PERSON_NAME", "TERM_KIND_ACRONYM";
   TERM_KIND_UNSPECIFIED = 0;
   TERM_KIND_WORD = 1;
-  TERM_KIND_PERSON_NAME = 2;
   TERM_KIND_PRODUCT = 3;
   TERM_KIND_IDENTIFIER = 4;   // code symbol: snake_case, camelCase, ...
-  TERM_KIND_ACRONYM = 5;
   TERM_KIND_PATH = 6;
   TERM_KIND_COMMAND = 7;      // CLI tool / subcommand
 }
 
 enum AliasKind {
+  reserved 2, 3;
+  reserved "ALIAS_KIND_SPELLED", "ALIAS_KIND_MISRECOGNITION";
   ALIAS_KIND_UNSPECIFIED = 0;
   ALIAS_KIND_SPOKEN_FORM = 1;      // how it is said: "pie torch"
-  ALIAS_KIND_SPELLED = 2;          // letter by letter: "k u b e c t l"
-  ALIAS_KIND_MISRECOGNITION = 3;   // learned ASR error: "pie charm" -> PyCharm
 }
 
 enum EndReason {
+  reserved 2, 4;
+  reserved "END_REASON_VAD_ENDPOINT", "END_REASON_TOGGLE";
   END_REASON_UNSPECIFIED = 0;
   END_REASON_KEY_UP = 1;
-  END_REASON_VAD_ENDPOINT = 2;
   END_REASON_MAX_DURATION = 3;
-  END_REASON_TOGGLE = 4;
 }
 
 enum CancelReason {
+  reserved 3, 4;
+  reserved "CANCEL_REASON_SWITCHED_PROVIDER", "CANCEL_REASON_SHUTDOWN";
   CANCEL_REASON_UNSPECIFIED = 0;
   CANCEL_REASON_USER_ABORT = 1;
   CANCEL_REASON_TOO_SHORT = 2;
-  CANCEL_REASON_SWITCHED_PROVIDER = 3;
-  CANCEL_REASON_SHUTDOWN = 4;
 }
 
 enum BiasHitDecision {
+  reserved 3;
+  reserved "BIAS_HIT_DECISION_REJECTED";
   BIAS_HIT_DECISION_UNSPECIFIED = 0;
   BIAS_HIT_DECISION_APPLIED = 1;          // term in n_best[0], not in anchor
   BIAS_HIT_DECISION_ALREADY_IN_ANCHOR = 2; // term present without bias too
-  BIAS_HIT_DECISION_REJECTED = 3;          // candidate considered, not applied
 }
 
 enum WarningCode {
+  reserved 3, 8;
+  reserved "WARNING_CODE_FREE_TEXT_TRUNCATED", "WARNING_CODE_FINALIZE_BUDGET_TIGHT";
   WARNING_CODE_UNSPECIFIED = 0;
   WARNING_CODE_BIAS_TERMS_TRUNCATED = 1;
   WARNING_CODE_ALIASES_DROPPED = 2;
-  WARNING_CODE_FREE_TEXT_TRUNCATED = 3;
   WARNING_CODE_FEATURE_DEGRADED = 4;
   WARNING_CODE_AUDIO_GAP = 5;
   WARNING_CODE_LANGUAGE_FALLBACK = 6;
   WARNING_CODE_CONTEXT_IGNORED = 7;
-  WARNING_CODE_FINALIZE_BUDGET_TIGHT = 8;
 }
 
 enum ErrorCode {
+  reserved 10, 11;
+  reserved "ERROR_CODE_SUPERSEDED", "ERROR_CODE_UNAUTHENTICATED";
   ERROR_CODE_UNSPECIFIED = 0;
   ERROR_CODE_MODEL_NOT_FOUND = 1;         // NOT_FOUND
   ERROR_CODE_MODEL_NOT_READY = 2;         // UNAVAILABLE, retryable
@@ -835,8 +823,6 @@ enum ErrorCode {
   ERROR_CODE_PROTOCOL_VIOLATION = 7;      // INVALID_ARGUMENT
   ERROR_CODE_AUDIO_TOO_LONG = 8;          // OUT_OF_RANGE
   ERROR_CODE_BACKEND_FAILURE = 9;         // INTERNAL, retryable
-  ERROR_CODE_SUPERSEDED = 10;             // ABORTED: newer attempt arrived
-  ERROR_CODE_UNAUTHENTICATED = 11;        // UNAUTHENTICATED
   ERROR_CODE_PRIVACY_UNSATISFIABLE = 12;  // FAILED_PRECONDITION
   ERROR_CODE_CANCELLED = 13;              // CANCELLED (client Cancel)
 }

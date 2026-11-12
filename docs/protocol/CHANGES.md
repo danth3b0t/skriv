@@ -24,6 +24,23 @@ proposal-a was never deployed, so removed fields are `reserved` only for hygiene
 
 - **Added** `FinalResult.model_id` (12): the model that produced `n_best[0]`. A server hosting several models routes a session by `SessionStart.languages` (e.g. an English-only model for `["en"]`) and may re-decode with another model when the output is implausible for the requested languages; it then also sends `WARNING_CODE_LANGUAGE_FALLBACK`. `Capabilities.protocol.minor` = 1.
 
+## Pruned (nothing read or wrote them)
+
+Removed, numbers and names `reserved`: the `Recognize` and `Warmup` RPCs with their messages (and the
+`hark.recognize` feature), `PartialResult` / `TranscribeResponse.partial`, `PrivacyAck` / `FinalResult.privacy`,
+`GetCapabilitiesRequest.client_protocol_minor`, `BiasCapabilities.max_total_tokens/hit_scores`,
+`FreeTextCapabilities.echo_risk`, `PerfEstimate.bias_compile_ms`, `SessionStart.attempt`,
+`PrivacyFlags.minimal_metadata`, `ResultOptions.partial_interval_ms/bias_diagnostics`, `ClientInfo.device_id`,
+`AudioChunk.vad_speech_prob`, `EagerEnd.speech_end_sample`, `SessionAccepted.replayed`,
+`FinalResult.language_confidence/replayed`, `BiasHit.term_score/anchor_score`,
+`Timings.bias_cache_hit/lag_at_end_ms/alignment_ms`, `ResultFlags.context_echo_suspected`, and the enum values
+Opus, `ACOUSTIC_RESCORE`/`PROMPT` bias, `FORWARD_ONLY` midstream updates, the log-prob/posterior score kinds,
+`FORCED_ALIGNMENT`/`PROVIDER` timestamps, `RESCORED` origin, `OCR`/`APP_PROFILE` context sources,
+`PERSON_NAME`/`ACRONYM` term kinds, `SPELLED`/`MISRECOGNITION` aliases, `VAD_ENDPOINT`/`TOGGLE` end reasons,
+`SWITCHED_PROVIDER`/`SHUTDOWN` cancel reasons, the `REJECTED` hit decision, `FREE_TEXT_TRUNCATED`/
+`FINALIZE_BUDGET_TIGHT` warnings and the `SUPERSEDED`/`UNAUTHENTICATED` error codes. Add them back (new numbers)
+when something produces or consumes them.
+
 ## Other deviations
 
 - `SessionStart.required_features` additionally accepts `result.word_confidence`; unknown feature names fail (cannot honour what is not understood). Required result fields are never shed for budget.
