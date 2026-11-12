@@ -30,9 +30,6 @@ if TYPE_CHECKING:
     from .conftest import FakeContext
 
 
-SERVING = cast("int", health_pb2.HealthCheckResponse.SERVING)  # the stubs type it as Any
-
-
 def closed_port() -> str:
     with socket.socket() as s:  # a port nobody listens on
         s.bind(("127.0.0.1", 0))
@@ -45,7 +42,7 @@ def slow_server() -> Iterator[str]:
 
     def check(req: health_pb2.HealthCheckRequest, ctx: grpc.ServicerContext) -> object:
         time.sleep(1.0)
-        return health_pb2.HealthCheckResponse(status=SERVING)
+        return health_pb2.HealthCheckResponse(status="SERVING")
 
     server = grpc.server(futures.ThreadPoolExecutor(2))
     handler = grpc.method_handlers_generic_handler(
