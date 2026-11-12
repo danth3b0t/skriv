@@ -1,5 +1,5 @@
-// History (S5): the recovery and accuracy surface. Search · list · detail (final text, heard → final).
-// Opened from the panel or right-click on the bar glyph. Card = Omarchy popup chrome; no nav, no footer.
+// History (S4, optional, built last): search · list · detail (Final and Recognized, optional diff).
+// Reads `hark history --json` (text-bearing, local). Card = Omarchy popup chrome, padding 24, gap 24.
 import { F, frame, text, icon, v, spacer, boardTitle } from './lib.mjs'
 
 const dim = (s, size = F.bodySmall) => text(s, { size, color: 'text-2' })
@@ -31,27 +31,33 @@ function list(selected) {
         preview ? text(preview, { size: F.body, w: 'fill', maxLines: 2, lineHeight: 17 }) : text('Failed · timeout', { size: F.body })))))
 }
 
-// heard → final, word by word: removed = strikethrough text-2, added = accent-text.
+// Recognized → final as an optional inline diff (D): removed = strikethrough text-2, added = accent-text.
 const DIFF = [['refactor'], ['learn', '-'], ['dot', '-'], ['pie', '-'], ['learn.py', '+'], ['so'], ['the'], ['um', '-'], ['watch'], ['window'], ['closes'], ['when'], ['the'], ['focus'], ['moves'], ['away']]
 function diff() {
-  return frame({ name: 'heard-final', flex: 'row', wrap: true, gap: 7, rowGap: 4, w: 'fill' },
+  return frame({ name: 'recognized-final-diff', flex: 'row', wrap: true, gap: 7, rowGap: 4, w: 'fill' },
     DIFF.map(([w, op]) => text(w, { size: F.body, lineHeight: 17, color: op === '-' ? 'text-2' : op === '+' ? 'accent-text' : 'fg', decoration: op === '-' ? 'strikethrough' : undefined })))
 }
 
-function detailPasted() {
+const FINAL = 'refactor learn.py so the watch window closes when the focus moves away'
+const RECOGNIZED = 'refactor learn dot pie so the um watch window closes when the focus moves away'
+const block = (label, keys, body) => frame({ flex: 'col', gap: 8, w: 'fill' }, frame({ flex: 'row', w: 'fill' }, dim(label), spacer(), hint(keys)), body)
+const para = (s) => text(s, { size: F.body, w: 'fill', lineHeight: 18 })
+
+// Delivery (status last.delivery / history record): Confirmed · Sent · Copied · Failed.
+function detailPasted({ showDiff = false } = {}) {
   return frame({ name: 'detail', flex: 'col', gap: 24, grow: 1 },
-    frame({ flex: 'col', gap: 8, w: 'fill' },
-      text('refactor learn.py so the watch window closes when the focus moves away', { size: F.body, w: 'fill', lineHeight: 18 }),
-      dim('14:31 · Ghostty · terminal · 412 ms')),
-    hint('C copy   P paste   R retry   Del delete'),
-    frame({ flex: 'col', gap: 8, w: 'fill' }, frame({ flex: 'row', w: 'fill' }, dim('Heard'), spacer(), hint('H copy heard')), diff()))
+    showDiff
+      ? block('Recognized → Final', 'D texts', diff())
+      : frame({ flex: 'col', gap: 24, w: 'fill' }, block('Final', 'C copy', para(FINAL)), block('Recognized', '⇧C copy  D diff', para(RECOGNIZED))),
+    dim('14:31 · Ghostty · terminal · Sent · 412 ms'),
+    hint('P paste   R retry   Del delete'))
 }
 
 function detailFailed() {
   return frame({ name: 'detail', flex: 'col', gap: 24, grow: 1 },
     frame({ flex: 'col', gap: 8, w: 'fill' },
       frame({ flex: 'row', gap: 8, items: 'center' }, icon('mdi:alert-circle-outline', { size: 13, color: 'live-ink' }), text('Failed · server timeout', { size: F.body })),
-      dim('14:05 · Ghostty · 4.1 s audio')),
+      dim('14:05 · Ghostty · Failed · 4.1 s audio')),
     hint('R retry   Del delete'))
 }
 
@@ -68,4 +74,7 @@ export function historyPasted(theme) {
 }
 export function historyFailed(theme) {
   return board(`export/history-failed-${theme}`, 'History · failed', windowCard([top(), frame({ flex: 'row', w: 'fill', gap: 32, items: 'start' }, list(1), detailFailed())]))
+}
+export function historyDiff(theme) {
+  return board(`export/history-diff-${theme}`, 'History · diff', windowCard([top(), frame({ flex: 'row', w: 'fill', gap: 32, items: 'start' }, list(0), detailPasted({ showDiff: true }))]))
 }

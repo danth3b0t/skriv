@@ -1,5 +1,8 @@
 # hark UI audit: what should exist
 
+> **Historical.** This audit fed the first redesign (2026-11-12). [SPEC.md](SPEC.md) is authoritative; where they
+> differ (target outline, pill states, panel toggles, History, macOS), follow SPEC.md.
+
 Date: 2026-11-12. Input: SPEC.md, all exports, `client/` (config, daemon, menubar, onboarding, doctor, history, ctl,
 indicator, pipeline, inject). Scope: *what* exists, not how it looks. Audience: 3–4 technical users who are fine
 editing `~/.config/hark/config.toml`.

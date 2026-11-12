@@ -1,8 +1,7 @@
 // Page list for design/hark-ui.fig. Root frames named `export/<name>` are exported as design/exports/<name>.png.
 import { pillBoard } from './screens-indicator.mjs'
-import { outlineHero, outlineFocusMoved } from './screens-outline.mjs'
 import { quickPanelIdle, quickPanelAttention, quickPanelStates, quickPanelProfile, quickPanelOff, barWidgetStates } from './screens-panel.mjs'
-import { historyPasted, historyFailed } from './screens-history.mjs'
+import { historyPasted, historyFailed, historyDiff } from './screens-history.mjs'
 import { cover, systemBoard, themeMatrix } from './screens-system.mjs'
 
 const tk = 'tokyo-night'
@@ -14,11 +13,7 @@ export const PAGES = [
   { key: 'tokens', name: '01 System', layout: 'row', frames: () => both(systemBoard) },
   { key: 'indicator', name: '02 Indicator', layout: 'row', frames: () => both(pillBoard) },
   {
-    key: 'outline', name: '03 Target outline', layout: 'row',
-    frames: () => [...both(outlineHero), { jsx: outlineFocusMoved(tk), theme: tk }]
-  },
-  {
-    key: 'panel', name: '04 Bar & quick panel', layout: 'row',
+    key: 'panel', name: '03 Bar & quick panel', layout: 'row',
     frames: () => [
       ...both(barWidgetStates), ...both(quickPanelIdle),
       { jsx: quickPanelStates(tk), theme: tk }, { jsx: quickPanelAttention(tk), theme: tk, breakAfter: true },
@@ -26,8 +21,8 @@ export const PAGES = [
     ]
   },
   {
-    key: 'history', name: '05 History', layout: 'row',
-    frames: () => [...both(historyPasted), { jsx: historyFailed(tk), theme: tk }]
+    key: 'history', name: '04 History (later)', layout: 'row',
+    frames: () => [...both(historyPasted), { jsx: historyDiff(tk), theme: tk }, { jsx: historyFailed(tk), theme: tk }]
   },
-  { key: 'matrix', name: '06 Theme matrix', layout: 'row', frames: () => [{ jsx: themeMatrix(), theme: tk }] }
+  { key: 'matrix', name: '05 Theme matrix', layout: 'row', frames: () => [{ jsx: themeMatrix(), theme: tk }] }
 ]

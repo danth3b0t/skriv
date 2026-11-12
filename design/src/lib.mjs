@@ -11,15 +11,13 @@ export const MODES = ['tokyo-night', 'catppuccin-latte', 'catppuccin', 'gruvbox'
 export const VARS = {
   bg: ['bg', 'colors.toml background = [popups] background'],
   fg: ['fg', 'colors.toml foreground = [popups] text'],
-  accent: ['accent', 'colors.toml accent = Hyprland active border: the target window and the cursor'],
+  accent: ['accent', 'colors.toml accent: the keyboard cursor and the panel edge'],
   'dark-bg': ['dark_bg', 'colors.toml dark_background (canvas behind mocks)'],
   'lighter-bg': ['lighter_bg', 'colors.toml lighter_background (mock windows)'],
   'text-2': ['text_secondary', 'mix(fg, bg) solved to >= 4.5:1 on bg'],
   'fill-normal': ['fill_normal', 'fg @ [controls] normal-fill-alpha 0.04'],
   'fill-hover': ['fill_hover', 'fg @ [controls] hover-cursor-fill-alpha 0.08: the cursor row'],
-  'fill-selected': ['fill_selected', 'fg @ [controls] selected-fill-alpha 0.18 (toggle on)'],
   'border-hover': ['border_hover', 'fg @ [controls] hover-cursor-border-alpha 0.25: pill hairline'],
-  'border-control': ['border_control', 'mix(fg, border-normal) solved to >= 3:1 on bg (toggle off)'],
   'accent-ink': ['accent_ink', 'accent toward fg until >= 3:1 on bg'],
   'accent-text': ['accent_text', 'accent toward fg until >= 4.5:1 on bg'],
   'live-ink': ['live_ink', 'red toward fg until >= 3:1: mic live, failed'],
@@ -89,14 +87,6 @@ export function harkMark(size = 16, color = 'fg') {
   const bars = [[1, 7], [6.25, 14], [11.5, 9.5]] // x, height; centred: a three-sample waveform
   return frame({ name: 'hark-mark', w: size, h: size },
     bars.map(([x, h]) => rect({ x: Math.round(x * u), y: Math.round(((16 - h) / 2) * u), w: Math.max(2, Math.round(3.5 * u)), h: Math.round(h * u), bg: v(color) })))
-}
-
-export function toggle(on, { hasCursor = false } = {}) {
-  // Omarchy ToggleSwitch: track 42x22, knob 16, square at rounding 0; cursor ring pad 6.
-  const track = frame({ name: on ? 'toggle/on' : 'toggle/off', w: 42, h: 22, bg: v(on ? 'fill-selected' : 'fill-normal'), stroke: v(on ? 'fg' : 'border-control'), strokeWidth: 1 },
-    rect({ name: 'knob', x: on ? 23 : 3, y: 3, w: 16, h: 16, bg: v(on ? 'fg' : 'text-2') }))
-  if (!hasCursor) return track
-  return frame({ name: 'toggle-cursor', p: 5, stroke: v('border-hover'), strokeWidth: 1, bg: v('fill-hover') }, track)
 }
 
 // Neutral canvas label used on presentation boards (not part of the product UI)
