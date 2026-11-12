@@ -39,7 +39,7 @@ resolved at build time. `package()` moves the tree to `/usr/lib/hark`, rewrites 
 carry a `/tools/deps/lib` RUNPATH), byte-compiles with the installed paths and fails if any file still names
 `$srcdir`.
 
-Costs, accepted: ~59 MiB download / ~180 MiB installed; the build needs the network (normal for VCS packages,
+Costs, accepted: ~59 MiB download / ~190 MiB installed; the build needs the network (normal for VCS packages,
 but the package is not reproducible offline); security fixes in bundled wheels arrive by bumping `uv.lock` and
 rebuilding, not through `pacman -Syu`. PyGObject and pycairo have no Linux wheels, so they are built from their
 (hash-pinned) sdists against the system GLib/cairo/gobject-introspection; their build backends (meson-python,

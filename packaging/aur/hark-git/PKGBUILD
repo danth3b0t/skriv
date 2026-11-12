@@ -135,9 +135,10 @@ package() {
   # the private interpreter's man pages
   rm -f "$lib"/venv/lib/python*/site-packages/hark_*.dist-info/direct_url.json "$lib/venv/.lock"
   rm -rf "$lib/python/share"
-  # Bytecode with the installed paths (nothing under /usr/lib/hark is writable at run time).
-  find "$lib/venv" -type d -name __pycache__ -prune -exec rm -rf {} +
-  "$lib/python/bin/python$_python" -m compileall -q -j0 -s "$pkgdir" -p / "$lib/venv/lib"
+  # Bytecode with the installed paths (nothing under /usr/lib/hark is writable at run time); the
+  # interpreter's own caches were written while uv and check() ran it in $srcdir.
+  find "$lib" -type d -name __pycache__ -prune -exec rm -rf {} +
+  "$lib/python/bin/python$_python" -m compileall -q -j0 -s "$pkgdir" -p / "$lib/python/lib" "$lib/venv/lib"
   if grep -rl -e "$srcdir" "$lib"; then
     echo "files above still refer to $srcdir" >&2
     return 1
