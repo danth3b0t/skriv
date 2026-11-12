@@ -326,6 +326,31 @@ def test_trie_booster_matches_parakeet_mlx_words():
     assert np.array_equal(generic, np.array(table(start), np.float32))
 
 
+@pytest.mark.parametrize("samples", [36688, 16100])  # syn-005: frames reach 112 and 60 past
+def test_mel_never_reads_freed_memory(samples: int):
+    """parakeet-mlx's STFT frames the padded audio with as_strided and its last frame
+    reaches up to n_fft - win_length samples past the buffer. Those samples meet
+    the zero padding of the window, but NaN left there by an earlier array
+    (the allocator recycles buffers) survives `* 0` and poisons every mel frame
+    through the per-feature mean: the decode is then `<unk><unk>...`."""
+    seen: list[mx.array] = []
+
+    class MelModel(FakeModel):
+        def encoder(self, mel: mx.array, /) -> tuple[mx.array, mx.array]:
+            seen.append(mel)
+            return super().encoder(mel)
+
+    backend = FakeParakeet(MelModel(GREEDY))
+    backend._load_sync()  # pyright: ignore[reportPrivateUsage]
+    pcm = (np.random.default_rng(0).standard_normal(samples) * 1000).astype(np.int16)
+    for extra in (112, 1000, 4000):  # recycled buffers a little larger than the padded audio
+        poison = [mx.full((samples + 512 + extra,), float("nan")) for _ in range(8)]
+        mx.eval(*poison)  # pyright: ignore[reportUnknownMemberType]
+        del poison
+        backend._decode_sync(pcm.copy(), None)  # pyright: ignore[reportPrivateUsage]
+        assert bool(mx.all(mx.isfinite(seen[-1])).item()), f"mel has NaN (extra {extra})"
+
+
 def test_multilingual_model_brings_an_english_only_companion_on_its_thread():
     v3 = ParakeetMlxBackend()
     (v2,) = v3.companions()

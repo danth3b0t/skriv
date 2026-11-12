@@ -359,6 +359,44 @@ def install_fast_tabulate() -> None:
     setattr(pp, "tabulate", tabulate)  # noqa: B010
 
 
+def stft_in_bounds(
+    x: mx.array, n_fft: int, hop_length: int, win_length: int, window: mx.array | None
+) -> mx.array:
+    """parakeet_mlx.audio.stft (0.7.0) with every frame inside the audio, for the
+    call get_logmel makes (reflect padding).
+
+    The library frames the padded audio with `as_strided` and its last frame can reach
+    up to n_fft - win_length (112) samples past the end of the buffer. They meet the
+    zero padding of the window, so finite garbage is harmless, but a NaN or inf that
+    an earlier array left in the recycled buffer survives `* 0`, and the per-feature
+    normalization then spreads it to every mel frame: the decode becomes `<unk><unk>…`
+    (or a boosted `ÌÌÌ…`) depending on which arrays came before. Here the audio is
+    zero-extended to cover the last frame; the result is otherwise the library's."""
+    import mlx.core as mx  # noqa: PLC0415 - platform-specific
+
+    if window is None:
+        window = mx.ones(win_length)
+    if win_length > n_fft:
+        window = window[:n_fft]
+    elif win_length < n_fft:
+        window = mx.pad(window, [(0, n_fft - win_length)])
+    pad = n_fft // 2
+    x = mx.concatenate([x[1 : pad + 1][::-1], x, x[-(pad + 1) : -1][::-1]])
+    frames = (x.size - win_length + hop_length) // hop_length
+    over = (frames - 1) * hop_length + n_fft - x.size
+    if over > 0:
+        x = mx.concatenate([x, mx.zeros((over,), x.dtype)])
+    x = mx.as_strided(x, shape=[frames, n_fft], strides=[hop_length, 1])
+    return mx.fft.rfft(x * window)
+
+
+def install_stft_in_bounds() -> None:
+    """Route parakeet-mlx's mel front end (get_logmel) to stft_in_bounds (idempotent)."""
+    import parakeet_mlx.audio as pa  # noqa: PLC0415  # pyright: ignore[reportMissingTypeStubs]
+
+    setattr(pa, "stft", stft_in_bounds)  # noqa: B010
+
+
 @dataclass
 class _Utterance:
     """Encoder output (and greedy tokens, once decoded) of one session's audio. An
@@ -570,6 +608,7 @@ class ParakeetMlxBackend(Backend):
         self._chars = spellable_chars(model.vocabulary)
         self._vocab = VocabIndex(model.vocabulary)
         install_fast_tabulate()
+        install_stft_in_bounds()
 
     def _warmup_sync(self) -> None:
         rng = np.random.default_rng(0)
