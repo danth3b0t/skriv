@@ -41,7 +41,12 @@ from hark_client.audio import flat, speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
-from hark_client.context.words import dictionary, dictionary_terms, merge_terms
+from hark_client.context.words import (
+    dictionary,
+    dictionary_terms,
+    merge_terms,
+    with_terminal_commands,
+)
 from hark_client.inject import PasteResult
 
 if TYPE_CHECKING:
@@ -179,6 +184,9 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
+        profile = self.profile_override or self.svc.cfg.profile_for(snap.focus)
+        if self.svc.cfg.profile(profile).terminal:  # git, uv, kubectl... in the weakest slots
+            snap = replace(snap, terms=with_terminal_commands(snap.terms, cfg.max_terms))
         user_words = dictionary(self.svc.cfg.words, snap.repo_root, cfg.max_terms)
         if user_words:  # hand-written spellings go first
             words = dictionary_terms(user_words)

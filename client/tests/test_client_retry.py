@@ -71,7 +71,8 @@ def test_ring_keeps_the_newest_n_privately_and_purges_the_rest(
     assert (mode(ring), mode(newest)) == (0o700, 0o700)
     stored = (newest / "context.json").read_text()
     assert "secret" not in stored
-    assert retry.load_snapshot(retry.find(tmp_path, ids[2][-8:])).terms == (KUBECTL,)
+    # the key-down shortlist (a terminal: the base shell commands follow the context terms)
+    assert retry.load_snapshot(retry.find(tmp_path, ids[2][-8:])).terms[0] == KUBECTL
     assert json.loads((newest / "meta.json").read_text())["status"] == "pasted"
 
     c.svc.cfg.retry.keep = 0
