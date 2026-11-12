@@ -105,3 +105,17 @@ def test_add_run_accept(
     label_path.write_text(json.dumps(label))
     assert main([*argv, "run"]) == 1
     assert "forbidden 'kubectl get'" in capsys.readouterr().out
+
+    # ablation without context: the stored shortlist is cut to max_terms = 0, so nothing is
+    # biased or canonicalized; --report has every stage
+    cfg.write_text(cfg.read_text() + "[context]\nmax_terms = 0\n")
+    report = tmp_path / "report.json"
+    assert main([*argv, "run", "--report", str(report)]) == 1
+    (clip,) = cast("list[dict[str, object]]", json.loads(report.read_text()))
+    assert (clip["clip"], clip["raw"], clip["final"]) == (
+        uid,
+        "please run cube control get",
+        "please run cube control get",
+    )
+    assert (clip["replacements"], clip["gate"]) == ([], {"status": "no_terms"})
+    assert clip["missing"] == [{"string": "kubectl", "stage": "recognition"}]

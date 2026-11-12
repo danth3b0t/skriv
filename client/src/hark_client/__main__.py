@@ -61,6 +61,7 @@ class Args(argparse.Namespace):
     no_onboarding: bool
     eval_action: str
     set_dir: str | None
+    report: str | None
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -137,6 +138,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
     ev.add_argument(
         "--set", dest="set_dir", help="the set's directory (default <history.dir>/eval)"
     )
+    ev.add_argument("--report", help="run: also write every clip's stages and score as JSON here")
     service.add_parser(sub)
     return p.parse_args(argv, namespace=Args())
 
@@ -290,10 +292,10 @@ def cmd_eval(args: Args, cfg: Config) -> int:
     except (LookupError, FileExistsError) as e:
         print(f"hark eval: {e}", file=sys.stderr)
         return 1
-    return _eval_run(cfg, set_dir)
+    return _eval_run(cfg, set_dir, Path(args.report) if args.report else None)
 
 
-def _eval_run(cfg: Config, set_dir: Path) -> int:
+def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
     from hark_client import evalset  # noqa: PLC0415
     from hark_client.config import FeedbackConfig  # noqa: PLC0415
     from hark_client.feedback import Feedback  # noqa: PLC0415
@@ -319,6 +321,7 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
             Feedback(FeedbackConfig(sounds=False, notify=False)),
         )  # fmt: skip
         scores: list[evalset.Score] = []
+        records: list[dict[str, object]] = []
         for clip in found:
             res = evalset.run_clip(svc, clip)
             s = evalset.score(
@@ -326,9 +329,14 @@ def _eval_run(cfg: Config, set_dir: Path) -> int:
                 res.final_text,
             )  # fmt: skip
             scores.append(s)
+            records.append(evalset.report(s, res))
             print(evalset.line(s, res.status, res.final_text))
     finally:
         router.close()
+    if report is not None:
+        import json  # noqa: PLC0415
+
+        report.write_text(json.dumps(records, ensure_ascii=False, indent=1) + "\n")
     failed = sum(s.failed for s in scores)
     unreviewed = sum(not s.accepted for s in scores)
     wers = [s.wer for s in scores if s.wer is not None]

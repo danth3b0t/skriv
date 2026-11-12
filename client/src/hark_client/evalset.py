@@ -20,7 +20,7 @@ import json
 import re
 import shutil
 import time
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field, replace
 from typing import TYPE_CHECKING, cast
 
 from hark_client import history, retry
@@ -177,8 +177,10 @@ def add(history_dir: Path, set_dir: Path, query: str) -> Path:
 
 def run_clip(svc: Services, clip: Path) -> Result:
     """The clip through the whole pipeline with its key-down context (nothing is pasted:
-    ``svc`` should carry a dry-run injector)."""
+    ``svc`` should carry a dry-run injector). The shortlist is cut to ``context.max_terms``
+    (0: recognition and cleanup without context)."""
     snap = retry.load_snapshot(retry.Entry(clip.name, clip, {}))
+    snap = replace(snap, terms=snap.terms[: max(0, svc.cfg.context.max_terms)])
     utt = Utterance(svc, replay=snap)
     pcm = read_wav(clip / "audio.wav")
     step = CHUNK_SAMPLES * 2
@@ -197,6 +199,34 @@ def run_clip(svc: Services, clip: Path) -> Result:
         },
     )
     return res
+
+
+def report(s: Score, res: Result) -> dict[str, object]:
+    """One clip for `hark eval run --report`: the score and every stage's text and timing."""
+    gate = res.gate or {}
+    return {
+        "clip": s.clip,
+        "failed": s.failed,
+        "accepted": s.accepted,
+        "wer": s.wer,
+        "missing": [{"string": c, "stage": stage} for c, stage in s.missing],
+        "forbidden": s.forbidden,
+        "negations_lost": s.negations_lost,
+        "status": res.status,
+        "provider": res.provider,
+        "raw": res.raw_text,
+        "gated": gate.get("text", res.raw_text),
+        "canonical": res.canonical_text,
+        "uncleaned": res.swap_text,  # symbols, self-corrections and guardrails, no cleanup
+        "final": res.final_text,
+        "gate": gate,
+        "replacements": res.replacements,
+        "symbols": res.symbols,
+        "corrections": res.corrections,
+        "cleanup": asdict(res.cleanup) if res.cleanup else None,
+        "guard_events": res.guard_events,
+        "timings_ms": res.timings,
+    }
 
 
 def accept(set_dir: Path, clip_id: str) -> str:
