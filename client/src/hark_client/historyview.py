@@ -104,6 +104,16 @@ def show(r: Record, *, kept: bool = False) -> str:
     line("app", f"{app} ({_str(r, 'app_id')})  profile={_str(r, 'profile') or '-'}")
     status = f"{_str(r, 'status')}  verdict={_str(r, 'paste_verdict') or '-'}"
     line("status", status + (f"  error: {_str(r, 'error')}" if _str(r, "error") else ""))
+    provider = _dict(r.get("provider"))
+    if provider:
+        route = " -> ".join(
+            f"{h.get('name')}:{h.get('state')}" for h in map(_dict, _list(r.get("route")))
+        )
+        private = "" if provider.get("send_context", True) else ", audio only"
+        line(
+            "provider",
+            f"{provider.get('name')} ({provider.get('address')}{private})  route {route}",
+        )
     line("raw", repr(_str(r, "raw_text")))
     line("canonical", repr(_str(r, "canonical_text")))
     out.extend(
