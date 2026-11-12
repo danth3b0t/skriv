@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING, cast
 
 from hark_client.audio import write_wav
 from hark_client.context import ContextSnapshot, FocusInfo, Term, TermKind, TermSource
+from hark_client.context.aliases import spoken_forms
 from hark_client.history import snapshot_json
 
 if TYPE_CHECKING:
@@ -132,6 +133,20 @@ def _opt_str(v: object) -> str | None:
     return v if isinstance(v, str) else None
 
 
+def _term(t: dict[str, object]) -> Term:
+    """A stored term with today's spoken forms first (as a live dictation's ``rank`` derives
+    them), then the stored ones it lacks: a replay biases the recognizer like a dictation now."""
+    canonical, kind = str(t["canonical"]), TermKind(t["kind"])
+    spoken = (*spoken_forms(canonical, kind), *_str_tuple(t.get("spoken")))
+    return Term(
+        canonical=canonical,
+        spoken=tuple(dict.fromkeys(spoken)),
+        weight=float(cast("float", t["weight"])),
+        kind=kind,
+        source=TermSource(t["source"]),
+    )
+
+
 def load_snapshot(entry: Entry) -> ContextSnapshot:
     """The key-down context of a kept dictation; an empty one (with an error) if unreadable."""
     try:
@@ -146,16 +161,7 @@ def load_snapshot(entry: Entry) -> ContextSnapshot:
             is_terminal=f.get("is_terminal") is True,
             window_id=str(f.get("window_id", "")),
         )
-        terms = tuple(
-            Term(
-                canonical=str(t["canonical"]),
-                spoken=_str_tuple(t.get("spoken")),
-                weight=float(cast("float", t["weight"])),
-                kind=TermKind(t["kind"]),
-                source=TermSource(t["source"]),
-            )
-            for t in cast("list[dict[str, object]]", data.get("terms", []))
-        )
+        terms = tuple(_term(t) for t in cast("list[dict[str, object]]", data.get("terms", [])))
         return ContextSnapshot(
             focus=focus,
             cwd=_opt_str(data.get("cwd")),
