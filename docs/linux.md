@@ -23,7 +23,7 @@ HARK_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
 ```
 
 It installs `/usr/bin/hark`, `/usr/bin/hark-server`, `/usr/bin/hark-certs`, the Omarchy adapter
-(`/usr/bin/omarchy-*-dictation-hark`), the systemd **user** units `hark.service`, `hark-server.service` and
+(`/usr/bin/omarchy-*-dictation-hark`, `/usr/bin/hark-panel`, and the bar plugin in `/usr/share/hark/omarchy/hark.shell`), the systemd **user** units `hark.service`, `hark-server.service` and
 `hark-llama.service` (in `/usr/lib/systemd/user`, inert until enabled) and a private CPython 3.12 + venv in
 `/usr/lib/hark`. Optional packages, by role:
 
@@ -67,9 +67,71 @@ Customise units with drop-ins (`systemctl --user edit hark.service`), not by edi
 Omarchy owns its dictation keys (hold **Right Alt**, **Alt+Space** toggle); hand them to hark with:
 
 ```sh
-omarchy-install-dictation-hark      # hark service install client + omarchy-dictation-use hark
+omarchy-install-dictation-hark      # hark service install client + omarchy-dictation-use hark (+ bar, Super Alt D)
 omarchy-remove-dictation-hark       # undo (config, history and learned vocabulary stay)
 ```
+
+From a checkout run `packaging/omarchy/omarchy-install-dictation-hark`; it links the scripts into `~/.local/bin`.
+
+### Omarchy: pill, bar glyph and quick panel
+
+Design: [design/SPEC.md](../design/SPEC.md). Omarchy 4 (quattro) draws its whole desktop in one QuickShell process,
+`omarchy-shell`: Waybar, Walker and mako are gone, the bar and its panels are shell plugins, keybindings are Lua
+(`~/.config/hypr/bindings.lua`, `o.bind`), and the theme is `~/.local/state/omarchy/current/theme/colors.toml`
+(checked against `basecamp/omarchy@quattro`, November 2026). On Omarchy 4, `omarchy-install-dictation-hark`
+also:
+
+- copies the **`hark.shell`** bar-widget plugin into `~/.config/omarchy/plugins/hark.shell/` (copies: the shell
+  refuses symlinks inside a plugin), then `omarchy-shell shell rescanPlugins` and `omarchy plugin enable hark.shell`
+  (it lands in the right section; move it with `omarchy bar move hark.shell`);
+- appends two marked lines to `~/.config/hypr/bindings.lua` and reloads Hyprland:
+  ```lua
+  -- hark: dictation panel (omarchy-remove-dictation-hark removes this line and the next)
+  o.bind("SUPER + ALT + D", "Dictation panel", "hark-panel")
+  ```
+- ends with `hark doctor`.
+
+Without `omarchy-shell` (Omarchy 3, plain Hyprland) these steps are skipped. `omarchy-remove-dictation-hark`
+disables and deletes the plugin (only if its manifest says `hark.shell`) and removes the two lines.
+
+**Pill** (the daemon's own GTK layer-shell overlay, bottom centre): red dot and level meter while recording (a
+lock when hands-free, `1:12` after a minute, the pinned profile), three dots while working, then ✓ for a moment
+(*sent*, never *confirmed*; one tag at most: mic dropped, Stopped at 2:00, cleanup skipped, via laptop),
+Copied, Copied · focus moved, Paste failed · copied, Failed · server timeout, Mic lost, Paused, Cancelled / No
+speech. Failures name **Super Alt D**, because the pill is click-through. Colours and text size follow the theme
+(re-read on change); glyphs come from the Nerd Font Omarchy sets as `monospace`.
+
+**Bar glyph**: three bars; red while recording, accent while working, a mic-off glyph when paused, dimmed when
+hark is off (no socket, or no status line for 35 s), and a red dot when something needs you (mic lost, server
+down, config changed or a restart needed, or a failed dictation you have not looked at). The tooltip and the
+accessible name read `hark · ready · desktop 38 ms`, or the problem. Left click opens the panel, middle click
+pastes the last dictation again.
+
+**Quick panel** (left click or **Super Alt D**; arrows or hjkl, Enter, Esc, Tab to the next bar panel):
+
+| row | Enter | other keys |
+|---|---|---|
+| hark · server · rtt, **Pause** / **Resume** | `hark ctl pause` / `hark ctl resume` | |
+| problem line (Not running, Mic lost, Server down, Restart needed, Config changed) | `systemctl --user start hark.service`, `hark service restart`, `hark doctor`, `hark ctl reload` | |
+| last dictation: preview, app · age · tag | copy (`hark last --copy`); on a failed one, retry | **P** closes the panel, then `hark ctl paste-last` into the window that had focus; **R** `hark retry last` (when its audio is kept) |
+| Config · Doctor | `$EDITOR` via `omarchy-launch-editor ~/.config/hark/config.toml`; `hark doctor` in a floating terminal | |
+
+The plugin keeps one `subscribe` connection to the control socket (`$XDG_RUNTIME_DIR/hark/ctl.sock`), which never
+carries dictated text; the last dictation's text comes from `hark history -n 1 --json`, read when the panel opens
+and never logged. `hark-panel` calls the widget's own IPC target (`omarchy-shell hark.shell toggleAt last`):
+Omarchy drops summon payloads for bar widgets, so `omarchy-shell shell toggle hark.shell '{"cursor":"last"}'`
+from the SPEC would not reach it.
+
+**Untested on hardware.** None of this has run on Omarchy yet: the QML was written against the quattro shell
+sources (`shell/Ui/{Panel,KeyboardPanel,PanelKeyCatcher,CursorSurface,BarIconButton}.qml`) and only
+syntax-checked (`qmllint`) and validated (`omarchy-plugin-validate`) on macOS; its rules (`Model.js`) run under
+Node in the test suite against the real daemon's status lines; the GTK pill and the scripts' Omarchy calls
+(`omarchy-shell`, `omarchy plugin enable`, `omarchy-restart-hyprctl`) are exercised with fakes. Known gaps: the
+Profile row and History (SPEC §6.4, §7), the pill's near-limit countdown and *Server down · saved* while
+recording, the theme's corner radius (the pill is square, Omarchy's default), and whether the panel's
+paste lands in the right window (250 ms after it closes). `pause` / `resume` are the ctl names this UI expects
+from the daemon. If something misbehaves: `journalctl --user -t omarchy-shell` (QML errors), `omarchy plugin
+list`, `omarchy-shell hark.shell status`.
 
 Plain Hyprland, push-to-talk on F13 (`bindr` fires on release), hyprlang (≤ 0.54):
 
@@ -191,3 +253,4 @@ engine work; until it lands, switch by hand: `hark --server 127.0.0.1:50051 run`
 | server unreachable | `hark doctor`; `journalctl --user -u hark-server`; `tailscale ping desktop`; cert names (`openssl x509 -in desktop.crt -noout -ext subjectAltName`) |
 | cleanup skipped | `journalctl --user -u hark-llama`; `curl 127.0.0.1:8080/health` on the desktop |
 | no indicator | `gtk4-layer-shell` installed? GNOME has no layer-shell |
+| no hark in the bar / Super Alt D does nothing | `omarchy plugin list` (hark.shell enabled?); `omarchy-shell hark.shell status`; `journalctl --user -t omarchy-shell` |
