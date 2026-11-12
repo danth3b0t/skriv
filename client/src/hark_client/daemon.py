@@ -287,6 +287,7 @@ def _make_mic(svc: Services, controller: Controller) -> Mic:
 
 def run(svc: Services) -> int:
     from hark_client import ctl  # noqa: PLC0415 - keep `hark ctl` imports light
+    from hark_client.service import linux as systemd  # noqa: PLC0415 - no-ops outside systemd
 
     caps = svc.caps.refresh()
     if caps is None:
@@ -313,10 +314,12 @@ def run(svc: Services) -> int:
     if svc.cfg.audio.keep_open:
         mic.start()
     server.start()
+    systemd.notify("READY=1")  # Type=notify unit: ready once `hark ctl` gets answers
     if hotkey is not None:
         hotkey.start()
 
     stop = threading.Event()
+    systemd.start_watchdog(lambda: ctl.send("ping", timeout=5.0).startswith("ok"), stop)
 
     def on_signal(signum: int, frame: FrameType | None) -> None:
         stop.set()
@@ -331,6 +334,7 @@ def run(svc: Services) -> int:
             while not stop.wait(0.5):
                 pass
     finally:
+        systemd.notify("STOPPING=1")
         if hotkey is not None:
             hotkey.stop()
         context.stop_prefetch()

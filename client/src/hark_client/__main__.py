@@ -1,6 +1,6 @@
 """hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
 (pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
-learned vocabulary).
+learned vocabulary), `service` (install/inspect the always-on user services).
 
 `hark ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
@@ -15,6 +15,8 @@ import sys
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+
+from hark_client import service
 
 if TYPE_CHECKING:
     from hark_client.config import Config
@@ -42,6 +44,10 @@ class Args(argparse.Namespace):
     copy: bool
     history_action: str
     n: int
+    service_action: str
+    components: list[str]
+    no_start: bool
+    force: bool
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -96,6 +102,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "learned_action", nargs="?", default="list", choices=["list", "forget", "clear"]
     )
     lp.add_argument("text", nargs="?", help="forget: the heard or written form to delete")
+    service.add_parser(sub)
     return p.parse_args(argv, namespace=Args())
 
 
@@ -191,6 +198,11 @@ def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "ctl":
         return cmd_ctl(args)
+    if args.command == "service":
+        return service.main(
+            args.service_action, args.components,
+            no_start=args.no_start, force=args.force, dry_run=args.dry_run,
+        )  # fmt: skip
 
     from hark_client import config  # noqa: PLC0415
 
