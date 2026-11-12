@@ -68,7 +68,7 @@ Omarchy owns its dictation keys (hold **Right Alt**, **Alt+Space** toggle); hand
 
 ```sh
 omarchy-install-dictation-hark      # hark service install client + omarchy-dictation-use hark (+ bar, Super Alt D)
-omarchy-remove-dictation-hark       # undo (config, history and learned vocabulary stay)
+omarchy-remove-dictation-hark       # undo (config, history and the vocabulary learned from agent sessions stay)
 ```
 
 From a checkout run `packaging/omarchy/omarchy-install-dictation-hark`; it links the scripts into `~/.local/bin`.
@@ -95,8 +95,9 @@ Without `omarchy-shell` (Omarchy 3, plain Hyprland) these steps are skipped. `om
 disables and deletes the plugin (only if its manifest says `hark.shell`) and removes the two lines.
 
 **Pill** (the daemon's own GTK layer-shell overlay, bottom centre): red dot and level meter while recording (a
-lock when hands-free, `1:12` after a minute, the pinned profile), three dots while working, then ✓ for a moment
-(*sent*; one tag at most: mic dropped, Stopped at 2:00, cleanup skipped, via laptop),
+lock when hands-free, `1:12` after a minute, `0:25 left` in the last 30 s before the 5-minute limit, the pinned
+profile), three dots while working, then ✓ for a moment (*sent*; one tag at most: mic dropped, Stopped at 5:00,
+cleanup skipped, via laptop),
 Copied, Copied · focus moved, Paste failed · copied, Failed · server timeout, Mic lost, Paused, Cancelled / No
 speech. Failures name **Super Alt D**, because the pill is click-through. Colours and text size follow the theme
 (re-read on change); glyphs come from the Nerd Font Omarchy sets as `monospace`.
@@ -127,10 +128,9 @@ sources (`shell/Ui/{Panel,KeyboardPanel,PanelKeyCatcher,CursorSurface,BarIconBut
 syntax-checked (`qmllint`) and validated (`omarchy-plugin-validate`) on macOS; its rules (`Model.js`) run under
 Node in the test suite against the real daemon's status lines; the GTK pill and the scripts' Omarchy calls
 (`omarchy-shell`, `omarchy plugin enable`, `omarchy-restart-hyprctl`) are exercised with fakes. Known gaps: the
-Profile row and History (SPEC §6.4, §7), the pill's near-limit countdown and *Server down · saved* while
-recording, the theme's corner radius (the pill is square, Omarchy's default), and whether the panel's
-paste lands in the right window (250 ms after it closes). `pause` / `resume` are the ctl names this UI expects
-from the daemon. If something misbehaves: `journalctl --user -t omarchy-shell` (QML errors), `omarchy plugin
+Profile row and History (SPEC §6.4, §7), *Server down · saved* while recording, the theme's corner radius (the
+pill is square, Omarchy's default), and whether the panel's paste lands in the right window (250 ms after it
+closes). If something misbehaves: `journalctl --user -t omarchy-shell` (QML errors), `omarchy plugin
 list`, `omarchy-shell hark.shell status`.
 
 Plain Hyprland, push-to-talk on F13 (`bindr` fires on release), hyprlang (≤ 0.54):
@@ -202,8 +202,10 @@ binding = "/home/me/projects/hark/build/transcribe/python"
 [cleanup]
 base_url = "http://127.0.0.1:8080/v1"
 model = "s1-mini-q4_k_m"
-engine = "s1"
 ```
+
+An older `server.toml` with `engine` or `max_edits` under `[cleanup]`, or `kind = "nemo_gpupb"`, no longer loads:
+delete those keys, use `transcribe_cpp`.
 
 - `hark-server.service` is `Type=notify`: *started* means the model is loaded and warm (health SERVING; the first
   start may download it, hence `TimeoutStartSec=15min`). Its watchdog is fed from the event loop. Restarts back off
@@ -242,7 +244,9 @@ tls_key = "~/.config/hark/pki/laptop.key"
 # tls_server_name = "desktop"                 # only if you dial a name/IP that is not in the server cert
 ```
 
-Check with `hark doctor` (server line says `TLS`, health SERVING). Optionally restrict port 50051 to your own
+The server goes only in `[[providers]]`: a `[server] address` or `[server] tls_*` key no longer loads (see
+[migrating an older config](../client/README.md#migrating-an-older-config)). Check with `hark doctor` (server
+line says `TLS`, health SERVING). Optionally restrict port 50051 to your own
 devices in the Tailscale ACL. Limits: any certificate from the CA is accepted (no per-client allowlist), and
 there is no revocation: to shut a client out, make a new CA and re-issue the others. The CA is valid 10 years,
 leaf certificates 825 days (`--days N`).
