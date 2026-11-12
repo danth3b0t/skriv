@@ -1,4 +1,5 @@
-"""hark CLI: `run` (daemon), `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
+"""hark CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Hark.app runs it),
+`ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
 (pipeline on a kept recording), `history`, `last`, `doctor`, `learned` (inspect/delete the
 learned vocabulary), `service` (macOS launchd agents for the servers).
 
@@ -17,8 +18,12 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
+    import threading
+    from collections.abc import Callable
+
     from hark_client.config import Config
     from hark_client.context import ContextSnapshot
+    from hark_client.daemon import AppUi, Controller
     from hark_client.pipeline import Services
     from hark_client.service import Layout
 
@@ -47,6 +52,7 @@ class Args(argparse.Namespace):
     backend: str | None
     cleanup_model: str | None
     no_cleanup: bool
+    no_onboarding: bool
 
 
 def parse_args(argv: list[str] | None = None) -> Args:
@@ -56,6 +62,10 @@ def parse_args(argv: list[str] | None = None) -> Args:
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
+    ap = sub.add_parser("app", help="macOS: `run` plus a menu-bar item (what Hark.app runs)")
+    ap.add_argument(
+        "--no-onboarding", action="store_true", help="no setup window, even if permissions miss"
+    )
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
     c.add_argument(
         "action",
@@ -253,6 +263,9 @@ def main(argv: list[str] | None = None) -> int:
         return cmd_ctl(args)
     if args.command == "service":
         return cmd_service(args)
+    if args.command == "app" and sys.platform != "darwin":
+        print("hark app: macOS only; use `hark run`", file=sys.stderr)
+        return 2
 
     from hark_client import config  # noqa: PLC0415
 
@@ -416,12 +429,31 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
             field_reader=reader, learned=learned, learner=learner,
         )  # fmt: skip
         try:
-            return daemon.run(svc)
+            return daemon.run(svc, _menu_bar(args) if args.command == "app" else None)
         except ctl.DaemonRunningError as e:
             print(f"hark: {e}", file=sys.stderr)
             return 1
     finally:
         channel.close()
+
+
+def _menu_bar(args: Args) -> Callable[[Controller, threading.Event], AppUi]:
+    """`hark app`: builds the menu-bar item on the main thread once the daemon is up."""
+    from hark_client.config import default_config_path  # noqa: PLC0415
+
+    cli = [*(["--config", args.config] if args.config else [])]
+    cli += ["--server", args.server] if args.server else []
+
+    def make(controller: Controller, stop: threading.Event) -> AppUi:
+        from hark_client.menubar import MenuBar  # noqa: PLC0415 - AppKit
+
+        return MenuBar(
+            controller, stop,
+            config_path=Path(args.config) if args.config else default_config_path(),
+            cli=cli, onboarding=not args.no_onboarding,
+        )  # fmt: skip
+
+    return make
 
 
 if __name__ == "__main__":
