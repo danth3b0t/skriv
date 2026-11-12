@@ -54,8 +54,20 @@ def parse_args(argv: list[str] | None = None) -> Args:
     c = sub.add_parser("ctl", help="control a running daemon (bind these to keys)")
     c.add_argument(
         "action",
-        choices=["start", "stop", "toggle", "cancel", "status", "ping", "paste-last"],
-        help="paste-last: paste the last dictated text again into the focused window",
+        choices=[
+            "start",
+            "stop",
+            "toggle",
+            "cancel",
+            "status",
+            "ping",
+            "paste-last",
+            "undo",
+            "swap-raw",
+        ],
+        help="paste-last: paste the last dictated text again into the focused window; "
+        "undo: delete the last dictation's text if nothing was typed after it; "
+        "swap-raw: replace it with the uncleaned text (again: back)",
     )
     c.add_argument(
         "--json", action="store_true", help="JSON v1 request/reply (docs/protocol/ctl-v1.md)"

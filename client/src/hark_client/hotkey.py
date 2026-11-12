@@ -28,7 +28,7 @@ from typing import TYPE_CHECKING, Literal, Protocol
 from hark_client.continuation import CLICK, KeyPress
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
+    from collections.abc import Callable, Mapping
 
 log = logging.getLogger("hark.hotkey")
 
@@ -90,6 +90,7 @@ class PushToTalk:
         on_tap: Action | None = None,
         tap_s: float = 0.0,
         swallow_esc: bool = False,
+        keys: Mapping[str, Action] | None = None,
         clock: Callable[[], float] = time.monotonic,
         dispatch: Callable[[Action], None] | None = None,
     ) -> None:
@@ -97,11 +98,14 @@ class PushToTalk:
         tap_s: releases sooner than this after the press are taps (0: hold only).
         swallow_esc: the Esc that cancels a recording does not reach the focused app (macOS:
         an active event tap, which needs Accessibility; X11: a grab of Esc while recording).
+        keys: more keys (pynput Key names or characters) -> their action; never passed to
+        ``on_input``.
         dispatch: runs actions (default: in order on a worker thread)."""
         from pynput import keyboard  # noqa: PLC0415 - optional, platform-specific
 
         self._keyboard = keyboard
         self.target = self._resolve(key)
+        self._keys = {self._resolve(k): action for k, action in (keys or {}).items()}
         self.on_down, self.on_up, self.on_cancel = on_down, on_up, on_cancel
         self.on_input = on_input
         self.on_tap = on_tap
@@ -198,6 +202,8 @@ class PushToTalk:
             self._mode, self._external = "idle", False
             self._swallowing = self._drop = self.swallow_esc
             return self.on_cancel
+        if (action := self._keys.get(key)) is not None:
+            return action
         if (mod := MODIFIERS.get(str(getattr(key, "name", "")))) is not None:
             self._mods[key] = mod
             return None

@@ -69,6 +69,22 @@ def test_paste_keys(mode: str, terminal: bool, hyprctl_reply: str, expected_keys
     )  # never Enter
 
 
+@pytest.mark.parametrize(
+    ("mode", "argv"),
+    [
+        ("hyprland", ["wtype", "-k", "BackSpace", "-k", "BackSpace", "-k", "BackSpace"]),
+        (
+            "x11",
+            ["xdotool", "key", "--clearmodifiers", "--delay", "0", "--repeat", "3", "BackSpace"],
+        ),
+    ],
+)
+def test_undo_backspaces(mode: str, argv: list[str]):
+    run = FakeRunner()
+    assert LinuxInjector(mode, run=run).backspace(3).ok
+    assert run.key_calls() == [argv]
+
+
 ADDR = "0x55d0C0a1b2c0"
 
 

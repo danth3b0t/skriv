@@ -13,6 +13,7 @@ import signal
 import sys
 import threading
 import time
+from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from hark.v1 import hark_pb2 as pb
@@ -20,13 +21,14 @@ from hark_client import context, guardrails, history, indicator, retry
 from hark_client.asr import unix_us
 from hark_client.audio import PreRoll
 from hark_client.config import expand
-from hark_client.continuation import ShadowBuffer
+from hark_client.continuation import ShadowBuffer, backspaces
 from hark_client.pipeline import Utterance
 
 if TYPE_CHECKING:
     from collections.abc import Callable
     from types import FrameType
 
+    from hark_client.context import CaretContext, FocusInfo
     from hark_client.continuation import KeyPress
     from hark_client.hotkey import PushToTalk
     from hark_client.indicator import Indicator
@@ -39,6 +41,23 @@ log = logging.getLogger("hark")
 def _focus_token() -> str:
     # Looked up at call time so tests can substitute the context engine.
     return context.focus_token()
+
+
+def _caret_context(focus: FocusInfo) -> CaretContext:
+    # Looked up at call time so tests can substitute the context engine.
+    return context.caret_context(focus)
+
+
+CARET_CHECK_CHARS = 64  # context.caret reads at most this much before the caret
+
+
+@dataclass(frozen=True, slots=True)
+class Insertion:
+    """hark's newest paste, for `hark ctl undo` / `swap-raw`."""
+
+    text: str  # exactly what was pasted
+    swap: str  # the other version (uncleaned <-> cleaned); "" = none
+    terminal: bool
 
 
 class Controller:
@@ -61,6 +80,10 @@ class Controller:
         self.indicator: Indicator | None = None
         # told (under the lock, so in order) when a recording starts or ends: the hotkey listener
         self.on_recording: Callable[[bool], None] | None = None
+        # the hotkey listener reports every key and click (shadow buffer): undo can trust it
+        self.keys_observed = False
+        self.insertion: Insertion | None = None  # the newest dictation's paste, if any
+        self._undo_lock = threading.Lock()
 
     def on_pcm(self, pcm: bytes) -> None:
         """Mic callback thread."""
@@ -87,6 +110,7 @@ class Controller:
             mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
             self.current = utt = Utterance(self.svc, preroll=self.preroll.take(), mask_ms=mask_ms)
             self._max_hit = False
+            self.insertion = None  # undo is for the newest dictation only
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
         if self.indicator is not None:
@@ -146,6 +170,10 @@ class Controller:
                 self.last_result = (time.time(), res)
                 if res.final_text and res.status != "empty":
                     self.last_text = res.final_text
+                if res.pasted_text and res.paste_verdict != "missing":
+                    swap = res.swap_text if res.swap_text != res.pasted_text else ""
+                    terminal = self.svc.cfg.profile(res.profile).terminal
+                    self.insertion = Insertion(res.pasted_text, swap, terminal)
                 self._keep(utt, res)
                 timing = res.timings.get("keyup_to_paste_ms")
                 log.info(
@@ -215,7 +243,77 @@ class Controller:
         if not res.ok:
             self.shadow.forget()
             return f"error paste failed: {res.detail}"
+        self.insertion = Insertion(text, "", terminal)
         return f"ok pasted {len(text)} chars"
+
+    def undo(self) -> str:
+        """Delete hark's newest paste, only if the caret is known to be right after it."""
+        return self._retract(swap=False)
+
+    def swap_raw(self) -> str:
+        """Replace hark's newest paste with its uncleaned text (again: back), same condition."""
+        return self._retract(swap=True)
+
+    def _retract(self, *, swap: bool) -> str:
+        if not self._undo_lock.acquire(blocking=False):
+            return "error an undo is already running"
+        try:
+            reply = self._retract_locked(swap=swap)
+        finally:
+            self._undo_lock.release()
+        if reply.startswith("error "):
+            self.svc.feedback.notify(f"Nothing {'swapped' if swap else 'undone'}: {reply[6:]}")
+        return reply
+
+    def _refusal(self, ins: Insertion | None, *, swap: bool) -> str:
+        """Why undo/swap must not run now, from the daemon's state alone ("" = go on)."""
+        with self._lock:
+            busy = self.current is not None or self.busy > 0
+        if busy:
+            return "a dictation is in progress"
+        if ins is None:
+            return "no dictation to undo (only the newest paste can be undone)"
+        if swap and not ins.swap:
+            return "no other version of the text (cleanup changed nothing)"
+        if not self.keys_observed:
+            # without the key stream, typing or a selection since the paste would go unseen
+            return "needs the hotkey listener's key events (macOS/X11), not available"
+        if backspaces(ins.text) is None:
+            return "the text has combined characters; the Backspace count would be a guess"
+        return ""
+
+    def _retract_locked(self, *, swap: bool) -> str:  # noqa: PLR0911 - one reply per refusal
+        ins = self.insertion
+        refusal = self._refusal(ins, swap=swap)
+        if refusal or ins is None:
+            return f"error {refusal}"
+        cfg = self.svc.cfg
+        focus = context.collect(cfg.context.deadline_ms / 1000, 0).focus
+        target = focus.window_id
+        if self.shadow.last_insertion(target) != ins.text:
+            return "error the caret may have moved: keys, clicks or focus changes since the paste"
+        caret = _caret_context(focus)
+        tail = ins.text[-CARET_CHECK_CHARS:]
+        if caret.trusted and not (caret.before or "").endswith(tail):
+            return "error the text before the caret is not hark's last paste"
+        n = len(ins.text)
+        if not self.shadow.retract(target, ins.text):
+            return "error the caret may have moved"
+        self.insertion = None
+        res = self.svc.injector.backspace(n)
+        if not res.ok:
+            self.shadow.forget()
+            return f"error {res.detail}"
+        log.info("undo: removed %d chars", n)
+        if not swap:
+            return f"ok removed {n} chars"
+        self.shadow.pasted(target, ins.swap)
+        res = self.svc.injector.paste(ins.swap, terminal=ins.terminal, target=target)
+        if not res.ok:
+            self.shadow.forget()
+            return f"error removed the text, but the paste failed: {res.detail}"
+        self.insertion = Insertion(ins.swap, ins.text, ins.terminal)
+        return f"ok swapped {n} for {len(ins.swap)} chars"
 
     def user_input(self, press: KeyPress) -> None:
         """A key press or click from the hotkey listener: keeps the shadow buffer current and
@@ -264,6 +362,8 @@ class Controller:
             "status": self.status,
             "ping": lambda: "ok pong",
             "paste-last": self.paste_last,
+            "undo": self.undo,
+            "swap-raw": self.swap_raw,
         }
         action = actions.get(command)
         return action() if action else f"error unknown command {command!r}"
@@ -297,9 +397,11 @@ def _make_hotkey(svc: Services, controller: Controller) -> PushToTalk | None:
             # a filtering event tap needs Accessibility; without it the tap is not created at all
             log.warning("no Accessibility permission: Esc will also reach the focused app")
             swallow_esc = False
+    actions = ((cfg.undo_key, controller.undo), (cfg.swap_key, controller.swap_raw))
     return PushToTalk(
         cfg.key, controller.start, controller.stop, controller.cancel, controller.user_input,
         on_tap=controller.hands_free, tap_s=cfg.tap_ms / 1000, swallow_esc=swallow_esc,
+        keys={key: action for key, action in actions if key},
     )  # fmt: skip
 
 
@@ -346,6 +448,7 @@ def run(svc: Services) -> int:
     server.start()
     if hotkey is not None:
         controller.on_recording = hotkey.recording
+        controller.keys_observed = True
         hotkey.start()
 
     stop = threading.Event()
