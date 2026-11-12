@@ -128,6 +128,19 @@ def test_alias_of_everyday_words_needs_evidence(heard: str, written: str):
     assert canonicalize(heard, [], [EACH_OTHER, SESSION_START])[0] == written
 
 
+def test_applied_bias_hit_on_the_span_is_evidence_for_everyday_words():
+    """The recognizer's applied bias hit is the missing cue, but only for that term and only
+    over the words it covers."""
+    heard = "why does wait final time out"  # words at 0-90, 100-190, ...
+    ws = words(heard, {})
+    wait_final = term("wait_final", "wait final")
+    assert canonicalize(heard, ws, [wait_final], hits=[("wait_final", 200, 390)])[0] == (
+        "why does wait_final time out"
+    )
+    for hits in ([], [("each_other", 200, 390)], [("wait_final", 400, 590)]):
+        assert canonicalize(heard, ws, [wait_final, EACH_OTHER], hits=hits)[0] == heard
+
+
 @pytest.mark.parametrize(
     ("heard", "canonical", "kind", "written"),
     [
@@ -148,6 +161,29 @@ def test_alias_of_everyday_words_needs_evidence(heard: str, written: str):
          "from slash dot kube slash config"),
         ("add it to Hark history list", "hark history", TermKind.COMMAND,
          "add it to hark history list"),
+        # the recognizer's hyphen joins the alias to the next word
+        ("tail it with journal control-user", "journalctl", TermKind.COMMAND,
+         "tail it with journalctl-user"),
+        ("journal control dash dash user", "journalctl", TermKind.COMMAND,
+         "journalctl dash dash user"),
+        ("keep journal control tight", "journalctl", TermKind.COMMAND,
+         "keep journal control tight"),  # everyday words, no flag after the command
+        ("a well-known fix", "known_fix", TermKind.IDENTIFIER, "a well-known fix"),
+        # case-only: the recognizer's inner capital, never a sentence capital
+        ("uv run pyTest-k gate", "pytest", TermKind.COMMAND, "uv run pytest-k gate"),
+        ("PyTest is slow", "pytest", TermKind.COMMAND, "pytest is slow"),
+        ("call model.Train now", "model.train()", TermKind.IDENTIFIER, "call model.train now"),
+        ("Optimizer state", "optimizer", TermKind.NAME, "Optimizer state"),
+        ("the API is down", "api", TermKind.NAME, "the API is down"),
+        # spoken separators: one word may be a close mishearing, not two, not a far one
+        ("set hark underscore models underscore diar to", "HARK_MODELS_DIR",
+         TermKind.IDENTIFIER, "set HARK_MODELS_DIR to"),
+        ("set hark underscore modes underscore diar to", "HARK_MODELS_DIR",
+         TermKind.IDENTIFIER, "set hark underscore modes underscore diar to"),
+        ("set hark underscore models underscore door to", "HARK_MODELS_DIR",
+         TermKind.IDENTIFIER, "set hark underscore models underscore door to"),
+        ("set models underscore diar to", "models_dir", TermKind.IDENTIFIER,
+         "set models underscore diar to"),
     ],
 )  # fmt: skip
 def test_derived_spoken_forms_match(heard: str, canonical: str, kind: TermKind, written: str):

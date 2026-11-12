@@ -71,8 +71,13 @@ def test_ring_keeps_the_newest_n_privately_and_purges_the_rest(
     assert (mode(ring), mode(newest)) == (0o700, 0o700)
     stored = (newest / "context.json").read_text()
     assert "secret" not in stored
-    # the key-down shortlist (a terminal: the base shell commands follow the context terms)
-    assert retry.load_snapshot(retry.find(tmp_path, ids[2][-8:])).terms[0] == KUBECTL
+    # the key-down shortlist (a terminal: the base shell commands follow the context terms),
+    # with today's spoken forms ahead of the stored one, as a live dictation would send
+    replayed = retry.load_snapshot(retry.find(tmp_path, ids[2][-8:])).terms[0]
+    assert replayed.canonical == KUBECTL.canonical
+    assert replayed.spoken[0] == "kubectl"
+    assert {"cube control", "kube cuttle"} <= set(replayed.spoken)
+    assert replayed.spoken.count("cube control") == 1
     assert json.loads((newest / "meta.json").read_text())["status"] == "pasted"
 
     c.svc.cfg.retry.keep = 0

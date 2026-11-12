@@ -40,7 +40,7 @@ from hark_client.asr import SAMPLE_RATE, AsrError, TranscribeStream, uuid7
 from hark_client.audio import flat, speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
-from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
+from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, TermKind, WordInfo
 from hark_client.context.words import (
     dictionary,
     dictionary_terms,
@@ -480,7 +480,9 @@ class Utterance:
             text, words = gated.text, gated.words
             t1 = time.perf_counter()  # gate_ms is its own stage
         try:
-            canon, replacements = context.canonicalize(text, words, snap.terms)
+            canon, replacements = context.canonicalize(
+                text, words, snap.terms, hits=self._applied_hits(final)
+            )
         except Exception:  # keep the raw text rather than lose the dictation
             log.exception("canonicalize failed; using the raw text")
             canon, replacements = text, []
@@ -492,7 +494,8 @@ class Utterance:
         )
 
         if prof.terminal:
-            canon, res.symbols = symbols.apply(canon)
+            flags = (t.canonical for t in snap.terms if t.kind is TermKind.FLAG)
+            canon, res.symbols = symbols.apply(canon, flags)
             if res.symbols:
                 self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
 
@@ -581,6 +584,16 @@ class Utterance:
         )
         svc.feedback.sound("done" if res.paste.ok else "error")
         return res
+
+    def _applied_hits(self, final: pb.FinalResult) -> list[tuple[str, int, int]]:
+        """(canonical, start_ms, end_ms) of each bias hit the anchor did not already have."""
+        terms = self.start_message.context.bias.terms if self.start_message else ()
+        canonical = {t.id: t.canonical for t in terms}
+        return [
+            (canonical[h.term_id], h.start_ms, h.end_ms)
+            for h in final.bias_hits
+            if h.decision == pb.BIAS_HIT_DECISION_APPLIED and h.term_id in canonical
+        ]
 
     def _gate(
         self, final: pb.FinalResult, hyp: pb.Hypothesis, res: Result

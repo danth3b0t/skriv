@@ -23,7 +23,11 @@ Rules, on whitespace-separated words:
 - "issue/PR/port/ticket" + number words -> digits ("PR four thirty seven" -> "PR 437").
 - "zero comma one" -> "0,1" between two numbers.
 - ASR-joined forms: "x.by" -> "x.py", "commit-m" -> "commit -m", and once such a command
-  was said: "up-d" -> "up -d", "dash-fix" -> "--fix"; "dash-dash fix" -> "--fix" always.
+  was said: "up-d" -> "up -d", "dash-fix" -> "--fix"; "dash-dash fix" -> "--fix" always;
+  "dash-fix" -> "--fix" also without a command when ``--fix`` is a flag on the shortlist.
+- "Get" + a git subcommand starting the text is ``git`` (the recognizer's "get"), when the
+  subcommand ends the text or a clause, or a flag or a branch/remote follows ("Get status."
+  -> "git status.", "Get push --force" -> "git push --force"; not "Get commit messages").
 - When a flag was produced and the text starts with a capitalized command, it
   is lower-cased ("Git commit -m" -> "git commit -m"); so is a capitalized command
   followed by one of its subcommands ("Git status" -> "git status").
@@ -32,8 +36,12 @@ Rules, on whitespace-separated words:
 from __future__ import annotations
 
 import re
+from typing import TYPE_CHECKING
 
 from hark_client.context.canon import common_words
+
+if TYPE_CHECKING:
+    from collections.abc import Iterable
 
 EXTENSIONS = frozenset({
     "py", "pyi", "ts", "tsx", "js", "jsx", "mjs", "cjs", "rs", "go", "rb", "java", "kt", "swift",
@@ -102,6 +110,12 @@ _SENTENCE_END = ".!?"
 _WORD = re.compile(r"[\w][\w.-]*\Z")
 _JOINED_FLAG = re.compile(r"([A-Za-z]+)-([A-Za-z])\Z")
 _HOST_PORT = re.compile(r"[\w.-]+:\d+\Z")
+# "Get" + one of these at the start: the recognizer's "git"
+GET_GIT = frozenset({
+    "status", "push", "pull", "commit", "diff", "log", "checkout", "rebase", "stash", "fetch",
+    "merge", "switch", "restore", "add",
+})  # fmt: skip
+_GIT_ARGS = frozenset({"origin", "upstream", "main", "master", "head"})
 
 
 def _split(token: str) -> tuple[str, str]:
@@ -124,7 +138,8 @@ def _number_value(word: str) -> int | None:
 
 
 class _Rewriter:
-    def __init__(self, text: str) -> None:
+    def __init__(self, text: str, flags: Iterable[str]) -> None:
+        self.known_flags = {f.lower(): f for f in flags}
         self.words = [_split(t) for t in text.split()]
         self.out: list[str] = []
         self.events: list[str] = []
@@ -162,9 +177,24 @@ class _Rewriter:
                 if any(c in _SENTENCE_END for c in punct):
                     self.command_seen = False
             i = n
+        if self.get_git():
+            self.out[0] = "git"
+            self.events.append("get git")
         if self.out and self.out[0][:1].isupper() and self.leading_command():
             self.out[0] = self.out[0].lower()
         return " ".join(self.out), self.events
+
+    def get_git(self) -> bool:
+        """The text starts with "Get" + a git subcommand used as a command line."""
+        if len(self.out) < 2 or self.out[0].lower() != "get":
+            return False
+        sub, punct = _split(self.out[1])
+        if sub.lower() not in GET_GIT:
+            return False
+        if punct or len(self.out) == 2:
+            return True
+        nxt = _split(self.out[2])[0]
+        return nxt.startswith("-") or nxt.lower() in _GIT_ARGS
 
     def leading_command(self) -> bool:
         first = self.out[0].lower()
@@ -246,10 +276,13 @@ class _Rewriter:
         if c == "dash-dash" and not punct and _WORD.match(nxt) and not nxt.isdigit():
             return self.flag_out("--" + nxt + self.words[i + 1][1], f"{c} {nxt}", i + 2)
         rest = c.removeprefix("dash-")
-        if rest != c and self.command_seen and _WORD.match(rest) and rest.isascii():
+        if rest == c or not (_WORD.match(rest) and rest.isascii()):
+            return None
+        if self.command_seen:
             dashes = "-" if len(rest) == 1 else "--"
             return self.flag_out(dashes + rest + punct, c, i + 1)
-        return None
+        known = self.known_flags.get("--" + rest) or self.known_flags.get("-" + rest)
+        return self.flag_out(known + punct, c, i + 1) if known else None
 
     def flag_out(self, text: str, event: str, nxt: int) -> int:
         self.flag = True
@@ -382,8 +415,9 @@ class _Rewriter:
         return j
 
 
-def apply(text: str) -> tuple[str, list[str]]:
-    """(text with spoken symbols written as symbols, the rules that fired)."""
+def apply(text: str, flags: Iterable[str] = ()) -> tuple[str, list[str]]:
+    """(text with spoken symbols written as symbols, the rules that fired); ``flags``: the
+    shortlist's flags (``--fix``), recognized as "dash-fix" without a command."""
     if not text.strip():
         return text, []
-    return _Rewriter(text).run()
+    return _Rewriter(text, flags).run()
