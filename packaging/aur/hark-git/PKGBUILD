@@ -151,7 +151,10 @@ package() {
 
   install -Dm644 packaging/systemd/{hark,hark-server,hark-llama}.service -t "$pkgdir/usr/lib/systemd/user"
   install -Dm755 packaging/omarchy/omarchy-{dictation,install-dictation,remove-dictation}-hark \
-    -t "$pkgdir/usr/bin"
+    packaging/omarchy/hark-panel -t "$pkgdir/usr/bin"
+  # copied into ~/.config/omarchy/plugins by omarchy-install-dictation-hark
+  install -Dm644 packaging/omarchy/hark.shell/{manifest.json,Widget.qml,Model.js} \
+    -t "$pkgdir/usr/share/hark/omarchy/hark.shell"
 
   install -Dm644 README.md "$pkgdir/usr/share/doc/hark/README.md"
   install -Dm644 client/README.md "$pkgdir/usr/share/doc/hark/client.md"

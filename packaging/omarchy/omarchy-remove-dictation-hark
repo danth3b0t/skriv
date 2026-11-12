@@ -6,6 +6,7 @@ set -euo pipefail
 
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
+bind_mark="-- hark: dictation panel (omarchy-remove-dictation-hark removes this line and the next)"
 
 if command -v hark >/dev/null 2>&1; then
   hark service uninstall client || true
@@ -18,8 +19,35 @@ if [[ -f $backend_config && $(<"$backend_config") == "hark" ]]; then
   rm "$backend_config"
 fi
 
+# The bar widget: off the bar, then its folder (only if it is ours).
+plugin="$config_home/omarchy/plugins/hark.shell"
+if command -v omarchy-plugin-disable >/dev/null 2>&1; then
+  omarchy-plugin-disable hark.shell >/dev/null 2>&1 || true
+fi
+if [[ -f $plugin/manifest.json ]] && grep -q '"id": "hark.shell"' "$plugin/manifest.json"; then
+  rm -rf "$plugin"
+fi
+
+# Super Alt D: the marked line and the bind after it.
+bindings="$config_home/hypr/bindings.lua"
+if [[ -f $bindings ]] && grep -qxF -- "$bind_mark" "$bindings"; then
+  # also the blank line the installer put before it; rewritten in place (keeps the file's mode)
+  kept=$(awk -v mark="$bind_mark" '
+    skip { skip = 0; next }
+    $0 == mark { skip = 1; blank = 0; next }
+    blank { print ""; blank = 0 }
+    $0 == "" { blank = 1; next }
+    { print }
+    END { if (blank) print "" }
+  ' "$bindings")
+  printf '%s\n' "$kept" >"$bindings"
+  if command -v omarchy-restart-hyprctl >/dev/null 2>&1; then
+    omarchy-restart-hyprctl
+  fi
+fi
+
 # Remove only our own links (this script is one of them, so it goes last).
-for script in omarchy-dictation-hark omarchy-remove-dictation-hark; do
+for script in hark-panel omarchy-dictation-hark omarchy-remove-dictation-hark; do
   link="$HOME/.local/bin/$script"
   if [[ -L $link && $(readlink "$link") == "$here/$script" ]]; then
     rm "$link"

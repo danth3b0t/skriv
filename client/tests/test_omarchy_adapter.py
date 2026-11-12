@@ -1,7 +1,9 @@
-"""Omarchy dictation-backend contract for packaging/omarchy/omarchy-dictation-hark (fake hark/systemctl)."""
+"""Omarchy dictation-backend contract for packaging/omarchy/omarchy-dictation-hark, and the install /
+remove scripts around it (fake hark, systemctl and Omarchy tools)."""
 
 from __future__ import annotations
 
+import json
 import os
 import stat
 import subprocess
@@ -95,10 +97,18 @@ exit "${FAKE_EXIT:-0}"
 """
 
 
-def run_script(tmp_path: Path, script: Path, fake_exit: int = 0) -> tuple[int, list[str], str]:
+OMARCHY_4 = (  # Omarchy 4's shell: the bar widget and the panel key get installed
+    "omarchy-shell", "omarchy-plugin-enable", "omarchy-plugin-disable", "omarchy-restart-hyprctl",
+)  # fmt: skip
+BIND = 'o.bind("SUPER + ALT + D", "Dictation panel", "hark-panel")'
+
+
+def run_script(
+    tmp_path: Path, script: Path, fake_exit: int = 0, *, omarchy4: bool = False
+) -> tuple[int, list[str], str]:
     bin_dir = tmp_path / "bin"
     bin_dir.mkdir(exist_ok=True)
-    for name in ("hark", "omarchy-dictation-use", "systemctl"):
+    for name in ("hark", "omarchy-dictation-use", "systemctl", *(OMARCHY_4 if omarchy4 else ())):
         exe = bin_dir / name
         exe.write_text(FAKE_TOOL)
         exe.chmod(exe.stat().st_mode | stat.S_IEXEC)
@@ -110,6 +120,7 @@ def run_script(tmp_path: Path, script: Path, fake_exit: int = 0) -> tuple[int, l
         "XDG_CONFIG_HOME": str(tmp_path / "config"),
         "FAKE_LOG": str(log),
         "FAKE_EXIT": str(fake_exit),
+        "TMPDIR": str(tmp_path),
     }
     p = subprocess.run(  # noqa: S603 - fixed argv
         ["/bin/bash", str(script)], env=env, capture_output=True, text=True, check=False
@@ -118,8 +129,11 @@ def run_script(tmp_path: Path, script: Path, fake_exit: int = 0) -> tuple[int, l
 
 
 def test_install_from_a_checkout_links_the_adapter_and_installs_the_service(tmp_path: Path):
-    code, calls, _ = run_script(tmp_path, INSTALL)
-    assert (code, calls) == (0, ["hark service install client", "omarchy-dictation-use hark"])
+    code, calls, err = run_script(tmp_path, INSTALL)  # no Omarchy 4 shell: no bar widget
+    assert (code, calls) == (
+        0, ["hark service install client", "omarchy-dictation-use hark", "hark doctor"],
+    )  # fmt: skip
+    assert "skipped hark's bar widget" in err
     link = tmp_path / "home" / ".local" / "bin" / "omarchy-dictation-hark"
     assert link.resolve() == ADAPTER.resolve()
 
@@ -140,3 +154,50 @@ def test_remove_uninstalls_the_service_and_unselects_hark(tmp_path: Path):
     assert calls[-1] == "hark service uninstall client"
     assert not backend.exists()
     assert not (tmp_path / "home" / ".local" / "bin" / "omarchy-dictation-hark").is_symlink()
+
+
+def test_on_omarchy_4_install_adds_the_bar_widget_and_the_panel_key_once_and_remove_undoes_it(
+    tmp_path: Path,
+):
+    bindings = tmp_path / "config" / "hypr" / "bindings.lua"
+    bindings.parent.mkdir(parents=True)
+    mine = '-- my keys\no.bind("SUPER + SHIFT + R", "SSH", "alacritty -e ssh box")\n'
+    bindings.write_text(mine)
+    code, calls, err = run_script(tmp_path, INSTALL, omarchy4=True)
+    assert code == 0, err
+    assert calls == [
+        "hark service install client",
+        "omarchy-dictation-use hark",
+        "omarchy-shell shell rescanPlugins",
+        "omarchy-plugin-enable hark.shell",
+        "omarchy-restart-hyprctl ",
+        "hark doctor",
+    ]
+    code, calls, err = run_script(tmp_path, INSTALL, omarchy4=True)
+    assert code == 0, err
+    assert "omarchy-restart-hyprctl " not in calls  # the key is bound already
+    plugin = tmp_path / "config" / "omarchy" / "plugins" / "hark.shell"
+    assert sorted(p.name for p in plugin.iterdir()) == ["Model.js", "Widget.qml", "manifest.json"]
+    assert not any(p.is_symlink() for p in plugin.iterdir())  # the shell refuses symlinks
+    assert json.loads((plugin / "manifest.json").read_text())["id"] == "hark.shell"
+    assert not list(tmp_path.glob("hark.shell.*"))  # the staging folder moved in
+    assert bindings.read_text().startswith(mine)
+    assert bindings.read_text().count(BIND) == 1
+    panel = tmp_path / "home" / ".local" / "bin" / "hark-panel"
+    assert panel.resolve() == ADAPTER.with_name("hark-panel").resolve()
+
+    code, calls, err = run_script(tmp_path, REMOVE, omarchy4=True)
+    assert code == 0, err
+    assert "omarchy-plugin-disable hark.shell" in calls
+    assert not plugin.exists()
+    assert bindings.read_text() == mine
+    assert not panel.is_symlink()
+
+
+def test_remove_leaves_a_plugin_folder_that_is_not_hark(tmp_path: Path):
+    plugin = tmp_path / "config" / "omarchy" / "plugins" / "hark.shell"
+    plugin.mkdir(parents=True)
+    (plugin / "manifest.json").write_text('{"id": "someone.else"}')
+    code, _, err = run_script(tmp_path, REMOVE, omarchy4=True)
+    assert code == 0, err
+    assert plugin.exists()
