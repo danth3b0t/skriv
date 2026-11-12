@@ -23,7 +23,7 @@ key = ""
 client_ca = ""
 
 [backend]
-kind = "parakeet_mlx"             # mock | parakeet_mlx | nemo_gpupb
+kind = "parakeet_mlx"             # mock | parakeet_mlx | nemo_gpupb | transcribe_cpp
 model = "mlx-community/parakeet-tdt-0.6b-v3"
 model_id = ""                     # "" => last path component of `model`
 
@@ -31,6 +31,9 @@ model_id = ""                     # "" => last path component of `model`
 dtype = "bfloat16"
 # parakeet_mlx: incremental_min_ms = 30000 (decode while streaming from this length; -1: never),
 # incremental_stride_ms = 6000, beam_size, patience, boost_min, boost_max
+# transcribe_cpp (model = path to a GGUF, scripts/fetch-transcribe): device = "cpu" (| metal | vulkan |
+# cuda | auto), threads = 0 (library default), library = "" ($TRANSCRIBE_LIBRARY), binding = ""
+# ($HARK_TRANSCRIBE_BINDING), load_timeout_s = 120, decode_timeout_s = 60. scripts/cpu-server-up runs it.
 # mock backend options: word_ms, decode_ms, decode_ms_per_s, load_ms, max_n_best, script
 
 [cleanup]
