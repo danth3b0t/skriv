@@ -293,7 +293,7 @@ class Setup:
                 r.fail(key, f"{type(e).__name__}: {e}")
             self._post(key, r.summary(), good=r.failures == 0)
 
-        threading.Thread(target=work, daemon=True, name=f"hark-setup-{key}").start()
+        threading.Thread(target=work, daemon=True, name=f"skriv-setup-{key}").start()
 
     def _test_level(self) -> None:
         self._in_thread("level", lambda r: doctor.check_mic(r, self.c.svc.cfg))

@@ -3,7 +3,7 @@
 # Accessibility, Input Monitoring) instead of the terminal.
 #
 #   scripts/build-macos-app                       # ad-hoc signed (see below)
-#   HARK_CODESIGN_IDENTITY="Hark Dev" scripts/build-macos-app   # a stable self-signed identity
+#   SKRIV_CODESIGN_IDENTITY="Hark Dev" scripts/build-macos-app   # a stable self-signed identity
 #   open dist/Hark.app                            # or drag it to /Applications first
 #
 # The bundle is a native launcher (packaging/macos/launcher.swift) + Info.plist; it runs this
@@ -20,7 +20,7 @@ set -euo pipefail
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
 [[ "$(uname -s)" == Darwin ]] || { echo "build-macos-app: macOS only" >&2; exit 1; }
-identity="${HARK_CODESIGN_IDENTITY:--}"
+identity="${SKRIV_CODESIGN_IDENTITY:--}"
 venv="$root/.venv"
 app="$root/dist/Hark.app"
 

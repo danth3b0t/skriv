@@ -10,7 +10,7 @@
 # committed uv.lock with --frozen (every wheel and sdist hash-checked against the lock).
 #
 # Before the repository is public, build from a local clone:
-#   HARK_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
+#   SKRIV_REPO="file://$HOME/projects/hark#branch=main" makepkg -si
 
 pkgname=hark-git
 pkgver=0.1.0.r0.g0000000
@@ -59,7 +59,7 @@ conflicts=('hark' 'skriv-server')
 # Prebuilt manylinux wheels (auditwheel/patchelf-edited ELF files) and python-build-standalone: strip can
 # corrupt patchelf'd binaries, and there is nothing of ours to debug.
 options=('!strip' '!debug')
-source=("hark::git+${HARK_REPO:-$url.git}")
+source=("hark::git+${SKRIV_REPO:-$url.git}")
 sha256sums=('SKIP')
 
 _python=3.12 # must satisfy requires-python in pyproject.toml

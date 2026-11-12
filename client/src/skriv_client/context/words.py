@@ -17,7 +17,7 @@ if TYPE_CHECKING:
 
     from skriv_client.config import WordConfig
 
-log = logging.getLogger("hark.context")
+log = logging.getLogger("skriv.context")
 
 _TOKEN_RE = re.compile(r"[^\W_]+")
 # Shell commands said in a terminal that no context may show (``git`` is heard as "get"),
@@ -31,7 +31,7 @@ TERMINAL_WEIGHT = 0.3  # below any context term with real evidence
 def dictionary(
     user: Sequence[WordConfig], repo_root: str | None, max_terms: int
 ) -> list[WordConfig]:
-    """Your `[[words]]`, then the repository's (``<repo>/.hark/words.toml``) not already there;
+    """Your `[[words]]`, then the repository's (``<repo>/.skriv/words.toml``) not already there;
     at most a third of ``max_terms``. A broken repository file is logged and skipped."""
     repo: list[WordConfig] = []
     if repo_root is not None:

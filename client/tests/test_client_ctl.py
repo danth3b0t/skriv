@@ -243,9 +243,9 @@ def test_stale_socket_is_replaced(sock_path: Path):
 def test_hark_ctl_exit_codes(
     sock_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
 ):
-    monkeypatch.setenv("HARK_CTL_SOCKET", str(sock_path))  # the override Hark.app tests use
+    monkeypatch.setenv("SKRIV_CTL_SOCKET", str(sock_path))  # the override Hark.app tests use
     assert main(["ctl", "start"]) == 2  # no daemon
-    assert "hark run" in capsys.readouterr().err
+    assert "skriv run" in capsys.readouterr().err
     server = ctl.CtlServer(
         sock_path, lambda cmd: "ok recording" if cmd == "start" else "error nope"
     )

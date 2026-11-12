@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from skriv_client.config import PasteConfig
     from skriv_client.macos import PasteboardSnapshot
 
-log = logging.getLogger("hark.inject")
+log = logging.getLogger("skriv.inject")
 
 TIMED_OUT = 124  # Runner exit code for a command that did not finish in time (as timeout(1))
 
@@ -181,7 +181,7 @@ class _Restorer[T]:
             if still_ours():  # the user has not copied something else
                 put(saved)
 
-        threading.Thread(target=restore, daemon=True, name="hark-clip-restore").start()
+        threading.Thread(target=restore, daemon=True, name="skriv-clip-restore").start()
 
 
 class LinuxInjector:

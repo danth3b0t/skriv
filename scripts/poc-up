@@ -3,25 +3,25 @@
 #
 #   scripts/poc-up              # servers only; then run `uv run skriv run` in another terminal
 #   scripts/poc-up --client     # servers + `hark run` in the foreground (Ctrl+C stops everything)
-#   HARK_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
+#   SKRIV_BACKEND=mock scripts/poc-up   # no model download needed (fake ASR)
 #
-# Env: HARK_BACKEND (default parakeet_mlx on macOS arm64, else mock), HARK_CLEANUP_MODEL
+# Env: SKRIV_BACKEND (default parakeet_mlx on macOS arm64, else mock), SKRIV_CLEANUP_MODEL
 #      (default from scripts/fetch-models: S1-mini by Superwhisper, the one cleanup model),
-#      HARK_NO_CLEANUP=1 to skip llama-server.
-# Logs: ${XDG_STATE_HOME:-~/.local/state}/hark/*.log
+#      SKRIV_NO_CLEANUP=1 to skip llama-server.
+# Logs: ${XDG_STATE_HOME:-~/.local/state}/skriv/*.log
 set -euo pipefail
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$root"
-logs="${XDG_STATE_HOME:-$HOME/.local/state}/hark"
+logs="${XDG_STATE_HOME:-$HOME/.local/state}/skriv"
 mkdir -p "$logs"
 
 if [[ "$(uname -s)-$(uname -m)" == "Darwin-arm64" ]]; then
-  backend="${HARK_BACKEND:-parakeet_mlx}"
+  backend="${SKRIV_BACKEND:-parakeet_mlx}"
 else
-  backend="${HARK_BACKEND:-mock}"
+  backend="${SKRIV_BACKEND:-mock}"
 fi
-cleanup_model="${HARK_CLEANUP_MODEL:-$(sed -n 's/^DEFAULT=//p' scripts/fetch-models)}"
+cleanup_model="${SKRIV_CLEANUP_MODEL:-$(sed -n 's/^DEFAULT=//p' scripts/fetch-models)}"
 
 pids=()
 cleanup() {
@@ -39,7 +39,7 @@ wait_http() { # url, seconds
 }
 
 server_args=(--backend "$backend")
-if [[ "${HARK_NO_CLEANUP:-0}" != 1 ]]; then
+if [[ "${SKRIV_NO_CLEANUP:-0}" != 1 ]]; then
   [[ -x models/bin/llama-server ]] || scripts/fetch-llama
   [[ -f "models/$cleanup_model.gguf" ]] || scripts/fetch-models "$cleanup_model"
   echo "poc-up: llama-server ($cleanup_model) -> $logs/llama.log"

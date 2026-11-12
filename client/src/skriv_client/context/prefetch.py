@@ -188,12 +188,12 @@ class Prefetcher:
         if self._threads:
             return
         self._stop.clear()
-        targets: list[tuple[str, Callable[[], None]]] = [("hark-context-prefetch", self._run)]
+        targets: list[tuple[str, Callable[[], None]]] = [("skriv-context-prefetch", self._run)]
         if self._learn:
-            targets.append(("hark-context-learn", self._learn_loop))
+            targets.append(("skriv-context-learn", self._learn_loop))
         if (sock := hyprland_socket2()) is not None:
             targets.append(
-                ("hark-context-hypr", lambda: watch_hyprland(sock, self._kick, self._stop))
+                ("skriv-context-hypr", lambda: watch_hyprland(sock, self._kick, self._stop))
             )
         for name, fn in targets:
             t = threading.Thread(target=fn, name=name, daemon=True)
@@ -220,7 +220,7 @@ class Prefetcher:
 
     def _run(self) -> None:
         aliases.english_words()  # load the word list off the hotkey path
-        events = any(t.name == "hark-context-hypr" for t in self._threads)
+        events = any(t.name == "skriv-context-hypr" for t in self._threads)
         last_token: str | None = None
         next_check = 0.0
         while not self._stop.is_set():
@@ -243,7 +243,7 @@ class Prefetcher:
         if not focus.window_id:
             return None
         terminal = resolve(focus.pid) if focus.is_terminal and focus.pid is not None else None
-        cwd = os.environ.get("HARK_CONTEXT_CWD") or (terminal.cwd if terminal else None)
+        cwd = os.environ.get("SKRIV_CONTEXT_CWD") or (terminal.cwd if terminal else None)
         agent = terminal.agent if terminal else None
         with self._lock:
             cur = self._warm.get(focus.window_id)

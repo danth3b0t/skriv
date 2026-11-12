@@ -30,7 +30,7 @@ from skriv_client.continuation import CLICK, KeyPress
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-log = logging.getLogger("hark.hotkey")
+log = logging.getLogger("skriv.hotkey")
 
 # pynput Key names of modifiers -> KeyPress.mods names
 MODIFIERS = {
@@ -54,7 +54,7 @@ class _Serial:
 
     def __init__(self) -> None:
         self._queue: queue.SimpleQueue[Action | None] = queue.SimpleQueue()
-        self._thread = threading.Thread(target=self._run, daemon=True, name="hark-hotkey")
+        self._thread = threading.Thread(target=self._run, daemon=True, name="skriv-hotkey")
 
     def __call__(self, action: Action) -> None:
         self._queue.put(action)

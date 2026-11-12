@@ -13,8 +13,8 @@ Two protocols on the same socket, one request line and one reply line per connec
   Spec: docs/protocol/ctl-v1.md (pinned by client/tests/test_client_ctl.py).
 - JSON ``subscribe`` (UIs): the connection stays open; a status line now and on every change.
 
-Socket: $HARK_CTL_SOCKET if set, else $XDG_RUNTIME_DIR/hark/ctl.sock on Linux,
-~/Library/Caches/hark/ctl.sock on macOS, else $TMPDIR/hark-<uid>/ctl.sock. The directory is
+Socket: $SKRIV_CTL_SOCKET if set, else $XDG_RUNTIME_DIR/skriv/ctl.sock on Linux,
+~/Library/Caches/skriv/ctl.sock on macOS, else $TMPDIR/skriv-<uid>/ctl.sock. The directory is
 0700, the socket 0600.
 """
 
@@ -36,7 +36,7 @@ from typing import TYPE_CHECKING, cast, override
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-log = logging.getLogger("hark.ctl")
+log = logging.getLogger("skriv.ctl")
 
 COMMANDS = (
     "start", "stop", "toggle", "cancel", "status", "ping", "paste-last", "pause", "resume",
@@ -51,15 +51,15 @@ type JsonObject = dict[str, object]
 
 
 def socket_path() -> Path:
-    override = os.environ.get("HARK_CTL_SOCKET")
+    override = os.environ.get("SKRIV_CTL_SOCKET")
     if override:
         return Path(override)
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and sys.platform != "darwin":
-        return Path(runtime) / "hark" / "ctl.sock"
+        return Path(runtime) / "skriv" / "ctl.sock"
     if sys.platform == "darwin":
-        return Path.home() / "Library" / "Caches" / "hark" / "ctl.sock"
-    return Path(tempfile.gettempdir()) / f"hark-{os.getuid()}" / "ctl.sock"
+        return Path.home() / "Library" / "Caches" / "skriv" / "ctl.sock"
+    return Path(tempfile.gettempdir()) / f"skriv-{os.getuid()}" / "ctl.sock"
 
 
 class DaemonRunningError(RuntimeError):
@@ -219,7 +219,7 @@ class CtlServer:
         self._server.daemon_threads = True
         self._thread = threading.Thread(
             target=self._server.serve_forever, kwargs={"poll_interval": 0.2}, daemon=True,
-            name="hark-ctl",
+            name="skriv-ctl",
         )  # fmt: skip
 
     def start(self) -> None:

@@ -154,7 +154,7 @@ class AxWorker:
     """One Accessibility query at a time; a hung app makes later calls skip, not pile up."""
 
     def __init__(self) -> None:
-        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hark-ax")
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="skriv-ax")
         self._lock = threading.Lock()
         self._job: Future[tuple[str | None, str | None]] | None = None
 

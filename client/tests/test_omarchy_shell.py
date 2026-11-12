@@ -92,7 +92,7 @@ def test_the_shell_reads_the_real_daemons_lines_and_history(
     c, _ = controller
     fake_context.snapshots = [snapshot("com.mitchellh.ghostty")]
     assert model("M.socketPath(d)", XDG_RUNTIME_DIR="/run/user/1000") == (
-        "/run/user/1000/hark/ctl.sock"
+        "/run/user/1000/skriv/ctl.sock"
     )
     # Node runs only while no dictation is in flight: forking during a gRPC call can stall it
     request = model("M.subscribeRequest()")

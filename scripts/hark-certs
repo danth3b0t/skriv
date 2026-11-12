@@ -7,7 +7,7 @@
 #                                         # NAME (also a DNS name in the cert), then every other name/IP clients dial
 #   scripts/hark-certs client laptop                         # one per client machine
 #
-# Options (before the command): --dir DIR (default ${XDG_CONFIG_HOME:-~/.config}/hark/pki),
+# Options (before the command): --dir DIR (default ${XDG_CONFIG_HOME:-~/.config}/skriv/pki),
 # --days N (leaf validity, default 825; the CA gets 3650).
 # Result in DIR: ca.crt + ca.key, NAME.crt + NAME.key. skriv-server needs ca.crt (client_ca),
 # its .crt/.key; a client needs ca.crt (tls_ca) and its own .crt/.key. ca.key never leaves DIR.
@@ -19,7 +19,7 @@ usage() {
   exit 2
 }
 
-dir="${XDG_CONFIG_HOME:-$HOME/.config}/hark/pki"
+dir="${XDG_CONFIG_HOME:-$HOME/.config}/skriv/pki"
 days=825
 while (($# > 0)); do
   case $1 in

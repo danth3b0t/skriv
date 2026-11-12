@@ -1,4 +1,4 @@
-"""Client configuration: ``~/.config/hark/config.toml`` (or ``--config``).
+"""Client configuration: ``~/.config/skriv/config.toml`` (or ``--config``).
 
 Every table and key is optional; unknown keys and wrong types are errors so typos
 do not silently fall back to defaults. ``[profiles.<name>]`` tables are merged over
@@ -29,14 +29,36 @@ class ConfigError(ValueError):
     pass
 
 
+def _config_base() -> Path:
+    return Path(os.environ.get("XDG_CONFIG_HOME") or Path.home() / ".config")
+
+
+def _data_base() -> Path:
+    return Path(os.environ.get("XDG_DATA_HOME") or Path.home() / ".local" / "share")
+
+
 def default_config_path() -> Path:
-    base = os.environ.get("XDG_CONFIG_HOME") or str(Path.home() / ".config")
-    return Path(base) / "hark" / "config.toml"
+    return _config_base() / "skriv" / "config.toml"
 
 
 def default_data_dir() -> str:
-    base = os.environ.get("XDG_DATA_HOME") or str(Path.home() / ".local" / "share")
-    return str(Path(base) / "hark")
+    return str(_data_base() / "skriv")
+
+
+LEGACY_NAME = "hark"  # skriv's name before the rename: its config and data dirs move over once
+
+
+def migrate_legacy_dirs() -> list[tuple[Path, Path]]:
+    """Move the pre-rename config dir (~/.config/hark) and data dir (~/.local/share/hark) to
+    the skriv paths, each only if the old one exists and nothing is at the new path yet (an
+    existing destination is never touched). Returns the (old, new) pairs that were moved."""
+    moved: list[tuple[Path, Path]] = []
+    for base in (_config_base(), _data_base()):
+        old, new = base / LEGACY_NAME, base / "skriv"
+        if old.is_dir() and not new.exists() and not new.is_symlink():
+            old.rename(new)
+            moved.append((old, new))
+    return moved
 
 
 DEFAULT_ADDRESS = "127.0.0.1:50051"
@@ -426,7 +448,7 @@ def load(path: str | Path | None = None) -> Config:
     return cfg
 
 
-REPO_WORDS = Path(".hark") / "words.toml"  # a repository's own [[words]], under its root
+REPO_WORDS = Path(".skriv") / "words.toml"  # a repository's own [[words]], under its root
 
 
 def load_words(path: Path, max_terms: int) -> list[WordConfig]:

@@ -9,7 +9,7 @@ that exceeds `decode_timeout_s` kills it.
 Setup: scripts/fetch-transcribe builds the pinned library (build/transcribe/<variant>/lib)
 and downloads the GGUF; the worker finds the native library through `library`
 (default: $TRANSCRIBE_LIBRARY) and the matching ctypes binding through `binding`
-(default: $HARK_TRANSCRIBE_BINDING, else an installed `transcribe_cpp`).
+(default: $SKRIV_TRANSCRIBE_BINDING, else an installed `transcribe_cpp`).
 scripts/cpu-server-up sets both.
 
 Capabilities, honestly: transcribe.cpp 0.4 has no vocabulary, prompt or hotword
@@ -83,7 +83,7 @@ class TranscribeCppBackend(Backend):
         self.device = device
         self.threads = threads
         self.library = library or os.environ.get("TRANSCRIBE_LIBRARY", "")
-        self.binding = binding or os.environ.get("HARK_TRANSCRIBE_BINDING", "")
+        self.binding = binding or os.environ.get("SKRIV_TRANSCRIBE_BINDING", "")
         self.load_timeout_s = load_timeout_s
         self.decode_timeout_s = decode_timeout_s
         self.worker: dict[str, object] = {}  # the worker's ready line: device, version, languages

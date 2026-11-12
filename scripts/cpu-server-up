@@ -8,7 +8,7 @@
 #   scripts/cpu-server-up --threads 4 --listen 127.0.0.1:50060
 #   scripts/cpu-server-up -- --log-level DEBUG     # args after -- go to skriv-server
 #
-# Env: HARK_CPU_MODEL (GGUF path; default models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf).
+# Env: SKRIV_CPU_MODEL (GGUF path; default models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf).
 # Setup once: uv sync && scripts/fetch-transcribe [vulkan|cuda]
 # Then point the client at it, last in [[providers]] (see client/README.md).
 set -euo pipefail
@@ -27,7 +27,7 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-model="${HARK_CPU_MODEL:-$root/models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf}"
+model="${SKRIV_CPU_MODEL:-$root/models/parakeet-tdt-0.6b-v3-Q4_K_M.gguf}"
 lib=""
 # The CPU backend is in every build; a GPU device needs its own build.
 case "$device" in

@@ -1,9 +1,9 @@
-"""hark CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Hark.app runs it),
+"""skriv CLI: `run` (daemon), `app` (the daemon with a macOS menu-bar item; Skriv.app runs it),
 `ctl` (control the daemon), `once` (pipeline on a WAV), `retry`
 (pipeline on a kept recording), `history`, `last`, `doctor`, `eval`, `service` (always-on
 services: systemd user units on Linux, launchd agents on macOS).
 
-`hark ctl` is meant to be bound to compositor keys, so this module imports only the
+`skriv ctl` is meant to be bound to compositor keys, so this module imports only the
 stdlib at top level; everything else is imported by the subcommand that needs it.
 """
 
@@ -67,14 +67,14 @@ class Args(argparse.Namespace):
 
 def parse_args(argv: list[str] | None = None) -> Args:
     p = argparse.ArgumentParser(prog="skriv", description="context-aware dictation (POC client)")
-    p.add_argument("--config", help="config TOML (default: ~/.config/hark/config.toml)")
+    p.add_argument("--config", help="config TOML (default: ~/.config/skriv/config.toml)")
     p.add_argument(
         "--server", help="one provider at this address (host:port or unix:/path), not [[providers]]"
     )
     p.add_argument("-v", "--verbose", action="store_true", help="debug logging")
     sub = p.add_subparsers(dest="command", required=True)
     sub.add_parser("run", help="daemon: mic + hotkey / control socket -> paste")
-    ap = sub.add_parser("app", help="macOS: `run` plus a menu-bar item (what Hark.app runs)")
+    ap = sub.add_parser("app", help="macOS: `run` plus a menu-bar item (what Skriv.app runs)")
     ap.add_argument(
         "--no-onboarding", action="store_true", help="no setup window, even if permissions miss"
     )
@@ -113,7 +113,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
         "retry", help="re-run the pipeline on a kept recording (after a server error or timeout)"
     )
     r.add_argument(
-        "id", nargs="?", default="last", help="last (default) or an id from `hark history`"
+        "id", nargs="?", default="last", help="last (default) or an id from `skriv history`"
     )
     r.add_argument("--dry-run", action="store_true", help="print instead of pasting")
     r.add_argument("--copy", action="store_true", help="copy the result instead of pasting it")
@@ -135,7 +135,7 @@ def parse_args(argv: list[str] | None = None) -> Args:
     )
     w.add_argument(
         "--repo", action="store_true",
-        help="this git repository's list (<repo>/.hark/words.toml), not your config",
+        help="this git repository's list (<repo>/.skriv/words.toml), not your config",
     )  # fmt: skip
     ev = sub.add_parser("eval", help="regression set of real dictations (docs/eval.md)")
     ev.add_argument("eval_action", choices=["add", "run", "accept"])
@@ -162,11 +162,11 @@ def cmd_ctl(args: Args) -> int:
             return 0 if obj.get("ok") is True else 1
         reply = ctl.send(" ".join([args.action, *args.args]))
     except (ValueError, TypeError) as e:
-        print(f"hark ctl: bad reply ({e})", file=sys.stderr)
+        print(f"skriv ctl: bad reply ({e})", file=sys.stderr)
         return 1
     except OSError as e:
         print(
-            f"hark ctl: no daemon on {ctl.socket_path()} ({e}); start one with `hark run`",
+            f"skriv ctl: no daemon on {ctl.socket_path()} ({e}); start one with `skriv run`",
             file=sys.stderr,
         )
         return 2
@@ -205,7 +205,7 @@ def cmd_once(args: Args, services: Services) -> int:
     if args.profile:
         services.cfg.profile(args.profile)  # raises ConfigError on unknown names
     if args.cwd:
-        os.environ["HARK_CONTEXT_CWD"] = str(Path(args.cwd).resolve())
+        os.environ["SKRIV_CONTEXT_CWD"] = str(Path(args.cwd).resolve())
     pcm = read_wav(Path(args.wav))
     print(f"{'wav':<9} {args.wav}: {len(pcm) // 2 / SAMPLE_RATE:.2f} s at 16 kHz mono")
     return run_pcm(services, pcm, profile=args.profile, realtime=args.realtime)
@@ -222,7 +222,7 @@ def cmd_retry(args: Args, services: Services) -> int:
     try:
         entry = retry.find(expand(services.cfg.history.dir), args.id or "last")
     except LookupError as e:
-        print(f"hark retry: {e}", file=sys.stderr)
+        print(f"skriv retry: {e}", file=sys.stderr)
         return 1
     snap = retry.load_snapshot(entry)
     meta = entry.meta
@@ -241,7 +241,8 @@ def cmd_retry(args: Args, services: Services) -> int:
 def main(argv: list[str] | None = None) -> int:
     args = parse_args(argv)
     if args.command == "ctl":
-        return cmd_ctl(args)
+        return cmd_ctl(args)  # stdlib only and fast; it uses neither the config nor the data dir
+    _migrate_legacy_dirs()
     if args.command == "service":
         return service.main(
             args.service_action, args.components,
@@ -250,7 +251,7 @@ def main(argv: list[str] | None = None) -> int:
             no_cleanup=args.no_cleanup,
         )  # fmt: skip
     if args.command == "app" and sys.platform != "darwin":
-        print("hark app: macOS only; use `hark run`", file=sys.stderr)
+        print("skriv app: macOS only; use `skriv run`", file=sys.stderr)
         return 2
 
     from skriv_client import config  # noqa: PLC0415
@@ -258,7 +259,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         cfg = config.load(args.config)
     except config.ConfigError as e:
-        print(f"hark: config error: {e}", file=sys.stderr)
+        print(f"skriv: config error: {e}", file=sys.stderr)
         return 2
     if args.server:
         cfg.providers = [config.ProviderConfig(address=args.server)]
@@ -281,6 +282,20 @@ def main(argv: list[str] | None = None) -> int:
     return offline.get(args.command, cmd_pipeline)(args, cfg)
 
 
+def _migrate_legacy_dirs() -> None:
+    """First run after the hark -> skriv rename: take over the old config and data dirs."""
+    from skriv_client import config  # noqa: PLC0415
+
+    try:
+        moved = config.migrate_legacy_dirs()
+    except OSError as e:
+        print(f"skriv: could not move the old hark directories: {e}", file=sys.stderr)
+        return
+    if moved:
+        pairs = ", ".join(f"{old} -> {new}" for old, new in moved)
+        print(f"skriv: moved {pairs} (hark is now skriv)", file=sys.stderr)
+
+
 def cmd_eval(args: Args, cfg: Config) -> int:
     from skriv_client import evalset  # noqa: PLC0415
     from skriv_client.config import expand  # noqa: PLC0415
@@ -296,7 +311,7 @@ def cmd_eval(args: Args, cfg: Config) -> int:
             print(f"accepted: {evalset.accept(set_dir, args.id or '')!r}")
             return 0
     except (LookupError, FileExistsError) as e:
-        print(f"hark eval: {e}", file=sys.stderr)
+        print(f"skriv eval: {e}", file=sys.stderr)
         return 1
     return _eval_run(cfg, set_dir, Path(args.report) if args.report else None)
 
@@ -312,7 +327,8 @@ def _eval_run(cfg: Config, set_dir: Path, report: Path | None) -> int:
     found = evalset.clips(set_dir)
     if not found:
         print(
-            f"hark eval: no clips in {set_dir} (`hark eval add` after a dictation)", file=sys.stderr
+            f"skriv eval: no clips in {set_dir} (`skriv eval add` after a dictation)",
+            file=sys.stderr,
         )
         return 1
     cfg.history.enabled = False
@@ -371,19 +387,19 @@ def cmd_history(args: Args, cfg: Config) -> int:
     kept = {e.id for e in retry.entries(base)}
     if args.history_action == "show":
         if not args.id:
-            print("hark history show: give an id (see `hark history`)", file=sys.stderr)
+            print("skriv history show: give an id (see `skriv history`)", file=sys.stderr)
             return 2
         found = history.find(base, args.id)
         ids = {str(r.get("utterance_id")) for r in found}
         if len(ids) != 1:
             what = "no dictation" if not ids else f"{len(ids)} dictations"
-            print(f"hark history show: {what} match {args.id!r}", file=sys.stderr)
+            print(f"skriv history show: {what} match {args.id!r}", file=sys.stderr)
             return 1
         uid = ids.pop()
         print(historyview.show(found[-1], kept=uid in kept))
         return 0
     if args.n < 1:
-        print("hark history: -n must be >= 1", file=sys.stderr)
+        print("skriv history: -n must be >= 1", file=sys.stderr)
         return 2
     records = history.recent(base, args.n)
     if args.json:
@@ -404,7 +420,7 @@ def cmd_last(args: Args, cfg: Config) -> int:
     )
     if not text:
         what = "uncleaned text" if args.raw else "dictated text"
-        print(f"hark last: no {what} in the history", file=sys.stderr)
+        print(f"skriv last: no {what} in the history", file=sys.stderr)
         return 1
     if not args.copy:
         print(text)
@@ -412,7 +428,7 @@ def cmd_last(args: Args, cfg: Config) -> int:
     from skriv_client.inject import make_injector  # noqa: PLC0415
 
     if not make_injector(cfg.paste).copy(text):
-        print("hark last: could not write the clipboard", file=sys.stderr)
+        print("skriv last: could not write the clipboard", file=sys.stderr)
         return 1
     print(f"copied {len(text)} characters")
     return 0
@@ -447,13 +463,13 @@ def cmd_words(args: Args, cfg: Config) -> int:  # noqa: PLR0911 - one return per
     config_path = Path(args.config) if args.config else config.default_config_path()
     root = _git_root()
     if args.repo and root is None:
-        print("hark words --repo: not inside a git repository", file=sys.stderr)
+        print("skriv words --repo: not inside a git repository", file=sys.stderr)
         return 2
     limit = config.words_limit(cfg.context.max_terms)
     try:
         repo = config.load_words(root / config.REPO_WORDS, cfg.context.max_terms) if root else []
     except config.ConfigError as e:
-        print(f"hark words: {e}", file=sys.stderr)
+        print(f"skriv words: {e}", file=sys.stderr)
         return 2
     if args.words_action == "list":
         _show_words(cfg.words, config_path)
@@ -466,15 +482,15 @@ def cmd_words(args: Args, cfg: Config) -> int:  # noqa: PLR0911 - one return per
     terms = args.terms
     if args.words_action == "remove":
         if len(terms) != 1:
-            print("hark words remove: give the WORD", file=sys.stderr)
+            print("skriv words remove: give the WORD", file=sys.stderr)
             return 2
         text, found = config.remove_word(_read(path), terms[0])
         if not found:
-            print(f"hark words: {terms[0]!r} is not in {path}", file=sys.stderr)
+            print(f"skriv words: {terms[0]!r} is not in {path}", file=sys.stderr)
             return 1
         return _save_words(path, text, cfg, f"removed {terms[0]!r} from {path}", repo=args.repo)
     if len(terms) not in (1, 2) or not all(t.strip() for t in terms):
-        print('hark words add: give [SPOKEN] WORD, e.g. "hyper land" Hyprland', file=sys.stderr)
+        print('skriv words add: give [SPOKEN] WORD, e.g. "hyper land" Hyprland', file=sys.stderr)
         return 2
     word, spoken = terms[-1].strip(), [t.strip() for t in terms[:-1]]
     old = next((w for w in current if w.word == word), None)
@@ -487,8 +503,8 @@ def cmd_words(args: Args, cfg: Config) -> int:  # noqa: PLR0911 - one return per
     taken = {w.word for w in (*cfg.words, *repo)} if args.repo else {w.word for w in cfg.words}
     if old is None and len(taken) >= limit:
         print(
-            f"hark words: the list is full ({len(taken)} of {limit}, a third of"
-            " context.max_terms, yours and this repository's together); `hark words remove"
+            f"skriv words: the list is full ({len(taken)} of {limit}, a third of"
+            " context.max_terms, yours and this repository's together); `skriv words remove"
             " WORD` one that context now supplies, then add again",
             file=sys.stderr,
         )
@@ -522,7 +538,7 @@ def _save_words(path: Path, text: str, cfg: Config, done: str, *, repo: bool) ->
             path.unlink()
         else:
             path.write_text(before)
-        print(f"hark words: not changed: {e}", file=sys.stderr)
+        print(f"skriv words: not changed: {e}", file=sys.stderr)
         return 1
     print(done)
     if repo:
@@ -531,7 +547,7 @@ def _save_words(path: Path, text: str, cfg: Config, done: str, *, repo: bool) ->
     try:
         reply = ctl.send("reload")
     except OSError:
-        print("no daemon running; `hark run` reads it")
+        print("no daemon running; `skriv run` reads it")
         return 0
     print(f"daemon: {reply}")
     return 0 if reply.startswith("ok") else 1
@@ -553,7 +569,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
     try:
         if args.command in ("once", "retry"):
             if args.command == "once":
-                cfg.retry.keep = 0  # nothing kept for `hark retry`: the WAV is the recording
+                cfg.retry.keep = 0  # nothing kept for `skriv retry`: the WAV is the recording
                 if args.no_history:
                     cfg.history.enabled = False
             elif args.copy:
@@ -568,7 +584,7 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
             try:
                 return cmd_once(args, svc) if args.command == "once" else cmd_retry(args, svc)
             except ConfigError as e:
-                print(f"hark: {e}", file=sys.stderr)
+                print(f"skriv: {e}", file=sys.stderr)
                 return 2
         feedback = Feedback(cfg.feedback)
         svc = Services(cfg, router, injector=make_injector(cfg.paste), feedback=feedback)
@@ -580,14 +596,14 @@ def cmd_pipeline(args: Args, cfg: Config) -> int:
                 config_path if config_path.exists() else None,
             )
         except ctl.DaemonRunningError as e:
-            print(f"hark: {e}", file=sys.stderr)
+            print(f"skriv: {e}", file=sys.stderr)
             return 1
     finally:
         router.close()
 
 
 def _menu_bar(args: Args) -> Callable[[Controller, threading.Event], AppUi]:
-    """`hark app`: builds the menu-bar item on the main thread once the daemon is up."""
+    """`skriv app`: builds the menu-bar item on the main thread once the daemon is up."""
     from skriv_client.config import default_config_path  # noqa: PLC0415
 
     cli = [*(["--config", args.config] if args.config else [])]

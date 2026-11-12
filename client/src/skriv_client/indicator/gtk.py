@@ -7,7 +7,7 @@ output the compositor picks (the focused one on Hyprland), 24 px from the edge,
 through). Colours and sizes come from the running Omarchy theme (``indicator.theme``), re-read
 when it changes; glyphs are Material Design Icons from the Nerd Font Omarchy sets as
 ``monospace``. Needs the system packages gtk4, gtk4-layer-shell and PyGObject + pycairo
-importable by hark's Python (the client's ``gi`` extra; the hark-git package includes it).
+importable by hark's Python (the client's ``gi`` extra; the skriv-git package includes it).
 Unavailable pieces => None.
 
 GTK runs on the main thread (:meth:`LayerShellBackend.run`); :meth:`LayerShellBackend.render`
@@ -33,7 +33,7 @@ if TYPE_CHECKING:
     from skriv_client.indicator import Glyph, View
     from skriv_client.indicator.theme import Palette
 
-log = logging.getLogger("hark.indicator")
+log = logging.getLogger("skriv.indicator")
 
 MARGIN = 24
 FADE_MS = 120  # pill in / out; GTK drops the transition when animations are off
@@ -66,23 +66,23 @@ def css(pal: Palette, base: int) -> bytes:
         "accent": pal.accent,
     }  # fmt: skip
     return f"""
-window.hark-indicator {{ background: transparent; }}
-.hark-pill {{
+window.skriv-indicator {{ background: transparent; }}
+.skriv-pill {{
   background: {pal.bg}; color: {pal.fg}; border: 1px solid {pal.border}; border-radius: 0;
   min-height: {px(28) - 2}px; padding: 0 {px(12)}px; font-family: monospace;
   font-size: {base}px; transition: opacity {FADE_MS}ms ease-out;
 }}
-.hark-pill.hidden {{ opacity: 0; }}
-.hark-glyph {{ font-size: {px(14)}px; }}
-.hark-detail, .hark-pin {{ color: {pal.text2}; }}
-.hark-hint {{ color: {pal.text2}; font-size: {px(10)}px; }}
-@keyframes hark-breathe {{ 0% {{ opacity: 0.35; }} 33% {{ opacity: 1; }} 66% {{ opacity: 0.35; }} }}
-.hark-wdot {{
+.skriv-pill.hidden {{ opacity: 0; }}
+.skriv-glyph {{ font-size: {px(14)}px; }}
+.skriv-detail, .skriv-pin {{ color: {pal.text2}; }}
+.skriv-hint {{ color: {pal.text2}; font-size: {px(10)}px; }}
+@keyframes skriv-breathe {{ 0% {{ opacity: 0.35; }} 33% {{ opacity: 1; }} 66% {{ opacity: 0.35; }} }}
+.skriv-wdot {{
   color: {pal.accent}; font-size: {px(8)}px; opacity: 0.35;
-  animation: hark-breathe 900ms ease-in-out infinite;
+  animation: skriv-breathe 900ms ease-in-out infinite;
 }}
-.hark-wdot.middle {{ opacity: 1; animation-delay: 300ms; }}
-.hark-wdot.last {{ animation-delay: 600ms; }}
+.skriv-wdot.middle {{ opacity: 1; animation-delay: 300ms; }}
+.skriv-wdot.last {{ animation-delay: 600ms; }}
 {"".join(f".tone-{k} {{ color: {v}; }}" for k, v in tone.items())}
 """.encode()
 
@@ -127,12 +127,12 @@ class LayerShellBackend:
         )
         self._theme_seen: tuple[float | None, ...] | None = None
         self.pal, self.base = theme.palette({}), theme.BASE_SIZE
-        win.add_css_class("hark-indicator")
+        win.add_css_class("skriv-indicator")
         win.set_decorated(False)
         win.set_resizable(False)
         win.set_focusable(False)
         layer.init_for_window(win)
-        layer.set_namespace(win, "hark-indicator")
+        layer.set_namespace(win, "skriv-indicator")
         layer.set_layer(win, layer.Layer.OVERLAY)
         layer.set_keyboard_mode(win, layer.KeyboardMode.NONE)
         edge = layer.Edge.BOTTOM if position == "bottom" else layer.Edge.TOP
@@ -143,20 +143,20 @@ class LayerShellBackend:
             orientation=gtk.Orientation.HORIZONTAL, spacing=8,
             accessible_role=gtk.AccessibleRole.STATUS,
         )  # fmt: skip
-        box.add_css_class("hark-pill")
+        box.add_css_class("skriv-pill")
         box.add_css_class("hidden")
-        self.glyph = self._label("hark-glyph")
+        self.glyph = self._label("skriv-glyph")
         self.meter = gtk.DrawingArea()
         self.meter.set_valign(gtk.Align.CENTER)
         self.meter.set_draw_func(self._draw_meter)
         self.dots = gtk.Box(orientation=gtk.Orientation.HORIZONTAL, spacing=4)
         for cls in ("first", "middle", "last"):
-            self.dots.append(self._label("hark-wdot", cls, text="●"))
-        self.pin = self._label("hark-pin", text=PIN)
-        self.pinned = self._label("hark-detail")
-        self.label = self._label("hark-label")
-        self.detail = self._label("hark-detail")
-        self.hint = self._label("hark-hint")
+            self.dots.append(self._label("skriv-wdot", cls, text="●"))
+        self.pin = self._label("skriv-pin", text=PIN)
+        self.pinned = self._label("skriv-detail")
+        self.label = self._label("skriv-label")
+        self.detail = self._label("skriv-detail")
+        self.hint = self._label("skriv-hint")
         self.hint.set_valign(gtk.Align.BASELINE)
         for w in (
             self.glyph, self.meter, self.dots, self.pin, self.pinned, self.label, self.detail,

@@ -4,7 +4,7 @@ The ``hark service`` backend on macOS (components ``server`` and ``llama``; the 
 Hark.app). ``hark service install`` writes ``~/Library/LaunchAgents/dev.hark.{llama,server}.plist`` and
 bootstraps them into the GUI session: llama-server (cleanup, via scripts/llama-up) and
 skriv-server (ASR), the same commands scripts/poc-up starts, kept alive by launchd and logging to
-``~/Library/Logs/hark/{llama,server}.log``. They run from this source checkout and its venv.
+``~/Library/Logs/skriv/{llama,server}.log``. They run from this source checkout and its venv.
 
 Launch at login for Hark.app uses ``SMAppService.mainApp`` (macOS 13+, works ad-hoc signed) and
 falls back to a LaunchAgent that ``open``s the bundle.
@@ -32,7 +32,7 @@ from skriv_client.service import InstallOptions, ServiceError, Status
 if TYPE_CHECKING:
     from collections.abc import Callable, Sequence
 
-log = logging.getLogger("hark.service")
+log = logging.getLogger("skriv.service")
 
 LLAMA = "dev.hark.llama"
 SERVER = "dev.hark.server"
@@ -56,7 +56,7 @@ class Layout:
 
     @property
     def logs_dir(self) -> Path:
-        return self.home / "Library" / "Logs" / "hark"
+        return self.home / "Library" / "Logs" / "skriv"
 
     def plist(self, label: str) -> Path:
         return self.agents_dir / f"{label}.plist"

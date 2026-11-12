@@ -166,7 +166,7 @@ def test_words_command_edits_the_list_as_text_and_reloads(
     assert words("remove", "Hyprland") == 0
     assert words("remove", "Hyprland") == 1
     assert words("add", "--repo", "pie", "pi") == 0
-    assert (repo / ".hark/words.toml").read_text() == '[[words]]\nword = "pi"\nspoken = ["pie"]\n'
+    assert (repo / ".skriv/words.toml").read_text() == '[[words]]\nword = "pi"\nspoken = ["pie"]\n'
     assert sent == ["reload"] * 3  # the repository's list is read at each dictation
     assert [w.word for w in load(cfg).words] == ["kubectl"]
     assert "# --- feedback ---" in cfg.read_text()
@@ -180,3 +180,43 @@ def test_words_command_edits_the_list_as_text_and_reloads(
     assert words("add", "y") == 1
     assert "not changed" in capsys.readouterr().err
     assert cfg.read_text() == 'words = [{word = "x"}]\n'  # restored
+
+
+def test_first_run_moves_the_hark_dirs_to_skriv_and_uses_them(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    (tmp_path / "config/hark").mkdir(parents=True)
+    (tmp_path / "config/hark/config.toml").write_text('log_level = "DEBUG"\n')
+    (tmp_path / "data/hark").mkdir(parents=True)
+    (tmp_path / "data/hark/history.jsonl").write_text('{"final_text": "said before"}\n')
+
+    assert main(["last"]) == 0
+    out = capsys.readouterr()
+    assert out.out == "said before\n"  # read from the moved data dir
+    assert out.err.count("\n") == 1
+    assert "hark is now skriv" in out.err
+    assert not (tmp_path / "config/hark").exists()
+    assert (tmp_path / "config/skriv/config.toml").read_text() == 'log_level = "DEBUG"\n'
+    assert load().log_level == "DEBUG"
+
+    assert main(["last"]) == 0  # once: nothing left to move
+    assert capsys.readouterr().err == ""
+
+
+def test_migration_never_replaces_an_existing_skriv_dir(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(tmp_path / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(tmp_path / "data"))
+    for name, level in (("hark", "DEBUG"), ("skriv", "WARNING")):
+        (tmp_path / "config" / name).mkdir(parents=True)
+        (tmp_path / "config" / name / "config.toml").write_text(f'log_level = "{level}"\n')
+    (tmp_path / "data/hark").mkdir(parents=True)
+
+    assert main(["last"]) == 1  # no history yet
+    assert "data/hark -> " in capsys.readouterr().err  # the data dir alone moved
+    assert (tmp_path / "config/hark/config.toml").read_text() == 'log_level = "DEBUG"\n'
+    assert load().log_level == "WARNING"  # the existing skriv config, untouched
+    assert (tmp_path / "data/skriv").is_dir()

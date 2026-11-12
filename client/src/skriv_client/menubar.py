@@ -42,7 +42,7 @@ if TYPE_CHECKING:
 AppKit: Any = importlib.import_module("AppKit")
 Foundation: Any = importlib.import_module("Foundation")
 
-log = logging.getLogger("hark.menubar")
+log = logging.getLogger("skriv.menubar")
 
 SYMBOLS = {
     "idle": "mic",
@@ -62,8 +62,8 @@ FAILED = frozenset({"error", "paste_failed"})  # and no speech from a mic sendin
 ERROR_SHOW_S = 10.0  # the warning icon stays this long after a failed dictation
 PREVIEW_CHARS = 40
 LOOP_POLL_S = 0.25
-CACHE_DIR = Path.home() / "Library" / "Caches" / "hark"
-LOG_DIR = Path.home() / "Library" / "Logs" / "hark"
+CACHE_DIR = Path.home() / "Library" / "Caches" / "skriv"
+LOG_DIR = Path.home() / "Library" / "Logs" / "skriv"
 CONFIG_STUB = "# hark client config; every key is optional. See client/README.md#configuration\n"
 
 
@@ -289,7 +289,7 @@ class MenuBar:
                 lines[-1] if lines else f"hark retry: exit {proc.returncode}"
             )
 
-        threading.Thread(target=work, daemon=True, name="hark-retry").start()
+        threading.Thread(target=work, daemon=True, name="skriv-retry").start()
 
     def toggle_pause(self) -> None:
         self.c.set_paused(not self.c.paused)
@@ -321,7 +321,7 @@ class MenuBar:
                 )  # fmt: skip
             subprocess.Popen(["/usr/bin/open", "-t", str(report)])  # noqa: S603
 
-        threading.Thread(target=work, daemon=True, name="hark-doctor").start()
+        threading.Thread(target=work, daemon=True, name="skriv-doctor").start()
 
     def open_setup(self) -> None:
         if self.setup is None:

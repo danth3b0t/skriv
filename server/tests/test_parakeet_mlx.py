@@ -2,7 +2,7 @@
 
 The fast tests replace the model with a fake that has the real mel front end
 and returns scripted tokens, so they need mlx + parakeet-mlx but no weights.
-`HARK_SLOW=1` adds one end-to-end test with the real model on a `say` clip.
+`SKRIV_SLOW=1` adds one end-to-end test with the real model on a `say` clip.
 """
 
 from __future__ import annotations
@@ -365,7 +365,7 @@ def test_multilingual_model_brings_an_english_only_companion_on_its_thread():
     assert ParakeetMlxBackend(DEFAULT_ENGLISH_MODEL).companions() == []  # English-only already
 
 
-@pytest.mark.skipif(os.environ.get("HARK_SLOW") != "1", reason="set HARK_SLOW=1 (real model)")
+@pytest.mark.skipif(os.environ.get("SKRIV_SLOW") != "1", reason="set SKRIV_SLOW=1 (real model)")
 @pytest.mark.skipif(shutil.which("say") is None, reason="needs macOS `say`")
 @pytest.mark.parametrize(
     ("languages", "model_id"),

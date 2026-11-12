@@ -22,7 +22,7 @@ if TYPE_CHECKING:
 
     from skriv_client.audio import Float32
 
-log = logging.getLogger("hark.mic")
+log = logging.getLogger("skriv.mic")
 
 
 def _device(spec: str) -> int | str | None:

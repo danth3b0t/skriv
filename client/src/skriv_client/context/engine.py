@@ -91,7 +91,7 @@ def collect_detailed(
 ) -> tuple[ContextSnapshot, Diagnostics]:
     t0 = time.monotonic()
     diag = Diagnostics()
-    pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="hark-context")
+    pool = ThreadPoolExecutor(max_workers=4, thread_name_prefix="skriv-context")
     run = _Runner(pool, t0 + max(0.0, deadline_s))
     focus_res: FocusResult | None = None
     try:
@@ -99,8 +99,8 @@ def collect_detailed(
         focus = focus_res.focus if focus_res else FocusInfo()
         term_pid = focus.pid
         screen_job = run.start("screen", lambda: screen_text(focus)) if focus.pid else None
-        # HARK_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
-        pinned = os.environ.get("HARK_CONTEXT_CWD")
+        # SKRIV_CONTEXT_CWD pins the working directory (testing, `hark once --cwd`).
+        pinned = os.environ.get("SKRIV_CONTEXT_CWD")
         warm = prefetch.lookup(focus.window_id)
         if warm is not None and pinned in {None, warm.cwd}:
             diag.terminal, diag.repo, diag.session = warm.terminal, warm.repo, warm.session

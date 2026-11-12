@@ -36,7 +36,7 @@ if TYPE_CHECKING:
     from skriv_client.config import IndicatorConfig
     from skriv_client.pipeline import Result
 
-log = logging.getLogger("hark.indicator")
+log = logging.getLogger("skriv.indicator")
 
 # info: a short notice while idle (the profile picked for the next dictation, Paused)
 type State = Literal["recording", "working", "done", "error", "cancelled", "info"]

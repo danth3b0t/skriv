@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING, Literal
 if TYPE_CHECKING:
     from skriv_client.config import FeedbackConfig
 
-log = logging.getLogger("hark.feedback")
+log = logging.getLogger("skriv.feedback")
 
 type Sound = Literal["start", "stop", "done", "error", "cancel"]
 
@@ -44,7 +44,7 @@ def _spawn(argv: list[str]) -> None:
         except (OSError, subprocess.TimeoutExpired) as e:
             log.debug("%s failed: %s", argv[0], e)
 
-    threading.Thread(target=run, daemon=True, name="hark-feedback").start()
+    threading.Thread(target=run, daemon=True, name="skriv-feedback").start()
 
 
 def sound_player() -> list[str] | None:

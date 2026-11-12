@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from skriv_client.mic import Mic
     from skriv_client.pipeline import Result, Services
 
-log = logging.getLogger("hark")
+log = logging.getLogger("skriv")
 
 
 def _focus_token() -> str:
@@ -319,7 +319,7 @@ class Controller:
                         self.on_finishing(False)  # noqa: FBT003
                 self.report.touch()
 
-        threading.Thread(target=work, daemon=True, name="hark-finish").start()
+        threading.Thread(target=work, daemon=True, name="skriv-finish").start()
         return "ok stopped"
 
     def toggle(self) -> str:
@@ -686,7 +686,7 @@ def _start_ticks(controller: Controller, stop: threading.Event) -> None:
             except Exception:  # the watchdog must outlive one bad check
                 log.exception("status tick failed")
 
-    threading.Thread(target=ticks, daemon=True, name="hark-tick").start()
+    threading.Thread(target=ticks, daemon=True, name="skriv-tick").start()
 
 
 def _x11_only() -> bool:

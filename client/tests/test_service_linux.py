@@ -92,7 +92,7 @@ def test_unit_commands_are_quoted_for_systemd():
         'ExecStart="/home/u/my repo/.venv/bin/skriv" run',
     ]
     assert exec_lines(linux.render("server", DEV)) == [
-        'ExecStart="/home/u/my repo/.venv/bin/skriv-server" --config %E/hark/server.toml'
+        'ExecStart="/home/u/my repo/.venv/bin/skriv-server" --config %E/skriv/server.toml'
     ]
     assert exec_lines(linux.render("llama", DEV))[0] == "ExecStart=/home/u/100%%/scripts/llama-up"
     assert linux.quote('a"b\\c $X') == '"a\\"b\\\\c $$X"'
@@ -292,7 +292,7 @@ def test_restart_and_default_status_cover_only_installed_units(
     assert capsys.readouterr().out.splitlines()[-1].split()[:2] == ["client", "hark.service"]
     fake.show = f"{missing}\n{missing}\n{missing}"
     assert service.main("restart", []) == 1
-    assert "no hark services installed" in capsys.readouterr().out
+    assert "no skriv services installed" in capsys.readouterr().out
     fake.calls.clear()
     assert service.main("install", [], asr_backend="mock") == 2  # a macOS-only flag
     assert fake.calls == []

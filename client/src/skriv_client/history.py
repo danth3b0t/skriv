@@ -1,4 +1,4 @@
-"""Local history: ``<history.dir>/history.jsonl`` (default ~/.local/share/hark), one line per
+"""Local history: ``<history.dir>/history.jsonl`` (default ~/.local/share/skriv), one line per
 utterance. Audio is kept only by the retry ring (skriv_client.retry)."""
 
 from __future__ import annotations

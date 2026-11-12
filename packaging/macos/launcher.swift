@@ -14,14 +14,14 @@
 //   strings in Info.plist (NSMicrophoneUsageDescription) need.
 //
 // Info.plist key `HarkVenv` (written by scripts/build-macos-app) is the absolute path of the
-// virtualenv to run; the env var HARK_VENV overrides it. Python code is not copied into the
+// virtualenv to run; the env var SKRIV_VENV overrides it. Python code is not copied into the
 // bundle, so editing it never changes the signature (and never invalidates the TCC grants).
-// Without a terminal, stdout/stderr go to ~/Library/Logs/hark/app.log.
+// Without a terminal, stdout/stderr go to ~/Library/Logs/skriv/app.log.
 
 import Darwin
 import Foundation
 
-let disclaimedEnv = "HARK_LAUNCHER_DISCLAIMED"
+let disclaimedEnv = "SKRIV_LAUNCHER_DISCLAIMED"
 var childPid: pid_t = 0
 
 func say(_ message: String) {
@@ -91,7 +91,7 @@ if getenv(disclaimedEnv) == nil && getppid() != 1 {
 unsetenv(disclaimedEnv)
 
 if isatty(STDERR_FILENO) == 0 {
-    let logs = NSHomeDirectory() + "/Library/Logs/hark"
+    let logs = NSHomeDirectory() + "/Library/Logs/skriv"
     try? FileManager.default.createDirectory(atPath: logs, withIntermediateDirectories: true)
     let fd = open(logs + "/app.log", O_WRONLY | O_CREAT | O_APPEND, 0o600)
     if fd >= 0 {
@@ -101,7 +101,7 @@ if isatty(STDERR_FILENO) == 0 {
     }
 }
 
-guard let venv = ProcessInfo.processInfo.environment["HARK_VENV"]
+guard let venv = ProcessInfo.processInfo.environment["SKRIV_VENV"]
     ?? (Bundle.main.object(forInfoDictionaryKey: "HarkVenv") as? String)
 else { fail("Info.plist has no HarkVenv; rebuild with scripts/build-macos-app") }
 

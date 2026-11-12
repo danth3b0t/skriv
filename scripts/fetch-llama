@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Download a pinned prebuilt llama.cpp release (llama-server) into ./models/bin ($HARK_MODELS_DIR/bin).
+# Download a pinned prebuilt llama.cpp release (llama-server) into ./models/bin ($SKRIV_MODELS_DIR/bin).
 #
 #   scripts/fetch-llama            # macOS arm64 (Metal) or linux-x64 CPU
 #   scripts/fetch-llama vulkan     # linux-x64 Vulkan
@@ -14,11 +14,11 @@ BASE="https://github.com/ggml-org/llama.cpp/releases/download/$TAG"
 
 root="$(cd "$(dirname "$0")/.." && pwd)"
 # A checkout keeps models in ./models; an installed copy (hark-git: /usr/lib/hark/scripts) uses the
-# XDG data dir. HARK_MODELS_DIR overrides both.
+# XDG data dir. SKRIV_MODELS_DIR overrides both.
 if [[ -f $root/pyproject.toml ]]; then
-  models="${HARK_MODELS_DIR:-$root/models}"
+  models="${SKRIV_MODELS_DIR:-$root/models}"
 else
-  models="${HARK_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/hark/models}"
+  models="${SKRIV_MODELS_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/skriv/models}"
 fi
 bin="$models/bin"
 os="$(uname -s)-$(uname -m)"

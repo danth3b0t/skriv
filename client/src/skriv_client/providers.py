@@ -35,7 +35,7 @@ if TYPE_CHECKING:
 
     from skriv_client.config import ProviderConfig
 
-log = logging.getLogger("hark.providers")
+log = logging.getLogger("skriv.providers")
 
 SERVING_STATUS = {0: "UNKNOWN", 1: "SERVING", 2: "NOT_SERVING", 3: "SERVICE_UNKNOWN"}
 FRESH_S = {"ok": 30.0, "slow": 5.0, "down": 5.0}
@@ -145,7 +145,7 @@ class Router:
                 p.caps.refresh()
 
         threads = [
-            threading.Thread(target=one, args=(p,), daemon=True, name=f"hark-health-{p.name}")
+            threading.Thread(target=one, args=(p,), daemon=True, name=f"skriv-health-{p.name}")
             for p in self.providers
         ]
         for t in threads:
@@ -160,7 +160,7 @@ class Router:
             while not self._stop.wait(interval_s):
                 self.refresh()
 
-        self._thread = threading.Thread(target=loop, daemon=True, name="hark-health")
+        self._thread = threading.Thread(target=loop, daemon=True, name="skriv-health")
         self._thread.start()
 
     def close(self) -> None:

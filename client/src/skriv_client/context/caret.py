@@ -274,7 +274,7 @@ class _Worker:
     """One lookup at a time; a hung app makes later lookups skip instead of piling up."""
 
     def __init__(self) -> None:
-        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hark-caret")
+        self._pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="skriv-caret")
         self._lock = threading.Lock()
         self._job: Future[CaretContext] | None = None
 

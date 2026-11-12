@@ -58,7 +58,7 @@ if TYPE_CHECKING:
     from skriv_client.inject import Injector
     from skriv_client.providers import Provider, Router
 
-log = logging.getLogger("hark")
+log = logging.getLogger("skriv")
 
 
 @dataclass
@@ -168,8 +168,8 @@ class Utterance:
         self.mic_interrupted = False  # set by the daemon's mic watchdog
         self.input_device = ""  # set by the daemon: the mic's name
         self.failed_over = False
-        threading.Thread(target=self._run_collect, daemon=True, name="hark-context").start()
-        self._starter = threading.Thread(target=self._send_start, daemon=True, name="hark-start")
+        threading.Thread(target=self._run_collect, daemon=True, name="skriv-context").start()
+        self._starter = threading.Thread(target=self._send_start, daemon=True, name="skriv-start")
         self._starter.start()
         if preroll:
             self.feed(preroll)

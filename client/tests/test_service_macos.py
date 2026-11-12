@@ -96,7 +96,7 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
         assert plist["KeepAlive"] is True
         assert plist["RunAtLoad"] is True
         assert plist["StandardOutPath"] == plist["StandardErrorPath"]
-        assert plist["StandardErrorPath"] == str(home / "Library/Logs/hark" / log)
+        assert plist["StandardErrorPath"] == str(home / "Library/Logs/skriv" / log)
         assert plist["WorkingDirectory"] == str(lay.root)
     uid = os.getuid()
     assert (
@@ -127,7 +127,7 @@ def test_install_writes_kept_alive_agents_for_both_servers_and_loads_them(
     assert not list((home / "Library/LaunchAgents").iterdir())
     assert fake.loaded == set()
     assert main(["service", "status"]) == EXIT_NOT_RUNNING
-    assert "no hark services installed" in capsys.readouterr().out
+    assert "no skriv services installed" in capsys.readouterr().out
     assert main(["service", "restart"]) == 1
 
 
@@ -164,7 +164,7 @@ def test_the_client_is_not_a_launchd_service(
 ):
     _, fake = stack
     assert main(["service", "install", "client"]) == 2
-    assert "Hark.app" in capsys.readouterr().err
+    assert "Skriv.app" in capsys.readouterr().err
     assert main(["service", "install", "--dry-run"]) == 2  # a Linux-only flag
     assert fake.calls == []
 

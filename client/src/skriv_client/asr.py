@@ -29,7 +29,7 @@ if TYPE_CHECKING:
     from skriv_client.config import ProviderConfig
     from skriv_client.context import Term
 
-log = logging.getLogger("hark.asr")
+log = logging.getLogger("skriv.asr")
 
 SAMPLE_RATE = 16000
 CHUNK_SAMPLES = 640  # 40 ms (ADR-001 #8)
@@ -131,7 +131,7 @@ class Capabilities:
     def note_etag(self, etag: str) -> None:
         caps = self.get()
         if etag and (caps is None or caps.etag != etag):
-            threading.Thread(target=self.refresh, daemon=True, name="hark-caps").start()
+            threading.Thread(target=self.refresh, daemon=True, name="skriv-caps").start()
 
     def cleanup_profile(self, profile_id: str) -> bool:
         caps = self.get()
@@ -206,7 +206,7 @@ class TranscribeStream:
         # completed), final_received.
         self.unix_us: dict[str, int] = {}
         self._call = self._stub.Transcribe(self._requests(), timeout=timeout_s)
-        self._reader = threading.Thread(target=self._read, daemon=True, name="hark-asr-read")
+        self._reader = threading.Thread(target=self._read, daemon=True, name="skriv-asr-read")
         self._reader.start()
 
     def _requests(self) -> Iterator[pb.TranscribeRequest]:

@@ -1,9 +1,9 @@
-"""`hark service install|uninstall|status|restart`: run hark's processes as always-on user services.
+"""`skriv service install|uninstall|status|restart`: run skriv's processes as always-on user services.
 
-Components: ``client`` (the `hark run` daemon), ``server`` (`skriv-server`) and ``llama``
+Components: ``client`` (the `skriv run` daemon), ``server`` (`skriv-server`) and ``llama``
 (llama-server for text cleanup). Each platform has a backend with the same four operations:
 systemd user units on Linux (:mod:`skriv_client.service.linux`), launchd agents on macOS
-(:mod:`skriv_client.service.macos`; there the client is Hark.app, which opens at login from its
+(:mod:`skriv_client.service.macos`; there the client is Skriv.app, which opens at login from its
 menu, so only ``server`` and ``llama`` are services).
 """
 
@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 COMPONENTS = ("client", "server", "llama")
 EXIT_NOT_RUNNING = 3  # `status`: some component is not running (systemctl/LSB convention)
-NONE_INSTALLED = "no hark services installed (`hark service install`)"
+NONE_INSTALLED = "no skriv services installed (`skriv service install`)"
 
 
 class ServiceError(RuntimeError):
@@ -40,7 +40,7 @@ class Status:
 @dataclass(frozen=True)
 class InstallOptions:
     start: bool = True  # Linux: enable --now (else enable only)
-    force: bool = False  # Linux: replace a unit hark did not write
+    force: bool = False  # Linux: replace a unit skriv did not write
     dry_run: bool = False  # Linux: print the units and systemctl calls only
     asr_backend: str | None = None  # macOS: skriv-server --backend (default by machine)
     cleanup_model: str | None = None  # macOS: the scripts/fetch-models key llama-server runs
@@ -71,7 +71,7 @@ def backend() -> Backend:
     except ImportError:
         module = None
     if module is None:
-        raise NotImplementedError(f"hark service is not available on {sys.platform}")
+        raise NotImplementedError(f"skriv service is not available on {sys.platform}")
     return cast("Callable[[], Backend]", vars(module)["backend"])()
 
 
@@ -85,7 +85,7 @@ def add_parser(sub: argparse._SubParsersAction[argparse.ArgumentParser]) -> None
         "components",
         nargs="*",
         metavar="COMPONENT",
-        help=f"{', '.join(COMPONENTS)} (macOS: server, llama; the client is Hark.app). Default:"
+        help=f"{', '.join(COMPONENTS)} (macOS: server, llama; the client is Skriv.app). Default:"
         " install/uninstall: client (Linux), server and llama (macOS); status/restart: the"
         " installed ones",
     )
@@ -131,7 +131,7 @@ def main(  # noqa: PLR0911, PLR0913 - one exit per usage error; keyword-only CLI
     foreign = [c for c in components if c not in b.components]
     if foreign:
         hint = (
-            "; the client is Hark.app: turn on Launch at Login in its menu"
+            "; the client is Skriv.app: turn on Launch at Login in its menu"
             if foreign[0] == "client" and sys.platform == "darwin"
             else ""
         )
@@ -166,7 +166,7 @@ def main(  # noqa: PLR0911, PLR0913 - one exit per usage error; keyword-only CLI
 
 
 def _usage(message: str) -> int:
-    print(f"hark service: {message}", file=sys.stderr)
+    print(f"skriv service: {message}", file=sys.stderr)
     return 2
 
 

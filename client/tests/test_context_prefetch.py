@@ -61,7 +61,7 @@ def world(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> World:
     monkeypatch.setenv("CLAUDE_CONFIG_DIR", str(tmp_path / "claude"))
     monkeypatch.setenv("CODEX_HOME", str(tmp_path / "codex"))
     monkeypatch.delenv("PI_CODING_AGENT_SESSION_DIR", raising=False)
-    monkeypatch.delenv("HARK_CONTEXT_CWD", raising=False)
+    monkeypatch.delenv("SKRIV_CONTEXT_CWD", raising=False)
     monkeypatch.setattr(prefetch, "get_focus", w.focus)
     monkeypatch.setattr(prefetch, "focus_token", lambda: w.window)
     monkeypatch.setattr(prefetch, "resolve", w.terminal)
@@ -94,7 +94,7 @@ def test_stale_entry_is_not_used(world: World, tmp_path: Path, monkeypatch: pyte
     assert p.lookup(world.window) is None
 
 
-DAEMONS = {"hark-context-prefetch", "hark-context-learn", "hark-context-hypr"}
+DAEMONS = {"skriv-context-prefetch", "skriv-context-learn", "skriv-context-hypr"}
 
 
 def wait_for[T](fn: Callable[[], T | None], timeout_s: float = 3.0) -> T:

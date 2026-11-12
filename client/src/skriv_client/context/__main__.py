@@ -56,7 +56,7 @@ def vocab_main(argv: list[str]) -> int:
     ap = argparse.ArgumentParser(prog="python -m skriv_client.context vocab")
     ap.add_argument("action", nargs="?", default="list", choices=["list", "update", "clear"])
     ap.add_argument("--repo", default=".", help="repository (or directory) to list terms for")
-    ap.add_argument("--data-dir", help="hark data dir (default: history.dir default)")
+    ap.add_argument("--data-dir", help="skriv data dir (default: history.dir default)")
     ap.add_argument("--limit", type=int, default=40)
     args = ap.parse_args(argv, namespace=_VocabArgs())
     store = vocab.store(args.data_dir)

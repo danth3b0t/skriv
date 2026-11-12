@@ -81,7 +81,7 @@ Panel {
   function togglePause() { if (online) run(["hark", "ctl", paused ? "resume" : "pause"]) }
   function editConfig() {
     var base = Quickshell.env("XDG_CONFIG_HOME") || (Quickshell.env("HOME") + "/.config")
-    run(["omarchy-launch-editor", base + "/hark/config.toml"])
+    run(["omarchy-launch-editor", base + "/skriv/config.toml"])
     close()
   }
   function doctor() {
@@ -161,7 +161,7 @@ Panel {
   Socket {
     id: sock
     path: Model.socketPath({
-      HARK_CTL_SOCKET: Quickshell.env("HARK_CTL_SOCKET"),
+      SKRIV_CTL_SOCKET: Quickshell.env("SKRIV_CTL_SOCKET"),
       XDG_RUNTIME_DIR: Quickshell.env("XDG_RUNTIME_DIR"),
       UID: Quickshell.env("UID")
     })

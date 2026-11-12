@@ -139,6 +139,14 @@ class FakeLLM:
         return messages[-1]["content"]
 
 
+@pytest.fixture(autouse=True)
+def _private_xdg_dirs(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch):
+    """No test reads, writes or migrates the real ~/.config and ~/.local/share dirs."""
+    base = tmp_path_factory.mktemp("xdg")
+    monkeypatch.setenv("XDG_CONFIG_HOME", str(base / "config"))
+    monkeypatch.setenv("XDG_DATA_HOME", str(base / "data"))
+
+
 @pytest.fixture
 def fake_llm() -> Iterator[FakeLLM]:
     fake = FakeLLM()

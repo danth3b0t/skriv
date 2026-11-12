@@ -196,9 +196,9 @@ def test_dictionary_words_bias_the_recognizer_without_any_context(
 ):
     words = '[[words]]\nword = "kubectl"\nspoken = ["Cube Control!"]\n'
     repo = tmp_path / "repo"
-    (repo / ".hark").mkdir(parents=True)
+    (repo / ".skriv").mkdir(parents=True)
     if where == "repo":  # the focused terminal's repository has its own list
-        (repo / ".hark" / "words.toml").write_text(words)
+        (repo / ".skriv" / "words.toml").write_text(words)
     snap = replace(snapshot("com.apple.Notes", terms=()), repo_root=str(repo))
     fake_context.snapshots = [snap]
     _, rec = run_once(tmp_path, skriv_server.target, config=words if where == "config" else "")

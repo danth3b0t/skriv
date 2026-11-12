@@ -9,9 +9,9 @@ var RECOVERY_KEY = "Super Alt D"
 // ---- the control socket
 
 function socketPath(env) {
-  if (env.HARK_CTL_SOCKET) return env.HARK_CTL_SOCKET
+  if (env.SKRIV_CTL_SOCKET) return env.SKRIV_CTL_SOCKET
   var runtime = env.XDG_RUNTIME_DIR || ("/run/user/" + (env.UID || ""))
-  return runtime + "/hark/ctl.sock"
+  return runtime + "/skriv/ctl.sock"
 }
 
 function subscribeRequest() {

@@ -16,7 +16,7 @@ ADAPTER = Path(__file__).parents[2] / "packaging" / "omarchy" / "omarchy-dictati
 FAKE = """#!/bin/sh
 echo "$(basename "$0") $*" >> "$FAKE_LOG"
 case "$(basename "$0") $1" in
-  "hark ctl") echo "$HARK_REPLY"; exit "$HARK_EXIT" ;;
+  "hark ctl") echo "$SKRIV_REPLY"; exit "$SKRIV_EXIT" ;;
   "systemctl --user") [ "$2" = cat ] && exit "$UNIT_EXIT"; exit 0 ;;
 esac
 """
@@ -37,8 +37,8 @@ def run_adapter(
         **os.environ,
         "PATH": f"{bin_dir}:/usr/bin:/bin",
         "FAKE_LOG": str(log),
-        "HARK_EXIT": str(hark_exit),
-        "HARK_REPLY": "ok recording" if hark_exit == 0 else "error boom",
+        "SKRIV_EXIT": str(hark_exit),
+        "SKRIV_REPLY": "ok recording" if hark_exit == 0 else "error boom",
         "UNIT_EXIT": str(unit_exit),
     }
     p = subprocess.run(  # noqa: S603 - fixed argv

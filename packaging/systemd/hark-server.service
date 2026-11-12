@@ -7,7 +7,7 @@ After=hark-llama.service
 [Service]
 Type=notify
 NotifyAccess=main
-ExecStart=/usr/bin/skriv-server --config %E/hark/server.toml
+ExecStart=/usr/bin/skriv-server --config %E/skriv/server.toml
 Restart=on-failure
 RestartSec=5
 RestartSteps=5

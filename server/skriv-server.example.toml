@@ -35,7 +35,7 @@ dtype = "bfloat16"
 # `model` for sessions with languages ["en"] and the language fallback; loaded on first use; "" = none)
 # transcribe_cpp (model = path to a GGUF, scripts/fetch-transcribe): device = "cpu" (| metal | vulkan |
 # cuda | auto), threads = 0 (library default), library = "" ($TRANSCRIBE_LIBRARY), binding = ""
-# ($HARK_TRANSCRIBE_BINDING), load_timeout_s = 120, decode_timeout_s = 60. scripts/cpu-server-up runs it.
+# ($SKRIV_TRANSCRIBE_BINDING), load_timeout_s = 120, decode_timeout_s = 60. scripts/cpu-server-up runs it.
 # mock backend options: word_ms, decode_ms, decode_ms_per_s, load_ms, max_n_best, script
 
 [cleanup]
