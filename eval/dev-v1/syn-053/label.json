@@ -1,0 +1,10 @@
+{
+  "said": "close issue four twenty one and link it from PR four thirty seven",
+  "critical": [
+    "421",
+    "437"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): macOS say Aman 215 wpm; level -21 dBFS, reverb RT60 0.54 s, office at SNR 9 dB; app Ghostty (com.mitchellh.ghostty); context sparse: 2 terms (0 for this clip, 2 distractors from hark); tags number; TTS read 'close issue four twenty one and link it from P R four thirty seven'"
+}

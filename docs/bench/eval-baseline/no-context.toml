@@ -1,0 +1,3 @@
+# Ablation: no context. The stored shortlist is cut to 0 terms (no bias, no canonicalization, no terms for cleanup).
+[context]
+max_terms = 0

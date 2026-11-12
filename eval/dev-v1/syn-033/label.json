@@ -1,0 +1,12 @@
+{
+  "said": "use use query from tanstack query instead of fetching in a use effect",
+  "critical": [
+    "useQuery",
+    "useEffect"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "Use useQuery from tanstack query instead of fetching in a useEffect."
+  ],
+  "note": "synthetic (en_IE): macOS say Moira 198 wpm; level -30 dBFS, reverb RT60 0.58 s, keyboard at SNR 17 dB; app kitty (kitty); context full: 29 terms (3 for this clip, 26 distractors from web); tags identifier"
+}

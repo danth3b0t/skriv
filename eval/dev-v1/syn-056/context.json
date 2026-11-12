@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "main", "collected_ms": 14.5, "cwd": "/home/dev/src/trainer", "errors": [], "focus": {"app": "Ghostty", "app_id": "com.mitchellh.ghostty", "is_terminal": true, "pid": 55620, "title": "", "window_id": "55620:13727"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/trainer", "terms": []}

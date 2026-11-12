@@ -1,0 +1,3 @@
+# Ablation: no cleanup model (self-corrections, symbols and guardrails still run).
+[cleanup]
+enabled = false

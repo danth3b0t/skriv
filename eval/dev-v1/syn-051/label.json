@@ -1,0 +1,10 @@
+{
+  "said": "we need python three point twelve, three point thirteen breaks grpc",
+  "critical": [
+    "3.12",
+    "3.13"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_kore speed 0.95; level -27 dBFS, office at SNR 13 dB; app Ghostty (com.mitchellh.ghostty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags number; TTS read 'we need python three point twelve, three point thirteen breaks g r p c'"
+}

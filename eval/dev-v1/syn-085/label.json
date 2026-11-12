@@ -1,0 +1,11 @@
+{
+  "said": "Refactor the router so the health probe for each provider runs in parallel. Keep max latency ms as the per provider budget.",
+  "critical": [
+    "max_latency_ms"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "Refactor the router so the health probe for each provider runs in parallel. Keep max_latency_ms as the per provider budget."
+  ],
+  "note": "synthetic (en_US): Kokoro-82M af_aoede speed 1.21; level -24 dBFS, keyboard at SNR 19 dB; app Code (code); context full: 28 terms (3 for this clip, 25 distractors from hark); tags identifier; TTS read 'Refactor the router so the health probe for each provider runs in parallel. Keep max latency M S as the per provider budget.'"
+}

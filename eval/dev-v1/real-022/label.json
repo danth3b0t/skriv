@@ -1,0 +1,11 @@
+{
+  "said": "only his heart and lungs worked on at a strong measured rate",
+  "critical": [],
+  "forbidden": [
+    "hark"
+  ],
+  "accepted": [
+    "Only his heart and lungs worked on at a strong measured rate."
+  ],
+  "note": "real speech: LibriSpeech dev-clean 1272-141231-0007 via hf-internal-testing/librispeech_asr_dummy@5be91486 (speaker 1272, read audiobook); license CC-BY-4.0; app Ghostty (com.mitchellh.ghostty); context full: 23 terms (1 for this clip, 22 distractors from hark); trap terms on the list: hark"
+}

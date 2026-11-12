@@ -1,0 +1,10 @@
+{
+  "said": "the Omarchy panel should show, like, the last three dictations, and clicking one should run hark ctl paste last",
+  "critical": [
+    "Omarchy",
+    "hark ctl paste-last"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bm_george speed 1.03; level -20 dBFS, quiet room (tone -56 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 30 terms (4 for this clip, 28 distractors from hark); tags long, filler, command; TTS read 'the oh marky panel should show, like, the last three dictations, and clicking one should run hark control paste last'"
+}

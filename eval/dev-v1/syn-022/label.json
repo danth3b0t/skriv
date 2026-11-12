@@ -1,0 +1,14 @@
+{
+  "said": "set min speech ms to two hundred and preroll ms to three hundred",
+  "critical": [
+    "min_speech_ms",
+    "preroll_ms",
+    "200",
+    "300"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "Set min_speech_ms to 200 and preroll_ms to 300."
+  ],
+  "note": "synthetic (en_US): Kokoro-82M am_fenrir speed 1.14; level -24 dBFS, reverb RT60 0.46 s, quiet room (tone -58 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags identifier, number; TTS read 'set min speech M S to two hundred and pre roll M S to three hundred'"
+}

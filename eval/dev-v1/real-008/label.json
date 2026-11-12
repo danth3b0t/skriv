@@ -1,0 +1,9 @@
+{
+  "said": "let me ask you a question so why the younger brother asked him to leave the negative activities is there any specific reason",
+  "critical": [],
+  "forbidden": [
+    "let_me"
+  ],
+  "accepted": [],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00003 row group 0 row 18; speaker EDACC-C31-B, Mainstream US English, L1 Urdu, male); license CC-BY-SA-4.0; app Ghostty (com.mitchellh.ghostty); context full: 27 terms (1 for this clip, 26 distractors from hark); trap terms on the list: let_me"
+}

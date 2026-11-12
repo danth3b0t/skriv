@@ -1,0 +1,13 @@
+{
+  "said": "put it in client slash src, actually no, put it in server slash src",
+  "critical": [
+    "server/src"
+  ],
+  "forbidden": [
+    "client/src"
+  ],
+  "accepted": [
+    "Put it in server/src."
+  ],
+  "note": "synthetic (en_GB): macOS say Daniel 227 wpm; level -28 dBFS, quiet room (tone -61 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 17 terms (2 for this clip, 15 distractors from hark); tags correction, path"
+}

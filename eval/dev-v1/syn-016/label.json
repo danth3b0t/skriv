@@ -1,0 +1,10 @@
+{
+  "said": "make load snapshot return an empty context snapshot instead of raising",
+  "critical": [
+    "load_snapshot",
+    "ContextSnapshot"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_kore speed 1.16; level -26 dBFS, cafeteria at SNR 10 dB; app kitty (kitty); context full: 23 terms (3 for this clip, 20 distractors from hark); tags identifier"
+}

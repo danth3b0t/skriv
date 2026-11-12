@@ -1,0 +1,11 @@
+{
+  "said": "switch the branch to feat slash eval dash set and rebase on main",
+  "critical": [
+    "feat/eval-set"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "Switch the branch to feat/eval-set and rebase on main."
+  ],
+  "note": "synthetic (en_GB): Kokoro-82M bm_daniel speed 1.16; level -22 dBFS, reverb RT60 0.45 s, laptop mic, fan at SNR 18 dB; app kitty (kitty); context full: 29 terms (2 for this clip, 27 distractors from hark); tags path"
+}

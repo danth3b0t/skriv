@@ -1,0 +1,3 @@
+# Ablation: the acoustic anchor gate off (biased spans are kept as decoded).
+[gate]
+enabled = false

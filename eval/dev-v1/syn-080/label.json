@@ -1,0 +1,10 @@
+{
+  "said": "pnpm add dash capital d vitest, then create a vitest dot config dot ts with the jsdom environment",
+  "critical": [
+    "pnpm add -D vitest",
+    "vitest.config.ts"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hf_alpha speed 1.16; level -29 dBFS, reverb RT60 0.63 s, laptop mic, fan at SNR 11 dB; app Alacritty (Alacritty); context full: 29 terms (4 for this clip, 25 distractors from web); tags long, command, flag; TTS read 'p n p m add dash capital D vee test, then create a vee test dot config dot T S with the J S dom environment'"
+}

@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "feat/omarchy-panel", "collected_ms": 34.3, "cwd": "/home/dev/src/hark", "errors": [], "focus": {"app": "Ghostty", "app_id": "com.mitchellh.ghostty", "is_terminal": true, "pid": 34125, "title": "", "window_id": "34125:55089"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/hark", "terms": []}

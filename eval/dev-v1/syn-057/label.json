@@ -1,0 +1,9 @@
+{
+  "said": "don't touch the server code, only change the client",
+  "critical": [],
+  "forbidden": [],
+  "accepted": [
+    "Don't touch the server code. Only change the client."
+  ],
+  "note": "synthetic (en_GB): Kokoro-82M bm_lewis speed 1.13; level -24 dBFS, cafeteria at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags negation"
+}

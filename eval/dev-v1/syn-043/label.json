@@ -1,0 +1,10 @@
+{
+  "said": "set the environment variable hark underscore models underscore dir to slash data slash models",
+  "critical": [
+    "HARK_MODELS_DIR",
+    "/data/models"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): Kokoro-82M bf_emma speed 1.07; level -22 dBFS, reverb RT60 0.69 s, living room at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context full: 29 terms (2 for this clip, 27 distractors from hark); tags identifier, path"
+}

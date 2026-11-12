@@ -1,0 +1,10 @@
+{
+  "said": "in fact there is nothing he can do in these dominions as well as our nomes whose numbers are so great that it worries us to keep them all busy",
+  "critical": [],
+  "forbidden": [],
+  "accepted": [
+    "In fact, there's nothing he can do in these dominions as well as our gnomes, whose numbers are so great that it worries us to keep them all busy.",
+    "In fact, there's nothing he can do in these dominions as well as our gnomes whose numbers are so great that it worries us to keep them all busy."
+  ],
+  "note": "real speech: LibriSpeech dev-clean 1272-135031-0010 via hf-internal-testing/librispeech_asr_dummy@5be91486 (speaker 1272, read audiobook); license CC-BY-4.0; app kitty (kitty); context full: 18 terms (0 for this clip, 18 distractors from hark); trap terms on the list: none"
+}

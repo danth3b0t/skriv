@@ -1,0 +1,11 @@
+{
+  "said": "pip install torch two point five with cuda twelve point four",
+  "critical": [
+    "torch",
+    "2.5",
+    "12.4"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_GB): macOS say Daniel 191 wpm; level -28 dBFS, office at SNR 14 dB; app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags number, command"
+}

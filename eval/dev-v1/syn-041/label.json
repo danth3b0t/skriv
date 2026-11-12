@@ -1,0 +1,9 @@
+{
+  "said": "git push dash dash force with lease, but don't force push main",
+  "critical": [
+    "--force-with-lease"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hf_alpha speed 1.19; level -21 dBFS, reverb RT60 0.50 s, office at SNR 20 dB; app kitty (kitty); context full: 16 terms (1 for this clip, 15 distractors from hark); tags flag, negation"
+}

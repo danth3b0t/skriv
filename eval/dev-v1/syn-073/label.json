@@ -1,0 +1,10 @@
+{
+  "said": "okay so, um, here's the thing. when I dictate into Ghostty and the context collect misses the deadline, the session start goes out with zero bias terms. uh, I want you to log that as a warning with the app id, and, like, add a counter to hark doctor so we can see how often it happens. don't change the deadline itself.",
+  "critical": [
+    "Ghostty",
+    "hark doctor"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IE): macOS say Moira 181 wpm; level -24 dBFS, reverb RT60 0.61 s, laptop mic, keyboard at SNR 16 dB; app Ghostty (com.mitchellh.ghostty); context full: 26 terms (5 for this clip, 21 distractors from hark); tags long, filler, negation; TTS read \"okay so, um, here's the thing. when I dictate into ghosty and the context collect misses the deadline, the session start goes out with zero bias terms. uh, I want you to log that as a warning with the app id, and, like, add a counter to hark doctor so we can see how often it happens. don't change the deadline itself.\""
+}

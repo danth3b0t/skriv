@@ -1,0 +1,13 @@
+{
+  "said": "write it in TypeScript, um, no, in Rust",
+  "critical": [
+    "Rust"
+  ],
+  "forbidden": [
+    "TypeScript"
+  ],
+  "accepted": [
+    "Write it in Rust."
+  ],
+  "note": "synthetic (en_ZA): macOS say Tessa 190 wpm; level -26 dBFS, cafeteria at SNR 17 dB; app Alacritty (Alacritty); context empty: 0 terms; tags correction, filler"
+}

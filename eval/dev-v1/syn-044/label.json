@@ -1,0 +1,9 @@
+{
+  "said": "tail the logs with journalctl dash dash user dash u hark",
+  "critical": [
+    "journalctl --user -u hark"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (L2 fr): Kokoro-82M ff_siwis speed 0.85; level -24 dBFS, laptop mic, office at SNR 10 dB; app kitty (kitty); context full: 24 terms (2 for this clip, 22 distractors from hark); tags flag, command; TTS read 'tail the logs with journal control dash dash user dash u hark'"
+}

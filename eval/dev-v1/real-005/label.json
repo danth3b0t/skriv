@@ -1,0 +1,9 @@
+{
+  "said": "you might wait wait wait hold on you might feel tall okay it's a feeling i understand so don't let me give you that impression but you might feel tall you know you you",
+  "critical": [],
+  "forbidden": [
+    "let_me"
+  ],
+  "accepted": [],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00002 row group 1 row 43; speaker EDACC-C29-B, Nigerian English, L1 Nigerian English, male); license CC-BY-SA-4.0; app Alacritty (Alacritty); context full: 24 terms (1 for this clip, 23 distractors from hark); trap terms on the list: let_me"
+}

@@ -1,0 +1,1 @@
+{"agent": "claude", "branch": "fix/hydration", "collected_ms": 49.1, "cwd": "/home/dev/src/dashboard", "errors": [], "focus": {"app": "Ghostty", "app_id": "com.mitchellh.ghostty", "is_terminal": true, "pid": 62814, "title": "", "window_id": "62814:32948"}, "prefetched": true, "provenance": [], "repo_root": "/home/dev/src/dashboard", "terms": []}

@@ -1,0 +1,10 @@
+{
+  "said": "npm install zod at version three point twenty three",
+  "critical": [
+    "zod",
+    "3.23"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): macOS say Samantha 155 wpm; level -22 dBFS, cafeteria at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags number, command"
+}

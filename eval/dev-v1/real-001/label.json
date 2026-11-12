@@ -1,0 +1,12 @@
+{
+  "said": "primary school it wasn't even seven feet so it was very fun to go back there then mess about thereafter i did some um coaching",
+  "critical": [],
+  "forbidden": [
+    "goBack"
+  ],
+  "accepted": [
+    "Primary school it wasn't even 7 feet. So it was very fun to go back there and then mess about there after I did some coaching.",
+    "In primary school it wasn't even 7 feet. So it was very fun to go back there and then mess about there after I did some coaching."
+  ],
+  "note": "real speech: EdACC (edinburghcstr/edacc@d9ae7bd3, test test-00000 row group 0 row 62; speaker EDACC-C08-A, Scottish English, L1 Scottish English, male); license CC-BY-SA-4.0; app kitty (kitty); context full: 27 terms (1 for this clip, 26 distractors from hark); trap terms on the list: goBack"
+}

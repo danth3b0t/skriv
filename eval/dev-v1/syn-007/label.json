@@ -1,0 +1,9 @@
+{
+  "said": "uv run pytest dash k gate",
+  "critical": [
+    "uv run pytest -k gate"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_ZA): macOS say Tessa 170 wpm; level -24 dBFS, laptop mic, keyboard at SNR 21 dB; app kitty (kitty); context full: 30 terms (3 for this clip, 28 distractors from hark); tags short, command, flag; TTS read 'u v run pie test dash k gate'"
+}

@@ -1,0 +1,7 @@
+{
+  "said": "never push directly to main",
+  "critical": [],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M af_bella speed 1.24; level -28 dBFS, reverb RT60 0.47 s, laptop mic, keyboard at SNR 12 dB; app Ghostty (com.mitchellh.ghostty); context empty: 0 terms; tags short, negation"
+}

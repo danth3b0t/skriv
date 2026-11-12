@@ -1,0 +1,10 @@
+{
+  "said": "check whether smart spacing is off when check focus is false",
+  "critical": [
+    "smart_spacing",
+    "check_focus"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hm_omega speed 1.06; level -30 dBFS, cafeteria at SNR 6 dB; app kitty (kitty); context full: 25 terms (2 for this clip, 23 distractors from hark); tags identifier"
+}

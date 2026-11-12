@@ -1,0 +1,10 @@
+{
+  "said": "on Hyprland the paste goes to the wrong window if I switch workspaces while it's transcribing. um, we should check the window id from hyprctl active window right before we paste, and if it changed, uh, just copy to the clipboard and notify.",
+  "critical": [
+    "Hyprland",
+    "hyprctl"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (L2 it): Kokoro-82M if_sara speed 0.86; level -25 dBFS, laptop mic, keyboard at SNR 20 dB; app Ghostty (com.mitchellh.ghostty); context full: 25 terms (4 for this clip, 21 distractors from hark); tags long, filler; TTS read \"on hyper land the paste goes to the wrong window if I switch workspaces while it's transcribing. um, we should check the window id from hyper control active window right before we paste, and if it changed, uh, just copy to the clipboard and notify.\""
+}

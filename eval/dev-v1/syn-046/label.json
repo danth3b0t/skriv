@@ -1,0 +1,9 @@
+{
+  "said": "use the kube config from tilde slash dot kube slash config",
+  "critical": [
+    "~/.kube/config"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): macOS say Rishi 181 wpm; level -23 dBFS, keyboard + office at SNR 18 dB; app Ghostty (com.mitchellh.ghostty); context full: 28 terms (2 for this clip, 26 distractors from ops); tags path; TTS read 'use the cube config from tilde slash dot cube slash config'"
+}

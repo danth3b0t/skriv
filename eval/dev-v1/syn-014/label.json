@@ -1,0 +1,11 @@
+{
+  "said": "in the use effect hook, um, add a cleanup function that clears the interval",
+  "critical": [
+    "useEffect"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "In the useEffect hook, add a cleanup function that clears the interval."
+  ],
+  "note": "synthetic (en_US): Kokoro-82M am_eric speed 1.2; level -23 dBFS, laptop mic, office at SNR 17 dB; app Code (code); context full: 25 terms (3 for this clip, 22 distractors from web); tags identifier, filler"
+}

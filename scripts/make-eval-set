@@ -1,0 +1,747 @@
+#!/usr/bin/env -S uv run --script
+# /// script
+# requires-python = ">=3.12,<3.13"
+# dependencies = [
+#     "hark-client",
+#     "kokoro-onnx==0.6.1",
+#     "phonemizer==3.6.0",
+#     "espeakng-loader==0.2.4",
+#     "onnxruntime==1.31.1",
+#     "soundfile==0.14.0",
+#     "pyarrow==26.0.1",
+#     "huggingface-hub==2.4.0",
+# ]
+# [tool.uv.sources]
+# hark-client = { path = "../client", editable = true }
+# hark-proto = { path = "../proto-py", editable = true }
+# ///
+"""make-eval-set: build the accuracy eval set eval/dev-v1 for `hark eval run --set` (docs/eval.md).
+
+    scripts/make-eval-set                     # eval/dev-v1 (downloads cached in models/eval-cache)
+    scripts/make-eval-set --out DIR --only syn-007 --only real-003
+
+Two parts, each clip a directory with audio.wav (16 kHz mono PCM16), context.json (the key-down
+snapshot exactly as `retry.save` writes it) and label.json (said / critical / forbidden /
+accepted / note):
+
+- syn-NNN: the developer prompts in scripts/eval_prompts.py, synthesized with Kokoro-82M
+  (kokoro-onnx, Apache-2.0) and macOS `say` across en_US/GB/AU/IE/IN/ZA and non-native voices,
+  rates, room reverb, a laptop-mic colour and background noise (DEMAND, CC-BY-4.0, plus
+  synthetic fan and keyboard noise) at realistic SNRs. TTS reads the spoken form only.
+- real-NNN: real speech from public datasets (EdACC, CC-BY-SA-4.0: conversational English in many
+  accents; LibriSpeech, CC-BY-4.0: read speech), paired with a dense hark shortlist. Clips whose
+  words collide with real hark identifiers ("wait for" / `wait_for`) are preferred, and those
+  identifiers are put on the list and into `forbidden`: they measure false substitutions.
+
+Everything is seeded; the same inputs give the same clips. Reviewed texts (`accepted`) in an
+existing label.json are kept when its `said` is unchanged. Needs macOS (`say`, `afconvert`).
+"""
+
+from __future__ import annotations
+
+# ruff: noqa: S311 - seeded generators for a reproducible data set, not secrets
+import argparse
+import hashlib
+import io
+import json
+import math
+import random
+import re
+import shutil
+import subprocess
+import sys
+import tempfile
+import urllib.request
+import zipfile
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import soxr
+
+from hark_client.audio import read_wav, to_pcm16, write_wav
+from hark_client.context.aliases import spoken_forms
+from hark_client.context.rank import Candidate, Origin, rank
+from hark_client.context.types import ContextSnapshot, FocusInfo, TermKind
+from hark_client.history import snapshot_json
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from eval_prompts import PROMPTS, Prompt
+
+ROOT = Path(__file__).resolve().parent.parent
+SR = 16_000
+SEED = 20261113
+
+# -- pinned downloads ---------------------------------------------------------------------------
+
+KOKORO = {
+    "kokoro-v1.0.onnx": (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/kokoro-v1.0.onnx",
+        "7d5df8ecf7d4b1878015a32686053fd0eebe2bc377234608764cc0ef3636a6c5",
+    ),
+    "voices-v1.0.bin": (
+        "https://github.com/thewh1teagle/kokoro-onnx/releases/download/model-files-v1.0/voices-v1.0.bin",
+        "bca610b8308e8d99f32e6fe4197e7ec01679264efed0cac9140fe9c29f1fbf7d",
+    ),
+}
+DEMAND = {  # environment -> zenodo md5 (record 1227121, CC-BY-4.0); channel 1 is used
+    "OOFFICE": "7b61cc2d182d5a654cb9c3101ddd4041",
+    "PCAFETER": "99927d148128254141a9417d051510bb",
+    "DLIVING": "46741384d9e434a0bd8b3ec1830b6052",
+    "OMEETING": "62f7cfe7fe6d30b7d8a215fe37c2dfd2",
+}
+LIBRISPEECH = (
+    (
+        "https://huggingface.co/datasets/hf-internal-testing/librispeech_asr_dummy/resolve/"
+        "5be91486e11a2d616f4ec5db8d3fd248585ac07a/clean/validation-00000-of-00001.parquet"
+    ),
+    "4e69a06fa5edc90921e5e7e39a7084881f8b3ed9c805c574f4f39c6fde27c603",
+)
+EDACC_REV = "d9ae7bd344f0562b766ec93ee5ce8f2f9568ce66"
+EDACC_FILES = [
+    "test-00000-of-00010-f0aceb1ca4406ff1.parquet",
+    "test-00001-of-00010-856b016d9d438ff3.parquet",
+    "test-00002-of-00010-2b021baedb4deb8a.parquet",
+    "test-00003-of-00010-4de275e704375a02.parquet",
+    "test-00004-of-00010-806407c9bc68112a.parquet",
+    "test-00005-of-00010-9c97c4c4c8d01f82.parquet",
+    "test-00006-of-00010-cc4648d0f66f65a4.parquet",
+    "test-00007-of-00010-ea5ed4464ecff3c9.parquet",
+    "test-00008-of-00010-d1aa19b51ad423da.parquet",
+    "test-00009-of-00010-648ce5002d124496.parquet",
+]
+EDACC_ROW_GROUPS = (0, 1)  # 100 rows each
+EDACC_PER_FILE = 2
+LIBRISPEECH_CLIPS = 6
+
+
+def fetch(url: str, dest: Path, digest: str, algo: str = "sha256") -> Path:
+    if dest.is_file() and hashlib.new(algo, dest.read_bytes()).hexdigest() == digest:
+        return dest
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    print(f"downloading {url}", file=sys.stderr)
+    tmp = dest.with_suffix(dest.suffix + ".part")
+    with urllib.request.urlopen(url) as r, tmp.open("wb") as f:  # noqa: S310 - pinned https URLs
+        shutil.copyfileobj(r, f, 1 << 20)
+    got = hashlib.new(algo, tmp.read_bytes()).hexdigest()
+    if got != digest:
+        tmp.unlink()
+        raise SystemExit(f"{url}: {algo} {got}, expected {digest}")
+    tmp.rename(dest)
+    return dest
+
+
+# -- context: shortlists that look like the context engine's -------------------------------------
+
+# Real hark vocabulary (repo files, identifiers, tools) for the distractor part of a shortlist.
+HARK_POOL = [
+    "hark", "hark-server", "parakeet_mlx", "S1-mini", "llama-server", "Ghostty", "Hyprland",
+    "Omarchy", "QuickShell", "pipeline.py", "evalset.py", "cleanup.py", "gate.py", "canon.py",
+    "rank.py", "aliases.py", "symbols.py", "corrections.py", "guardrails.py", "retry.py",
+    "history.py", "__main__.py", "config.toml", "ContextSnapshot", "FocusInfo", "Utterance",
+    "CleanupOutcome", "GateConfig", "TranscribeStream", "SessionStart", "FinalResult", "Router",
+    "DryRunInjector", "LearnedStore", "ShadowBuffer", "CaretContext", "TermKind", "TermSource",
+    "canonicalize", "snapshot_json", "load_snapshot", "bias_list", "spoken_forms",
+    "competition_key", "merge_terms", "wait_final", "read_wav", "write_wav", "speech_ms",
+    "smart_spacing", "check_focus", "min_speech_ms", "preroll_ms", "final_timeout_ms",
+    "max_terms", "deadline_ms", "confident_anchor", "max_distance", "resolve_corrections",
+    "send_context", "max_latency_ms", "utterance_id", "window_id", "is_terminal", "app_id",
+    "raw_text", "final_text", "canonical_text", "uv", "ruff", "pytest", "basedpyright",
+    "lefthook", "gRPC", "protobuf", "hark_pb2", "docs/eval.md", "ctl-v1.md", "--dry-run",
+    "--config", "--server", "--json", "hark doctor", "hark ctl", "hark eval", "hark retry",
+    "paste-last", "swap-raw", "MLX", "NeMo", "Qwen3", "parakeet-tdt-0.6b-v3", "transcribe.cpp",
+    "cpu-server-up", "fetch-models", "llama-up", "hark-probe", "uuid7", "AsrError",
+    "Superwhisper", "Wayland", "wtype", "PortAudio", "sounddevice", "soxr", "numpy",
+]  # fmt: skip
+WEB_POOL = [
+    "useState", "useEffect", "useMemo", "useCallback", "useRef", "useQuery", "useMutation",
+    "QueryClient", "TanStack Query", "React", "Next.js", "Vite", "vitest", "pnpm", "tsconfig.json",
+    "package.json", "next.config.ts", "tailwind.config.ts", "zod", "Prisma", "schema.prisma",
+    "useSessionStore", "SessionProvider", "app/layout.tsx", "app/page.tsx", "components/ui",
+    "Button.tsx", "eslint", "prettier", "TypeScript", "jsdom", "msw", "fetchUser", "userId",
+    "createdAt", "Zustand", "@/lib/utils", "cn", "shadcn",
+]  # fmt: skip
+ML_POOL = [
+    "PyTorch", "torch", "torch.nn", "DataLoader", "Dataset", "optimizer", "zero_grad",
+    "model.train()", "model.eval()", "train.py", "config.yaml", "wandb", "CUDA", "torchrun",
+    "num_workers", "batch_size", "learning_rate", "AdamW", "bf16", "checkpoint_dir", "safetensors",
+    "transformers", "AutoTokenizer", "httpx", "requests", "fetch_rows", "pandas", "numpy",
+    "pyproject.toml", "uv", "pytest", "eval_loss", "grad_accum", "lr_scheduler",
+]  # fmt: skip
+OPS_POOL = [
+    "kubectl", "k9s", "helm", "values.yaml", "deployment.yaml", "staging", "prod", "api-gateway",
+    "ingress", "configmap", "Dockerfile", "docker compose", "compose.yaml", "redis", "redis.conf",
+    "Postgres", "pg_dump", "Terraform", "main.tf", "AWS", "eu-west-1", "nginx", "certbot",
+    "systemctl", "journalctl", "Grafana", "Prometheus", "localhost:8000", "~/.kube/config",
+    "node:22-alpine", "GitHub Actions", "ci.yml",
+]  # fmt: skip
+POOLS = {"hark": HARK_POOL, "web": WEB_POOL, "ml": ML_POOL, "ops": OPS_POOL}
+PROJECTS = {  # cwd, branches
+    "hark": ("/home/dev/src/hark", ["main", "eval-set", "feat/omarchy-panel", "fix/paste-focus"]),
+    "web": ("/home/dev/src/dashboard", ["main", "feat/session-store", "fix/hydration"]),
+    "ml": ("/home/dev/src/trainer", ["main", "exp/lr-sweep"]),
+    "ops": ("/home/dev/src/infra", ["main", "staging-rollout"]),
+}
+
+# Real hark identifiers spelled like ordinary phrases: on a shortlist, they can turn plain speech
+# into code ("wait for" -> wait_for). Used as traps for the real-speech clips.
+TRAPS = [
+    "last_text", "stop_reason", "key_up", "too_long", "too_short", "no_speech", "find_session",
+    "front_window", "at_end", "first_token", "start_cue", "mark_down", "one_line", "single_line",
+    "free_text", "wait_for", "move_to_end", "last_session", "user_input", "last_reply",
+    "last_result", "open_channel", "audio_gap", "file_path", "output_text", "input_text",
+    "line_start", "time_ratio", "set_off", "status_code", "case_only", "read_text", "write_text",
+    "is_set", "end_of_audio", "get_text", "next_check", "is_english", "user_message", "keep_open",
+    "dry_run", "is_word", "not_text", "was_ok", "char_count", "display_name", "around_caret",
+    "at_boundary", "new_cut", "on_close", "on_press", "on_down", "on_up", "on_tap", "clock_text",
+    "menu_state", "login_item", "key_name", "last_exit", "next_status", "send_line",
+    "error_reply", "hide_after", "eager_end", "retry_hint", "after_word", "field_value",
+    "last_end", "PushToTalk", "MenuBar", "TextField", "KeyPress", "BackSpace", "StatusCode",
+    "SessionStart", "FinalResult", "EndReason", "ModelState", "AgentState", "FrontWindow",
+    "TerminalState", "ScreenText", "FieldText", "WordOut", "is_file", "exist_ok", "by_text",
+    # common identifiers from other repositories in the user's vocabulary
+    "goBack", "lookUp", "setUp", "forEach", "timeOut", "checkOut", "signUp", "logIn", "keepAlive",
+    "lastName", "firstName", "startTime", "endTime", "nextPage", "homePage", "onClick", "findAll",
+    "getAll", "last_time", "first_time", "come_back", "find_out", "each_other", "let_me",
+]  # fmt: skip
+# One ordinary word -> a context term an over-eager bias could write instead.
+SOUND_ALIKE = {
+    "hard": "hark", "heart": "hark", "hack": "hark", "rough": "ruff", "highland": "Hyprland",
+    "nemo": "NeMo", "ghost": "Ghostty", "ghostly": "Ghostty", "quick": "QuickShell",
+    "parakeet": "parakeet_mlx", "lama": "llama-server", "you've": "uv", "tie": "ty",
+}  # fmt: skip
+COMMANDS = {"kubectl", "pnpm", "uv", "ruff", "pytest", "basedpyright", "hyprctl", "journalctl",
+            "git", "npm", "pip", "docker", "helm", "k9s", "systemctl", "torchrun", "lefthook"}  # fmt: skip
+_PATH_RE = re.compile(r"/|\.(py|ts|tsx|json|md|toml|yaml|yml|conf|tf|prisma|sh)$|^\.")
+
+
+def kind_of(term: str) -> TermKind:
+    if term.startswith("-"):
+        return TermKind.FLAG
+    if term in COMMANDS or (" " in term and term.split(maxsplit=1)[0] in {"hark", "docker"}):
+        return TermKind.COMMAND
+    if _PATH_RE.search(term) and not term.startswith("$") and ":" not in term:
+        return TermKind.PATH
+    if "_" in term or "." in term or re.search(r"[a-z][A-Z]", term):
+        return TermKind.IDENTIFIER
+    return TermKind.NAME
+
+
+NEEDED_ORIGINS = [
+    (Origin.USER, 2), (Origin.ASSISTANT, 3), (Origin.TOOLS, 2), (Origin.TERMINAL_TEXT, 0),
+    (Origin.BUFFER, 0),
+]  # fmt: skip
+DISTRACTOR_ORIGINS = [
+    (Origin.ASSISTANT, 6), (Origin.TOOLS, 6), (Origin.PERSIST_REPO, 0), (Origin.REPO_RECENT, 0),
+    (Origin.REPO, 0), (Origin.PERSIST_USER, 0), (Origin.BUFFER, 0),
+]  # fmt: skip
+
+
+def shortlist(
+    rng: random.Random, needed: list[str], project: str, n_distractors: int
+) -> tuple[list[Candidate], int]:
+    """Candidates for rank(): the clip's terms with strong, recent evidence, and distractors
+    from the project's vocabulary with the weaker evidence most of a real list has."""
+    out: list[Candidate] = []
+    for t in needed:
+        for _ in range(rng.choice((1, 1, 2))):
+            origin, max_age = rng.choice(NEEDED_ORIGINS)
+            out.append(
+                Candidate(t, kind_of(t), origin, rng.uniform(0.6, 1.0), rng.randint(0, max_age))
+            )
+    taken = {re.sub(r"[^0-9a-z]", "", t.lower()) for t in needed}
+    pool = [t for t in POOLS[project] if re.sub(r"[^0-9a-z]", "", t.lower()) not in taken]
+    if project != "hark":  # a few personal terms from earlier sessions in other repos
+        pool += rng.sample(HARK_POOL, 6)
+    picked = rng.sample(pool, min(n_distractors, len(pool)))
+    for t in picked:
+        origin, max_age = rng.choice(DISTRACTOR_ORIGINS)
+        out.append(Candidate(t, kind_of(t), origin, rng.uniform(0.3, 1.0), rng.randint(0, max_age)))
+    return out, len(picked)
+
+
+APPS = {
+    "term": [("Ghostty", "com.mitchellh.ghostty"), ("Ghostty", "com.mitchellh.ghostty"),
+             ("Ghostty", "com.mitchellh.ghostty"), ("Alacritty", "Alacritty"), ("kitty", "kitty")],
+    "code": [("Code", "code")],
+    "slack": [("Slack", "Slack")],
+    "notes": [("Obsidian", "obsidian")],
+}  # fmt: skip
+
+
+def context_json(
+    rng: random.Random, app: str, project: str, needed: list[str], mode: str
+) -> tuple[dict[str, object], str]:
+    name, app_id = rng.choice(APPS[app])
+    terminal = app == "term"
+    pid = rng.randint(1200, 90000)
+    cwd, branches = PROJECTS[project]
+    if mode == "empty":
+        cands: list[Candidate] = []
+        n = 0
+    else:
+        n = rng.randint(15, 28) if mode == "full" else rng.randint(2, 6)
+        cands, n = shortlist(rng, needed, project, n)
+    ranking = rank(cands, 30)
+    lost = [t for t in needed if mode != "empty" and t not in {x.canonical for x in ranking.terms}]
+    if lost:
+        raise SystemExit(f"shortlist dropped needed terms {lost}")
+    snap = ContextSnapshot(
+        focus=FocusInfo(app=name, app_id=app_id, title="", pid=pid, is_terminal=terminal,
+                        window_id=f"{pid}:{rng.randint(1000, 99999)}"),
+        cwd=cwd if terminal else None,
+        repo_root=cwd if terminal else None,
+        branch=rng.choice(branches) if terminal else None,
+        agent=rng.choice(("claude", "pi", "codex")) if terminal else None,
+        terms=ranking.terms,
+        collected_ms=round(rng.uniform(8, 60), 1),
+        provenance=ranking.trace,
+        prefetched=True,
+    )  # fmt: skip
+    # exactly what retry.save keeps of a key-down snapshot
+    ctx = snapshot_json(snap)
+    for private in ("selection", "agent_last_reply"):
+        ctx.pop(private, None)
+    focus: dict[str, object] = ctx["focus"]  # pyright: ignore[reportAssignmentType]
+    focus["title"] = ""
+    desc = f"app {name} ({app_id}); context {mode}: {len(ranking.terms)} terms"
+    if mode != "empty":
+        desc += f" ({len(needed)} for this clip, {n} distractors from {project})"
+    return ctx, desc
+
+
+# -- speech ---------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class Voice:
+    engine: str  # kokoro | say
+    name: str
+    accent: str  # en_US, en_GB, ..., or "L2 es" (non-native English)
+    lang: str = "en-us"  # kokoro phonemizer language
+
+
+V = Voice
+VOICE_GROUPS: list[tuple[int, list[Voice]]] = [
+    (34, [V("kokoro", v, "en_US") for v in (
+        "af_heart", "af_bella", "af_nicole", "af_sarah", "af_sky", "af_kore", "af_aoede",
+        "am_adam", "am_michael", "am_eric", "am_liam", "am_onyx", "am_puck", "am_fenrir")]
+        + [V("say", "Samantha", "en_US")]),
+    (18, [V("kokoro", v, "en_GB", "en-gb") for v in (
+        "bf_emma", "bf_isabella", "bf_alice", "bf_lily", "bm_george", "bm_lewis", "bm_daniel",
+        "bm_fable")] + [V("say", "Daniel", "en_GB")]),
+    (7, [V("say", "Karen", "en_AU")]),
+    (7, [V("say", "Moira", "en_IE")]),
+    (14, [V("say", v, "en_IN") for v in ("Rishi", "Aman", "Tara")]
+        + [V("kokoro", v, "en_IN") for v in ("hf_alpha", "hf_beta", "hm_omega", "hm_psi")]),
+    (7, [V("say", "Tessa", "en_ZA")]),
+    (9, [V("kokoro", "ef_dora", "L2 es"), V("kokoro", "em_alex", "L2 es"),
+         V("kokoro", "ff_siwis", "L2 fr"), V("kokoro", "if_sara", "L2 it"),
+         V("kokoro", "im_nicola", "L2 it"), V("kokoro", "pf_dora", "L2 pt"),
+         V("kokoro", "pm_alex", "L2 pt")]),
+]  # fmt: skip
+
+
+def voice_slots(n: int, rng: random.Random) -> list[Voice]:
+    slots = [vs[i % len(vs)] for count, vs in VOICE_GROUPS for i in range(count)]
+    while len(slots) < n:
+        slots += slots
+    rng.shuffle(slots)
+    return slots[:n]
+
+
+class Tts:
+    def __init__(self, model_dir: Path) -> None:
+        self.model_dir = model_dir
+        self._kokoro: Any = None
+
+    def kokoro(self, text: str, voice: Voice, speed: float) -> np.ndarray:
+        if self._kokoro is None:
+            from kokoro_onnx import Kokoro  # noqa: PLC0415 - heavy, only when needed
+
+            paths = {n: fetch(u, self.model_dir / n, d) for n, (u, d) in KOKORO.items()}
+            self._kokoro = Kokoro(str(paths["kokoro-v1.0.onnx"]), str(paths["voices-v1.0.bin"]))
+        samples, rate = self._kokoro.create(text, voice=voice.name, speed=speed, lang=voice.lang)
+        return soxr.resample(np.asarray(samples, np.float32), rate, SR).astype(np.float32)
+
+    @staticmethod
+    def say(text: str, voice: Voice, rate: int) -> np.ndarray:
+        with tempfile.TemporaryDirectory() as d:
+            aiff, wav = Path(d) / "s.aiff", Path(d) / "s.wav"
+            say = ["say", "-v", voice.name, "-r", str(rate), "-o", str(aiff), text]
+            subprocess.run(say, check=True)  # noqa: S603 - macOS tools
+            convert = [
+                "afconvert",
+                "-f",
+                "WAVE",
+                "-d",
+                "LEI16@16000",
+                "-c",
+                "1",
+                str(aiff),
+                str(wav),
+            ]
+            subprocess.run(convert, check=True)  # noqa: S603
+            return pcm_to_float(read_wav(wav))
+
+
+def pcm_to_float(pcm16: bytes) -> np.ndarray:
+    return np.frombuffer(pcm16, "<i2").astype(np.float32) / 32768.0
+
+
+# -- acoustics -------------------------------------------------------------------------------------
+
+
+def active_rms(x: np.ndarray) -> float:
+    """RMS over the 20 ms frames within 35 dB of the loudest one (speech, not pauses)."""
+    n = len(x) // 320
+    if n == 0:
+        return float(np.sqrt(np.mean(x**2)) + 1e-9)
+    frames = np.sqrt(np.mean(x[: n * 320].reshape(n, 320) ** 2, axis=1)) + 1e-9
+    keep = frames[frames > frames.max() * 10 ** (-35 / 20)]
+    return float(np.sqrt(np.mean(keep**2)))
+
+
+def coloured(n: int, rng: np.random.Generator, exponent: float) -> np.ndarray:
+    """Noise with a 1/f**exponent power spectrum (1 = pink, 2 = brown), unit RMS."""
+    spec = np.fft.rfft(rng.standard_normal(n))
+    f = np.fft.rfftfreq(n, 1 / SR)
+    f[0] = f[1]
+    x = np.fft.irfft(spec / f ** (exponent / 2), n)
+    return (x / (np.sqrt(np.mean(x**2)) + 1e-12)).astype(np.float32)
+
+
+def shaped(x: np.ndarray, gains: list[tuple[float, float]]) -> np.ndarray:
+    """Filter by a piecewise-linear gain curve over frequency [(Hz, dB), ...]."""
+    spec = np.fft.rfft(x)
+    f = np.fft.rfftfreq(len(x), 1 / SR)
+    db = np.interp(f, [g[0] for g in gains], [g[1] for g in gains])
+    return np.fft.irfft(spec * 10 ** (db / 20), len(x)).astype(np.float32)
+
+
+def fan(n: int, rng: np.random.Generator) -> np.ndarray:
+    hum_hz = rng.choice([50.0, 60.0])
+    t = np.arange(n) / SR
+    hum = sum(np.sin(2 * np.pi * hum_hz * k * t + rng.uniform(0, 6)) / k for k in (1, 2, 3, 4))
+    air = shaped(coloured(n, rng, 1.0), [(0, -6), (300, 0), (2000, -4), (8000, -18)])
+    return (air + 0.15 * hum).astype(np.float32)
+
+
+def keyboard(n: int, rng: np.random.Generator) -> np.ndarray:
+    """Typing: bursts of 2-8 ms clicks, 80-300 ms apart, with pauses between words."""
+    out = np.zeros(n, np.float32)
+    pos = int(rng.uniform(0, 0.4) * SR)
+    while pos < n:
+        length = int(rng.uniform(0.002, 0.008) * SR)
+        click = rng.standard_normal(length) * np.exp(-np.linspace(0, 6, length))
+        click = shaped(np.pad(click, (0, 64)), [(0, -20), (1500, 0), (6000, -3), (8000, -10)])
+        end = min(n, pos + len(click))
+        out[pos:end] += click[: end - pos] * rng.uniform(0.4, 1.0)
+        pos += int(rng.uniform(0.08, 0.3) * SR) + (
+            int(rng.uniform(0.3, 1.2) * SR) if rng.random() < 0.12 else 0
+        )
+    return out / (np.sqrt(np.mean(out**2)) + 1e-12)
+
+
+def reverb(x: np.ndarray, rng: np.random.Generator, rt60: float) -> np.ndarray:
+    """Room: direct path plus an exponentially decaying diffuse tail (synthetic RIR)."""
+    n = int(rt60 * SR)
+    tail = rng.standard_normal(n) * np.exp(-6.9 * np.arange(n) / n)
+    tail = shaped(tail, [(0, -3), (1000, 0), (4000, -6), (8000, -15)])
+    rir = np.zeros(n + int(0.004 * SR), np.float32)
+    rir[0] = 1.0
+    rir[int(0.004 * SR) :] += (
+        tail * rng.uniform(0.08, 0.2) / np.sqrt(np.mean(tail**2)) / math.sqrt(n / SR * 100)
+    )
+    size = 1 << (len(x) + len(rir)).bit_length()
+    y = np.fft.irfft(np.fft.rfft(x, size) * np.fft.rfft(rir, size), size)[: len(x) + len(rir)]
+    return y.astype(np.float32)
+
+
+class Noise:
+    def __init__(self, cache: Path) -> None:
+        self.cache = cache
+        self._demand: dict[str, np.ndarray] = {}
+
+    def demand(self, env: str) -> np.ndarray:
+        if env not in self._demand:
+            wav = self.cache / "demand" / f"{env}_ch01.wav"
+            if not wav.is_file():
+                url = f"https://zenodo.org/api/records/1227121/files/{env}_16k.zip/content"
+                z = fetch(url, self.cache / "demand" / f"{env}_16k.zip", DEMAND[env], "md5")
+                with zipfile.ZipFile(z) as zf:
+                    member = next(m for m in zf.namelist() if m.endswith("ch01.wav"))
+                    wav.write_bytes(zf.read(member))
+                z.unlink()
+            self._demand[env] = pcm_to_float(read_wav(wav))
+        return self._demand[env]
+
+    def segment(self, env: str, n: int, rng: np.random.Generator) -> np.ndarray:
+        src = self.demand(env)
+        start = int(rng.integers(0, len(src) - n))
+        x = src[start : start + n]
+        return x / (np.sqrt(np.mean(x**2)) + 1e-12)
+
+
+CONDITIONS = [  # name, weight, SNR range (dB)
+    ("quiet room", 25, None),
+    ("office", 13, (8, 22)),
+    ("cafeteria", 12, (6, 18)),
+    ("living room", 10, (8, 20)),
+    ("meeting babble", 6, (10, 20)),
+    ("fan", 12, (8, 20)),
+    ("keyboard", 14, (12, 24)),
+    ("keyboard + office", 8, (10, 20)),
+]
+DEMAND_ENV = {"office": "OOFFICE", "cafeteria": "PCAFETER", "living room": "DLIVING",
+              "meeting babble": "OMEETING", "keyboard + office": "OOFFICE"}  # fmt: skip
+
+
+def render(speech: np.ndarray, rng: np.random.Generator, noise: Noise) -> tuple[bytes, str]:
+    """Speech at a talker level, maybe in a room and through a laptop mic, padded like a
+    push-to-talk recording, over room tone and a background condition."""
+    level_db = float(rng.uniform(-32, -20))
+    x = speech / active_rms(speech) * 10 ** (level_db / 20)
+    parts = [f"level {level_db:.0f} dBFS"]
+    if rng.random() < 0.4:
+        rt60 = float(rng.uniform(0.2, 0.7))
+        x = reverb(x, rng, rt60)
+        parts.append(f"reverb RT60 {rt60:.2f} s")
+    if rng.random() < 0.3:
+        x = shaped(x, [(0, -30), (120, -12), (250, 0), (3000, 2), (6000, -2), (8000, -8)])
+        parts.append("laptop mic")
+    lead, trail = int(rng.uniform(0.15, 0.5) * SR), int(rng.uniform(0.25, 0.8) * SR)
+    x = np.concatenate([np.zeros(lead, np.float32), x, np.zeros(trail, np.float32)])
+    n = len(x)
+    tone_db = float(rng.uniform(-64, -54))
+    x = x + coloured(n, rng, 1.0) * 10 ** (tone_db / 20)  # room tone: never digital silence
+    names = [c[0] for c in CONDITIONS]
+    cond = names[
+        int(
+            rng.choice(
+                len(names), p=np.array([c[1] for c in CONDITIONS]) / sum(c[1] for c in CONDITIONS)
+            )
+        )
+    ]
+    snr_range = {c[0]: c[2] for c in CONDITIONS}[cond]
+    if snr_range is not None:
+        snr = float(rng.uniform(*snr_range))
+        if cond == "fan":
+            bg = fan(n, rng)
+        elif cond == "keyboard":
+            bg = keyboard(n, rng)
+        elif cond == "keyboard + office":
+            bg = 0.7 * keyboard(n, rng) + 0.7 * noise.segment(DEMAND_ENV[cond], n, rng)
+        else:
+            bg = noise.segment(DEMAND_ENV[cond], n, rng)
+        x = x + bg / np.sqrt(np.mean(bg**2)) * 10 ** ((level_db - snr) / 20)
+        parts.append(f"{cond} at SNR {snr:.0f} dB")
+    else:
+        parts.append(f"quiet room (tone {tone_db:.0f} dBFS)")
+    peak = float(np.max(np.abs(x)))
+    if peak > 0.99:
+        x = x * 0.99 / peak
+    return to_pcm16(x.astype(np.float32)), ", ".join(parts)
+
+
+# -- the set on disk ---------------------------------------------------------------------------------
+
+
+def write_clip(
+    out: Path, cid: str, pcm16: bytes, ctx: dict[str, object], label: dict[str, object]
+) -> None:
+    d = out / cid
+    d.mkdir(parents=True, exist_ok=True)
+    write_wav(d / "audio.wav", pcm16)
+    (d / "context.json").write_text(json.dumps(ctx, ensure_ascii=False, sort_keys=True) + "\n")
+    label_path = d / "label.json"
+    if label_path.is_file():  # keep reviews of the same speech
+        old: dict[str, object] = json.loads(label_path.read_text())
+        if old.get("said") == label["said"]:
+            label["accepted"] = old.get("accepted", [])
+    (label_path).write_text(json.dumps(label, ensure_ascii=False, indent=2) + "\n")
+
+
+def synth_clips(out: Path, only: set[str], tts: Tts, noise: Noise) -> None:
+    rng = random.Random(SEED)
+    voices = voice_slots(len(PROMPTS), rng)
+    for i, (p, voice) in enumerate(zip(PROMPTS, voices, strict=True), 1):
+        cid = f"syn-{i:03d}"
+        crng = random.Random(f"{SEED}:{cid}")
+        nrng = np.random.default_rng(crng.randrange(2**32))
+        if only and cid not in only:
+            continue
+        text = p.tts or p.said
+        if voice.engine == "kokoro":
+            speed = round(crng.uniform(0.85, 1.25), 2)
+            speech, how = tts.kokoro(text, voice, speed), f"Kokoro-82M {voice.name} speed {speed}"
+        else:
+            rate = crng.randint(150, 230)
+            speech, how = tts.say(text, voice, rate), f"macOS say {voice.name} {rate} wpm"
+        pcm16, acoustics = render(speech, nrng, noise)
+        ctx, ctx_desc = context_json(crng, p.app, p.project, terms_for(p), p.ctx)
+        label = {
+            "said": p.said,
+            "critical": p.critical,
+            "forbidden": p.forbidden,
+            "accepted": [],
+            "note": f"synthetic ({voice.accent}): {how}; {acoustics}; {ctx_desc}; "
+            f"tags {', '.join(p.tags) or '-'}" + (f"; TTS read {p.tts!r}" if p.tts else ""),
+        }
+        write_clip(out, cid, pcm16, ctx, label)
+        print(f"{cid} {voice.accent:<6} {len(pcm16) / 2 / SR:5.1f} s  {p.said[:70]}")
+
+
+def terms_for(p: Prompt) -> list[str]:
+    return list(dict.fromkeys(p.terms))
+
+
+# -- real speech --------------------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class RealClip:
+    source: str
+    text: str
+    audio: np.ndarray  # 16 kHz float
+    meta: str  # provenance for the note
+
+
+def words(text: str) -> list[str]:
+    return re.findall(r"[a-z']+", text.lower())
+
+
+def traps_in(text: str) -> list[str]:
+    """Hark identifiers whose spoken form occurs in ``text``, and sound-alike terms."""
+    w = words(text)
+    joined = " " + " ".join(w) + " "
+    hits = [t for t in TRAPS if any(f" {a} " in joined for a in spoken_forms(t, kind_of(t))[:1])]
+    hits += [SOUND_ALIKE[x] for x in dict.fromkeys(w) if x in SOUND_ALIKE]
+    return list(dict.fromkeys(hits))
+
+
+def _negated(text: str) -> bool:
+    return any(x in {"not", "no", "never", "nothing"} or x.endswith("n't") for x in words(text))
+
+
+def pick(cands: list[tuple[int, str, Any]], n: int) -> list[tuple[int, str, Any]]:
+    """The ``n`` candidates with the most trap words, then a negation, then dataset order."""
+
+    def key(c: tuple[int, str, Any]) -> tuple[int, int]:
+        return (-(3 * len(traps_in(c[1])) + _negated(c[1])), c[0])
+
+    return sorted(cands, key=key)[:n]
+
+
+def _usable(text: str, seconds: float) -> bool:
+    n = len(text.split())
+    return 3 <= seconds <= 14 and 8 <= n <= 40 and not re.search(r"[<\[(]|PARTICIPANT", text)
+
+
+def edacc(cache: Path) -> list[RealClip]:
+    import pyarrow.parquet as pq  # noqa: PLC0415
+    import soundfile as sf  # noqa: PLC0415
+    from huggingface_hub import HfFileSystem  # noqa: PLC0415
+
+    out: list[RealClip] = []
+    fs = HfFileSystem()
+    for name in EDACC_FILES:
+        rows: list[dict[str, Any]] = []
+        for rg in EDACC_ROW_GROUPS:
+            cached = cache / "edacc" / f"{EDACC_REV[:12]}-{name}-rg{rg}.json"
+            if not cached.is_file():
+                path = f"datasets/edinburghcstr/edacc@{EDACC_REV}/data/{name}"
+                table = pq.ParquetFile(fs.open(path, block_size=1 << 22)).read_row_group(rg)
+                keep: list[dict[str, Any]] = []
+                for i, r in enumerate(table.to_pylist()):
+                    data, rate = sf.read(io.BytesIO(r["audio"]["bytes"]), dtype="float32")
+                    if data.ndim > 1:
+                        data = data.mean(axis=1)
+                    if not _usable(r["text"], len(data) / rate):
+                        continue
+                    wav = cached.parent / f"{name[:10]}-rg{rg}-{i:03d}.wav"
+                    wav.parent.mkdir(parents=True, exist_ok=True)
+                    write_wav(wav, to_pcm16(soxr.resample(data, rate, SR).astype(np.float32)))
+                    fields = {k: r[k] for k in ("speaker", "text", "accent", "l1", "gender")}
+                    keep.append(fields | {"rg": rg, "row": i, "wav": wav.name})
+                cached.write_text(json.dumps(keep, indent=1))
+            rows += json.loads(cached.read_text())
+        cands = [(r["rg"] * 1000 + r["row"], r["text"], r) for r in rows]
+        for _, text, r in pick(cands, EDACC_PER_FILE):
+            meta = (f"EdACC (edinburghcstr/edacc@{EDACC_REV[:8]}, test {name[:10]} row group "
+                    f"{r['rg']} row {r['row']}; speaker {r['speaker']}, {r['accent']}, L1 "
+                    f"{r['l1']}, {r['gender']}); license CC-BY-SA-4.0")  # fmt: skip
+            audio = pcm_to_float(read_wav(cache / "edacc" / r["wav"]))
+            out.append(RealClip("edacc", text, audio, meta))
+    return out
+
+
+def librispeech(cache: Path) -> list[RealClip]:
+    import pyarrow.parquet as pq  # noqa: PLC0415
+    import soundfile as sf  # noqa: PLC0415
+
+    url, digest = LIBRISPEECH
+    rows: list[dict[str, Any]] = pq.read_table(
+        fetch(url, cache / "librispeech_asr_dummy.parquet", digest)
+    ).to_pylist()
+    cands = []
+    for r in rows:
+        data, rate = sf.read(io.BytesIO(r["audio"]["bytes"]), dtype="float32")
+        if _usable(r["text"], len(data) / rate):
+            cands.append((len(cands), r["text"], (r, data, rate)))
+    out = []
+    for _, text, (r, data, rate) in pick(cands, LIBRISPEECH_CLIPS):
+        meta = (f"LibriSpeech dev-clean {r['id']} via hf-internal-testing/librispeech_asr_dummy@"
+                f"{url.split('/resolve/')[1][:8]} (speaker {r['speaker_id']}, read audiobook); "
+                "license CC-BY-4.0")  # fmt: skip
+        out.append(
+            RealClip("librispeech", text, soxr.resample(data, rate, SR).astype(np.float32), meta)
+        )
+    return out
+
+
+def real_clips(out: Path, only: set[str], cache: Path) -> None:
+    clips = edacc(cache) + librispeech(cache)
+    for i, c in enumerate(clips, 1):
+        cid = f"real-{i:03d}"
+        if only and cid not in only:
+            continue
+        rng = random.Random(f"{SEED}:{cid}")
+        traps = traps_in(c.text)
+        app = "term" if i % 6 else rng.choice(("slack", "notes", "code"))
+        ctx, ctx_desc = context_json(rng, app, "hark", traps, "full")
+        said = " ".join(c.text.lower().split())
+        lead = np.zeros(int(rng.uniform(0.15, 0.4) * SR), np.float32)
+        pcm16 = to_pcm16(np.concatenate([lead, c.audio, lead]))
+        label = {
+            "said": said,
+            "critical": [],
+            "forbidden": [t for t in traps if t.lower() not in said],
+            "accepted": [],
+            "note": f"real speech: {c.meta}; {ctx_desc}; trap terms on the list: "
+            f"{', '.join(traps) or 'none'}",
+        }
+        write_clip(out, cid, pcm16, ctx, label)
+        print(f"{cid} {len(pcm16) / 2 / SR:5.1f} s traps={traps} {said[:60]}")
+
+
+def main() -> int:
+    ap = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    ap.add_argument("--out", default=str(ROOT / "eval" / "dev-v1"))
+    ap.add_argument("--cache", default=str(ROOT / "models" / "eval-cache"), help="downloads")
+    ap.add_argument("--models", default=str(ROOT / "models" / "kokoro"), help="Kokoro model files")
+    ap.add_argument("--only", action="append", default=[], help="a clip id (repeatable)")
+    ap.add_argument("--part", choices=["all", "syn", "real"], default="all")
+    args = ap.parse_args()
+    out, cache = Path(args.out), Path(args.cache)
+    only = set(args.only)
+    if args.part in ("all", "syn"):
+        synth_clips(out, only, Tts(Path(args.models)), Noise(cache))
+    if args.part in ("all", "real"):
+        real_clips(out, only, cache)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

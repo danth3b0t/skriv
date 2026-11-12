@@ -1,0 +1,11 @@
+{
+  "said": "look at docs slash protocol slash ctl dash v one dot md before you change the reply format",
+  "critical": [
+    "docs/protocol/ctl-v1.md"
+  ],
+  "forbidden": [],
+  "accepted": [
+    "Look at docs/protocol/ctl-v1.md before you change the reply format."
+  ],
+  "note": "synthetic (en_AU): macOS say Karen 207 wpm; level -22 dBFS, reverb RT60 0.27 s, office at SNR 17 dB; app Ghostty (com.mitchellh.ghostty); context full: 21 terms (1 for this clip, 20 distractors from hark); tags path; TTS read 'look at docs slash protocol slash C T L dash v one dot M D before you change the reply format'"
+}

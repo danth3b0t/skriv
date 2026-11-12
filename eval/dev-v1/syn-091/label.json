@@ -1,0 +1,12 @@
+{
+  "said": "write a quick shell script that waits for the server to come up",
+  "critical": [],
+  "forbidden": [
+    "QuickShell",
+    "wait_for"
+  ],
+  "accepted": [
+    "Write a quick shell script that waits for the server to come up."
+  ],
+  "note": "synthetic (en_US): Kokoro-82M af_bella speed 1.12; level -23 dBFS, fan at SNR 15 dB; app Ghostty (com.mitchellh.ghostty); context full: 30 terms (2 for this clip, 28 distractors from hark); tags trap"
+}

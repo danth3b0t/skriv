@@ -1,0 +1,11 @@
+{
+  "said": "add a field called confident anchor to gate config, default zero point nine seven",
+  "critical": [
+    "confident_anchor",
+    "GateConfig",
+    "0.97"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (L2 pt): Kokoro-82M pf_dora speed 1.2; level -31 dBFS, laptop mic, living room at SNR 8 dB; app kitty (kitty); context full: 25 terms (3 for this clip, 22 distractors from hark); tags identifier, number"
+}

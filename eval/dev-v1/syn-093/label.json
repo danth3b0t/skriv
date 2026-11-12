@@ -1,0 +1,11 @@
+{
+  "said": "we need a session start and end time in the report",
+  "critical": [],
+  "forbidden": [
+    "SessionStart"
+  ],
+  "accepted": [
+    "We need a session start and end time in the report."
+  ],
+  "note": "synthetic (en_GB): Kokoro-82M bf_lily speed 0.87; level -30 dBFS, quiet room (tone -64 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 16 terms (1 for this clip, 15 distractors from hark); tags trap"
+}

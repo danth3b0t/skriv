@@ -1,0 +1,9 @@
+{
+  "said": "in tauri dot conf dot json, set the window to not be resizable",
+  "critical": [
+    "tauri.conf.json"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hf_beta speed 1.1; level -26 dBFS, reverb RT60 0.55 s, quiet room (tone -54 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 24 terms (2 for this clip, 22 distractors from web); tags path, negation; TTS read 'in tow ree dot conf dot json, set the window to not be resizable'"
+}

@@ -1,0 +1,9 @@
+{
+  "said": "set CUDA visible devices to zero comma one before you start the training run",
+  "critical": [
+    "CUDA_VISIBLE_DEVICES"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_IN): Kokoro-82M hf_beta speed 1.11; level -30 dBFS, quiet room (tone -56 dBFS); app Alacritty (Alacritty); context full: 28 terms (2 for this clip, 26 distractors from ml); tags identifier"
+}

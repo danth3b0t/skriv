@@ -1,0 +1,10 @@
+{
+  "said": "chmod plus x scripts slash make dash eval dash set",
+  "critical": [
+    "chmod +x",
+    "scripts/make-eval-set"
+  ],
+  "forbidden": [],
+  "accepted": [],
+  "note": "synthetic (en_US): Kokoro-82M am_onyx speed 1.11; level -31 dBFS, quiet room (tone -63 dBFS); app Ghostty (com.mitchellh.ghostty); context full: 22 terms (1 for this clip, 21 distractors from hark); tags path, command; TTS read 'chmod plus x scripts slash make dash eval dash set'"
+}
