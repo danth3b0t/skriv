@@ -20,7 +20,7 @@ esac
 
 if ! command -v hark >/dev/null 2>&1; then
   [[ $action == stop ]] && exit 0
-  echo "hark is not on PATH (uv tool install --editable ./client from the hark repo)" >&2
+  echo "hark is not on PATH: install the hark-git package, or uv tool install --editable ./client" >&2
   exit 1
 fi
 

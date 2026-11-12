@@ -7,9 +7,11 @@ set -euo pipefail
 here=$(cd "$(dirname "$(readlink -f "$0")")" && pwd)
 config_home="${XDG_CONFIG_HOME:-$HOME/.config}"
 
-systemctl --user disable --now hark.service 2>/dev/null || true
-rm -f "$config_home/systemd/user/hark.service"
-systemctl --user daemon-reload
+if command -v hark >/dev/null 2>&1; then
+  hark service uninstall client || true
+else
+  systemctl --user disable --now hark.service 2>/dev/null || true
+fi
 
 backend_config="$config_home/omarchy/defaults/dictation"
 if [[ -f $backend_config && $(<"$backend_config") == "hark" ]]; then
