@@ -37,6 +37,27 @@ from hark_client import symbols
         ("cd dot dot", "cd .."),
         ("dot slash run dot sh", "./run.sh"),
         ("dot dot slash scripts slash poc-up", "../scripts/poc-up"),
+        # recognizer-joined flags, flags after a command said earlier in the sentence
+        ("Docker compose up-d, then go.", "docker compose up -d, then go."),
+        ("docker compose up dash d", "docker compose up -d"),
+        ("uv run pytest-k gate", "uv run pytest -k gate"),
+        ("Run ruff check with dash-fix.", "Run ruff check with --fix."),
+        ("Run rough check with dash-dash fix", "Run rough check with --fix"),
+        # host:port, leading-slash paths, chmod, underscores
+        ("curl localhost colon 8000 slash health", "curl localhost:8000/health"),
+        ("curl localhost:8000 slash health", "curl localhost:8000/health"),
+        ("set it to slash data slash models", "set it to /data/models"),
+        ("chmod plus x run dot sh", "chmod +x run.sh"),
+        ("index user underscore id now", "index user_id now"),
+        # numbers
+        ("Close issue four twenty-one and PR four thirty seven.", "Close issue 421 and PR 437."),
+        ("open port eight zero eight zero", "open port 8080"),
+        ("on port fifty thousand fifty one", "on port 50051"),
+        ("set it to zero comma one", "set it to 0,1"),
+        ("set it to 0, comma one", "set it to 0,1"),
+        # a command line starts in lower case
+        ("Git status.", "git status."),
+        ("Hark history", "hark history"),
         # stays prose
         ("Use the slash command to see help.", "Use the slash command to see help."),
         ("Look at docs slash bench.", "Look at docs slash bench."),
@@ -46,6 +67,13 @@ from hark_client import symbols
         ("canon, dot py", "canon, dot py"),  # punctuation separates
         ("what time is it dash 5", "what time is it dash 5"),
         ("colon", "colon"),
+        ("Make sure it works.", "Make sure it works."),
+        ("Docker is a T-shirt company.", "Docker is a T-shirt company."),
+        ("write it with an underscore.", "write it with an underscore."),
+        ("the underscore key", "the underscore key"),
+        ("go to slash tmp", "go to slash tmp"),
+        ("add plus x", "add plus x"),
+        ("one issue at a time", "one issue at a time"),
         ("", ""),
     ],
 )
