@@ -15,6 +15,7 @@ TERMS = [
         ("hark", "hark", ["hark"]),
         ("parse_config", "parse_config", ["parse config"]),
         ("parse_args", "parse_args", ["parse args"]),
+        ("is_terminal", "is_terminal", ["is terminal"]),
         ("ruff", "ruff", ["ruff"]),
         ("Notion", "Notion", ["notion"]),
         ("Tauri", "Tauri", ["tauri"]),
@@ -56,16 +57,25 @@ CASES: dict[str, Case] = {
         "please run kubectl get pods", [("kept", "close", "kubectl", "cubectal")],
     ),
     "a re-split of the anchor's letters is kept": (
-        "switched to Harkon today", "switched to Hark on today", [(2, 3, "hark")],
-        "switched to Hark on today", [("kept", "close", "Hark on", "Harkon")],
+        "switched to Harcon today", "switched to Hark on today", [(2, 3, "hark")],
+        "switched to Hark on today", [("kept", "close", "Hark on", "Harcon")],
+    ),
+    "same letters: the biased spelling, however sure the anchor": (
+        "run Kube@1.0 Ctl@1.0 now", "run kubectl now", [(1, 2, "kubectl")],
+        "run kubectl now", [("kept", "same_letters", "kubectl", "Kube Ctl")],
+    ),
+    "the anchor dropped a word outside the term": (
+        "rename this terminal flag", "rename the is terminal flag", [(2, 4, "is_terminal")],
+        "rename the is terminal flag",
+        [("kept", "anchor_dropped", "the is terminal", "this terminal")],
     ),
     "the region spans a word the bias dropped": (
         "Parse the config file", "Parse config file", [(0, 2, "parse_config")],
         "Parse the config file", [("reverted", "word_dropped", "Parse config", "Parse the config")],
     ),
-    "a change outside any hit is reverted": (
+    "a change outside any hit is kept": (
         "pause the config file", "parse the config file", [],
-        "pause the config file", [("reverted", "outside_term", "parse", "pause")],
+        "parse the config file", [("kept", "no_hit", "parse", "pause")],
     ),
     "a neighbour changed inside a widened hit region": (
         "run cube controls now", "run kubectl control now", [(1, 2, "kubectl")],
@@ -99,18 +109,18 @@ CASES: dict[str, Case] = {
         "this is hard@1.0", "this is hark", [(2, 3, "hark")],
         "this is hard", [("reverted", "anchor_confident", "hark", "hard")],
     ),
-    "kept hit and reverted neighbour in one utterance": (
-        "call pass config from main", "call parse config form main", [(1, 3, "parse_config")],
-        "call parse config from main",
-        [("kept", "close", "parse config", "pass config"), ("reverted", "outside_term", "form", "from")],
+    "reverted hit and kept neighbour in one utterance": (
+        "call the rough draft form main", "call the ruff draft from main", [(2, 3, "ruff")],
+        "call the rough draft from main",
+        [("reverted", "not_close", "ruff", "rough"), ("kept", "no_hit", "from", "form")],
     ),
     "adjacent hits are judged together": (
         "run Heart Doctor now", "run hark hark now", [(1, 2, "hark"), (2, 3, "hark")],
         "run Heart Doctor now", [("reverted", "not_close", "hark hark", "Heart Doctor")],
     ),
-    "case and punctuation only: the anchor's words": (
+    "case and punctuation only: the biased words": (
         "train it with NeMo, then", "train it with Nemo then", [],
-        "train it with NeMo, then", [],
+        "train it with Nemo then", [],
     ),
 }  # fmt: skip
 
@@ -130,10 +140,18 @@ def test_gate_decisions(
     assert [(d.decision, d.reason, d.biased, d.anchor) for d in out.decisions] == decisions
 
 
-def test_kept_words_carry_the_anchor_confidence():
-    b = hyp("please run kubectl@0.1 get")
-    out = gate.apply(b, hyp("please run cubectal@0.77 get"), [hit(b, 2, 3, "kubectl")], TERMS, GateConfig())  # fmt: skip
-    assert [(w.text, w.confidence) for w in out.words][2] == ("kubectl", pytest.approx(0.77))
+def test_biased_words_carry_the_anchor_confidence():
+    # equal words: their anchor word's; a kept hit: the anchor's least confident word there;
+    # words the anchor did not hear at all (a clause it dropped): their own, and they stay
+    b = hyp("I@0.3 asked@0.2 you@0.4 please@0.1 run@0.2 kubectl@0.1 get@0.1")
+    a = hyp("please@0.9 run@0.95 cubectal@0.77 get@0.99")
+    out = gate.apply(b, a, [hit(b, 5, 6, "kubectl")], TERMS, GateConfig())
+    assert out.text == b.text
+    assert [(w.text, w.confidence) for w in out.words] == [
+        ("I", pytest.approx(0.3)), ("asked", pytest.approx(0.2)), ("you", pytest.approx(0.4)),
+        ("please", pytest.approx(0.9)), ("run", pytest.approx(0.95)),
+        ("kubectl", pytest.approx(0.77)), ("get", pytest.approx(0.99)),
+    ]  # fmt: skip
 
 
 # rough -> ruff: 3 letter edits over 5 letters = 0.6 (the phonetic keys "rgh" / "rf" are farther)

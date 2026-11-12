@@ -21,6 +21,13 @@ from hark_client import corrections
         ("Use the red one I mean the blue one.", "Use the blue one."),
         # sentence-initial retraction keeps the capital
         ("In C no in Rust please.", "In Rust please."),
+        # value substitutions: a number before a repeated unit, or one value for another
+        ("Set the timeout to 3 seconds, sorry 5 seconds.", "Set the timeout to 5 seconds."),
+        ("make the limit ten megabytes, no, twenty megabytes", "make the limit twenty megabytes"),
+        ("use Postgres, no wait, SQLite for the cache", "use SQLite for the cache"),
+        ("Call it fetch_rows, I mean fetch_row_batch.", "Call it fetch_row_batch."),
+        ("Use port 8080, no, 8081.", "Use port 8081."),
+        ("Two coffees, make that three coffees.", "Three coffees."),
         # not corrections: answers, negations, no repeated word, too long, crossing sentences
         ("Is it done? No, it is not.", "Is it done? No, it is not."),
         ("No, I don't want C.", "No, I don't want C."),
@@ -32,6 +39,17 @@ from hark_client import corrections
          "Put it in the big red old wooden box no in the bag."),
         ("Use Rust in it. Then C, no, in Go.", "Use Rust in it. Then C, no, in Go."),
         ("in no in", "in no in"),
+        # a bare cue that starts a sentence (real speech: a misheard "you know")
+        ("I didn't even realize the ghost one left. No, the only character I remember was him.",
+         "I didn't even realize the ghost one left. No, the only character I remember was him."),
+        # not value substitutions: across a sentence, a new clause, a bare cue without
+        # commas or between names, different kinds, a negated repeat
+        ("It has 2 bugs. No, 3 bugs.", "It has 2 bugs. No, 3 bugs."),
+        ("Ask Sarah, no wait, John wants to know.", "Ask Sarah, no wait, John wants to know."),
+        ("Ask Sarah, sorry, John.", "Ask Sarah, sorry, John."),
+        ("Use port 8080 no 8081.", "Use port 8080 no 8081."),
+        ("Set it to 3, I mean, Python.", "Set it to 3, I mean, Python."),
+        ("I said 5 seconds, no, not 5 seconds.", "I said 5 seconds, no, not 5 seconds."),
     ],
 )  # fmt: skip
 def test_resolve(text: str, expected: str):
