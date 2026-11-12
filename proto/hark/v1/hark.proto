@@ -638,6 +638,11 @@ message CleanupRequest {
   uint32 max_edits = 8;                // 0 => profile default
   uint32 budget_ms = 9;                // generation budget, < gRPC deadline
   PrivacyFlags privacy = 10;
+  // Exact written forms of the client's vocabulary/bias terms. An edit may
+  // merge or split words, changing only spacing and case, into one of these
+  // (or into the text of a non-number, non-negation protected span):
+  // "Super Whisper" -> "Superwhisper". Other merges stay rejected.
+  repeated string known_terms = 11;
 }
 
 message ProtectedSpan {
