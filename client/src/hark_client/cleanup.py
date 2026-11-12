@@ -2,8 +2,9 @@
 
 The server returns a rewrite of the whole text (S1-mini). Before it replaces the text, the
 rewrite must pass `fidelity.check` against the text: protected identifiers, negations, numbers
-and content words survive. Otherwise, and on timeouts and RPC errors, the text stays as it was
-and the reason is recorded.
+and content words survive. If it does not, the sentences that pass are kept and the others stay
+as said (`fidelity.accept`; status applied, with the reason). If none passes, and on timeouts
+and RPC errors, the text stays as it was and the reason is recorded.
 """
 
 from __future__ import annotations
@@ -74,7 +75,7 @@ def restore_case(text: str, rewrite: str, keep: set[str]) -> str:
 class CleanupOutcome:
     text: str  # what goes on: the rewrite if it was accepted, else the input
     status: str  # applied | no_edits | rejected | skipped | timeout | error
-    reason: str = ""  # why it was rejected, skipped or failed
+    reason: str = ""  # why it was rejected, skipped or failed, or which sentences stayed
     ms: float = 0.0
     rewrite: str = ""  # the server's rewrite (also when rejected)
 
@@ -128,6 +129,7 @@ def run(  # noqa: PLR0913, PLR0911 - keyword-only args; linear fallback chain
     single_line = profile_id in SINGLE_LINE_PROFILES
     # What a merge may produce: "Super Whisper" -> "Superwhisper".
     keep |= {t.canonical for t in terms if fidelity.count(t.canonical, rewrite)}
-    if why := fidelity.check(text, rewrite, keep, single_line=single_line):
+    result, why = fidelity.accept(text, rewrite, keep, single_line=single_line)
+    if why and result == text:
         return done("rejected", why, rewrite=rewrite)
-    return done("applied", result=rewrite, rewrite=rewrite)
+    return done("applied", why, result=result, rewrite=rewrite)

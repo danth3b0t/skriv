@@ -14,6 +14,12 @@ that mechanically. A rewrite fails when it
   judge of prose;
 - has a different number of negations ("not", "never", "n't", "without", ...);
 - has different numbers, once spoken numbers are read as digits ("seven" == "7");
+- adds an identifier (camelCase, PascalCase, snake_case, dotted) that is neither in the input
+  (in any case) nor protected, unless it is adjacent input words run together as written
+  ("Hyper LAN" -> "HyperLAN") or with their spoken separators ("model dot train" ->
+  "model.train"): "read wave" -> "ReadWave" invents a name;
+- drops the first word of a sentence that is a content word not set off by a comma: the
+  verb of an imperative ("Use useQuery here" -> "useQuery here");
 - adds or drops content words: words (by a crude stem) that are not function, discourse or
   filler words or spoken symbols, appear on one side only, and are not merely merged or split
   ("hyper land" -> "HyperLAN", "3:30 pm" -> "3:30pm"). At most ``len // CONTENT_PER_CHANGE``
@@ -21,11 +27,15 @@ that mechanically. A rewrite fails when it
 
 A spoken self-correction the rewrite resolved ("3 seconds, sorry, 5 seconds" -> "5 seconds")
 is checked against the corrected text.
+
+`accept` applies the check sentence by sentence when the whole rewrite fails it, so one bad
+change in a long dictation does not cost the other sentences their cleanup.
 """
 
 from __future__ import annotations
 
 import re
+from collections import Counter
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -165,7 +175,7 @@ def content(text: str) -> set[str]:
         _stem(t)
         for t in tokens(text)
         if not (
-            t in FUNCTION
+            t.split("'", maxsplit=1)[0] in FUNCTION  # "it's", "let's"
             or t in DISCOURSE
             or t in FILLERS
             or t in SYMBOL_WORDS
@@ -246,6 +256,79 @@ def negations_kept(said: str, text: str) -> bool:
     return have >= negations(said) or any(have >= negations(m) for m in _retractions(said))
 
 
+_SPLIT_JOIN = ((1, 1), (1, 0), (0, 1), (2, 1), (1, 2), (3, 1), (1, 3))
+
+
+def _align(said: list[str], wrote: list[str]) -> list[tuple[list[str], list[str]]]:
+    """Pair the input's sentences with the rewrite's: one to one, joined (up to three into
+    one), split (one into up to three), dropped or added, keeping the order. The pairing
+    with the fewest words on one side only wins; a join or a split costs one word more."""
+    bags = [[Counter(tokens(s)) for s in side] for side in (said, wrote)]
+    inf = float("inf")
+    cost = [[inf] * (len(wrote) + 1) for _ in range(len(said) + 1)]
+    step: dict[tuple[int, int], tuple[int, int]] = {}
+    cost[0][0] = 0
+    for i in range(len(said) + 1):
+        for j in range(len(wrote) + 1):
+            if cost[i][j] == inf:
+                continue
+            for a, b in _SPLIT_JOIN:
+                if i + a > len(said) or j + b > len(wrote):
+                    continue
+                left = sum(bags[0][i : i + a], Counter[str]())
+                right = sum(bags[1][j : j + b], Counter[str]())
+                c = cost[i][j] + (left - right).total() + (right - left).total()
+                c += a + b > 2  # a join or split
+                if c < cost[i + a][j + b]:
+                    cost[i + a][j + b] = c
+                    step[i + a, j + b] = (a, b)
+    groups: list[tuple[list[str], list[str]]] = []
+    i, j = len(said), len(wrote)
+    while i or j:
+        a, b = step[i, j]
+        groups.append((said[i - a : i], wrote[j - b : j]))
+        i, j = i - a, j - b
+    return groups[::-1]
+
+
+def accept(
+    before: str, after: str, protected: Collection[str] = (), *, single_line: bool
+) -> tuple[str, str]:
+    """What to keep of the rewrite `after`, and why the rest was refused ("" if nothing
+    was). The whole rewrite if `check` passes; else, sentence by sentence (see `_align`), each
+    rewritten sentence that passes `check` against the sentences it came from, and the input's
+    sentences where it does not. `before` if no sentence passes, or if the mix fails `check`."""
+    why = check(before, after, protected, single_line=single_line)
+    if not why:
+        return after, ""
+    said, wrote = sentences(before), sentences(after)
+    if len(said) < 2 and len(wrote) < 2:
+        return before, why
+    pieces: list[str] = []
+    refused: list[str] = []
+    groups = _align(said, wrote)
+    for old, new in groups:
+        b, a = "".join(old), "".join(new)
+        bad = (
+            "added a sentence"
+            if not b.strip()
+            else check(b.strip(), a.strip(), protected, single_line=single_line)
+        )
+        if bad:
+            refused.append(bad)
+        piece = b if bad else a
+        if pieces and piece and not pieces[-1][-1:].isspace():
+            pieces[-1] += " "
+        if piece:
+            pieces.append(piece)
+    if len(refused) == len(groups):
+        return before, why
+    mixed = "".join(pieces).rstrip() + after[len(after.rstrip()) :]
+    if check(before, mixed, protected, single_line=single_line):
+        return before, why
+    return mixed, f"kept {len(refused)} of {len(groups)} sentences as said: {refused[0]}"
+
+
 def check(before: str, after: str, protected: Collection[str] = (), *, single_line: bool) -> str:
     """Why `after` does not say what `before` said, or "" if it does (see the module doc).
     `protected`: strings that must keep their exact spelling, case and count.
@@ -259,6 +342,65 @@ def check(before: str, after: str, protected: Collection[str] = (), *, single_li
     ):
         return ""
     return why
+
+
+_IDENTIFIER = re.compile(
+    r"(?<![\w.])(?=[\w.]*(?:[a-z][A-Z]|[^\W_]_[^\W_]|[^\W\d_]\.[^\W\d_]))[\w.]*\w"
+)
+_SPOKEN_SEPARATORS = {"underscore": "_", "dot": ".", "point": "."}
+
+
+def _invented(before: str, after: str, protected: Collection[str]) -> list[str]:
+    """The identifiers of `after` that `before` neither has nor says (see the module doc)."""
+    words: list[str] = re.findall(r"[\w'.]*\w", before)
+    joined: set[str] = set()  # as written: "Hyper LAN" -> "HyperLAN"
+    spelled: set[str] = set()  # lowercased: "model dot train" -> "model.train"
+    for i in range(len(words)):
+        for j in range(i + 2, min(len(words), i + 7) + 1):
+            run = [_SPOKEN_SEPARATORS.get(w.lower(), w) for w in words[i:j]]
+            if any(w in _SPOKEN_SEPARATORS.values() for w in run):
+                spelled.add("".join(run).lower())
+            else:
+                joined.add("".join(run))
+    return sorted({
+        m.group()
+        for m in _IDENTIFIER.finditer(after)
+        if not count(m.group(), before, re.IGNORECASE)  # re-cased: "UVSync" -> "uvSync"
+        and m.group() not in protected
+        and m.group() not in joined
+        and m.group().lower() not in spelled
+    })  # fmt: skip
+
+
+_SENTENCE = re.compile(r".*?(?:[.?!]+[\"'\u201d)\]]*(?:\s+|$)|$)", re.DOTALL)
+
+
+def sentences(text: str) -> list[str]:
+    """`text` cut after each sentence end (".", "?", "!" before a space); every piece keeps
+    its trailing whitespace, so the pieces join back to `text`."""
+    return [m.group() for m in _SENTENCE.finditer(text) if m.group()]
+
+
+def _initial_verbs(text: str) -> list[str]:
+    """Stems of the content words that open a sentence, unless a comma sets them off
+    ("Use useQuery" -> "us"; not "Honestly, ..."). Fillers and discourse words are skipped; a
+    restart ("After after I've done after ...", "m men") and a lone word ("etc.") count for
+    nothing."""
+    out: list[str] = []
+    for s in sentences(text):
+        words = list(_TOKEN.finditer(s))
+        for k, m in enumerate(words):
+            t = m.group().lower()
+            if t in FILLERS or t in DISCOURSE:
+                continue
+            following = [w.group().lower() for w in words[k + 1 : k + 5]]
+            restart = t in following or (
+                len(t) <= 2 and bool(following) and following[0].startswith(t)
+            )
+            if following and not restart and not s[m.end() :].lstrip().startswith(","):
+                out.extend(content(t))
+            break
+    return out
 
 
 def _check(  # noqa: PLR0911 - one return per rule
@@ -285,10 +427,20 @@ def _check(  # noqa: PLR0911 - one return per rule
         return f"negations {negations(before)} -> {negations(after)}"
     if numbers(before) != numbers(after):
         return f"numbers {' '.join(numbers(before))} -> {' '.join(numbers(after))}"
+    if invented := _invented(before, after, protected):
+        return f"added {', '.join(invented)}"
     old, new = content(before), content(after)
     words_before, words_after = tokens(before), tokens(after)
+    respaced = _respaced(words_before, words_after)
     added = sorted(new - old - _respaced(words_after, words_before))
-    dropped = sorted(old - new - _respaced(words_before, words_after))
+    dropped = sorted(old - new - respaced)
+    stems_before = Counter(map(_stem, words_before))
+    stems_after = Counter(map(_stem, words_after))
+    if verbs := sorted({
+        v for v in _initial_verbs(before)
+        if stems_after[v] < stems_before[v] and v not in respaced
+    }):  # fmt: skip
+        return f"dropped {', '.join(verbs)}"
     limit = len(old) // CONTENT_PER_CHANGE
     if len(added) > limit:
         return f"added {', '.join(added)}"

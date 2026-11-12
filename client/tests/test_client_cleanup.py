@@ -49,7 +49,13 @@ def test_protected_covers_shortlist_terms_and_code_like_tokens():
         # fails
         ("Okay.", "", "dropped everything"),
         ("run the tests", "Run the tests.\nThen push.", "added a line break"),
-        ("Use useQuery here", "useQuery here.", "dropped"),
+        # a sentence's opening verb, though "use" stays elsewhere and the text is long
+        ("Use useQuery from TanStack Query instead of fetching in a use effect",
+         "useQuery from TanStack Query instead of fetching in a use effect.", "dropped us"),
+        ("After after I've done after we're done, I'll eat", "After we're done, I'll eat.", ""),
+        ("add type hints to read wave and write wave", "Add type hints to ReadWave and WriteWave.",
+         "added ReadWave, WriteWave"),  # invented identifiers
+        ("call model dot train", "Call model.train.", ""),  # spoken separators
         ("pass --no-history to it", "Pass no-history to it.", "changed '--no-history'"),
         ("pass --no-history to it", "Pass --no-history to it, please.", ""),
         ("fetch_rows is slow", "Fetch rows is slow.", ""),  # the trap rule cuts both ways
@@ -59,7 +65,7 @@ def test_protected_covers_shortlist_terms_and_code_like_tokens():
         ("use C not Rust", "Use Rust.", "negations 1 -> 0"),  # no cue
         ("port 8080", "Port 8081.", "numbers 8080 -> 8081"),
         ("issue four twenty one", "Issue 421.", "numbers 21 4 -> 421"),
-        ("show the logs", "Here are the logs for the worker.", "added worker"),
+        ("show the logs", "Show the logs for the worker.", "added worker"),
         ("restart the worker and the scheduler", "Restart the worker.", "dropped scheduler"),
     ],
 )  # fmt: skip
@@ -67,6 +73,34 @@ def test_fidelity_check(before: str, after: str, why: str):
     protected = {"--no-history", "fetch_rows", "last_text"} & set(before.split())
     got = fidelity.check(before, after, protected, single_line=True)
     assert got.startswith(why) if why else got == ""
+
+
+@pytest.mark.parametrize(
+    ("before", "after", "kept"),
+    [
+        ("Um run the tests. Pass --no-history to it.", "Run the tests. Pass no-history to it.",
+         "Run the tests. Pass --no-history to it."),
+        ("Um run the tests. Then uh push it. Pass --no-history to it.",  # joined
+         "Run the tests, then push it. Pass no-history to it.",
+         "Run the tests, then push it. Pass --no-history to it."),
+        ("um run the tests and then uh push it. Pass --no-history to it.",  # split
+         "Run the tests. Then push it. Pass no-history to it.",
+         "Run the tests. Then push it. Pass --no-history to it."),
+        ("Set it to 3 seconds. Sorry, 5 seconds. Um pass --no-history.",  # corrected
+         "Set it to 5 seconds. Pass no-history.",
+         "Set it to 5 seconds. Um pass --no-history."),
+        ("Um run the tests. Do not push it.", "Run the tests. Push it.",
+         "Run the tests. Do not push it."),
+        ("Um run the tests. Uh push it.", "Run the tests. Push it. Then deploy to prod.",
+         "Run the tests. Push it."),  # an added sentence goes
+        ("um do not push. uh do not merge.", "Push. Merge.",
+         "um do not push. uh do not merge."),  # no sentence passes
+    ],
+)  # fmt: skip
+def test_accept_keeps_the_faithful_sentences(before: str, after: str, kept: str):
+    text, why = fidelity.accept(before, after, {"--no-history"}, single_line=True)
+    assert text == kept
+    assert why  # the whole rewrite failed
 
 
 class FixedRewrite(pb_grpc.TextCleanupServicer):
@@ -111,6 +145,9 @@ def server() -> Iterator[tuple[FixedRewrite, grpc.Channel]]:
          "please run kubectl get", "rejected", "negations 0 -> 1"),
         ("please run kubectl get", "Please run the cube control get.", [KUBECTL],
          "please run kubectl get", "rejected", "changed 'kubectl'"),
+        # the sentences that pass are kept
+        ("um run kubectl get. Uh then stop.", "Run the cube control get. Then stop.", [KUBECTL],
+         "um run kubectl get. Then stop.", "applied", "kept 1 of 2 sentences as said: changed"),
         # merged into a shortlist term the text did not have
         ("from Super Whisper", "From Superwhisper.",
          [term("Super", TermKind.NAME), term("Whisper", TermKind.NAME), term("Superwhisper")],
