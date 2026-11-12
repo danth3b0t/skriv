@@ -41,7 +41,7 @@ from hark_client.audio import speech_ms
 from hark_client.cleanup import CleanupOutcome
 from hark_client.config import expand
 from hark_client.context import CaretContext, ContextSnapshot, FocusInfo, WordInfo
-from hark_client.context.words import dictionary_terms, merge_terms
+from hark_client.context.words import dictionary, dictionary_terms, merge_terms
 from hark_client.inject import PasteResult
 
 if TYPE_CHECKING:
@@ -176,8 +176,9 @@ class Utterance:
         except Exception as e:  # the contract says never raises; do not lose the dictation
             log.exception("context.collect failed")
             snap = ContextSnapshot(errors=(f"collect: {type(e).__name__}: {e}",))
-        if self.svc.cfg.words:  # hand-written spellings go first
-            words = dictionary_terms(self.svc.cfg.words)
+        user_words = dictionary(self.svc.cfg.words, snap.repo_root, cfg.max_terms)
+        if user_words:  # hand-written spellings go first
+            words = dictionary_terms(user_words)
             snap = replace(snap, terms=merge_terms(snap.terms, words, cfg.max_terms))
         self.timings["context_ms"] = _ms(t)
         self._ctx.set_result(snap)

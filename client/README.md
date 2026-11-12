@@ -379,7 +379,20 @@ characters in tmux rows are mapped to columns approximately.
 
 For a handful of spellings no context will supply (`Hyprland` for "hyper land"), list them as `[[words]]`
 (`hark_client/context/words.py`): every dictation gets them, ahead of the context terms, through the same gate and
-canonicalization rules.
+canonicalization rules. One command fixes a spelling:
+
+```sh
+hark words add "hyper land" Hyprland        # [SPOKEN] WORD into your config; a running daemon reloads
+hark words add "pie" pi --repo              # this git repository only: <repo>/.hark/words.toml
+hark words                                  # your list, and this repository's
+hark words remove Hyprland                  # (--repo: from the repository's list)
+```
+
+Adding a word that is already listed adds the spoken form to it. The file is edited as text (the new `[[words]]`
+table goes at the end, a removed one goes with its blank line before it; your comments and layout stay), then
+re-read: if it no longer loads it is put back as it was. A repository's list (only `[[words]]` tables) is read at
+each dictation whose context engine reports that repository, after yours. Yours and the repository's together are
+capped at a third of `context.max_terms` (10); `hark words add` refuses past it and says so.
 
 ## Anchor gate
 

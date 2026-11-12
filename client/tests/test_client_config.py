@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+import subprocess
 from typing import TYPE_CHECKING
 
 import pytest
 
+from hark_client import ctl
+from hark_client.__main__ import main
 from hark_client.config import Config, ConfigError, load
 from hark_client.context import FocusInfo
 
@@ -107,3 +110,73 @@ def test_invalid_config_is_rejected(tmp_path: Path, toml: str, error: str):
 def test_missing_explicit_config_is_an_error(tmp_path: Path):
     with pytest.raises(ConfigError, match="no such file"):
         load(tmp_path / "nope.toml")
+
+
+WORDS_CONFIG = """\
+# mine
+[context]
+max_terms = 6   # two [[words]] at most
+
+[[words]]   # needs help
+word = "Hyprland"
+spoken = ["hyper land"]
+
+# --- feedback ---
+[feedback]
+sounds = false
+"""
+
+
+def test_words_command_edits_the_list_as_text_and_reloads(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+):
+    sent: list[str] = []
+
+    def send(line: str, timeout: float = 2.0) -> str:
+        sent.append(line)
+        return "ok reloaded"
+
+    monkeypatch.setattr(ctl, "send", send)
+    cfg = tmp_path / "c.toml"
+    cfg.write_text(WORDS_CONFIG)
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)  # noqa: S603, S607
+    monkeypatch.chdir(repo)
+
+    def words(*args: str) -> int:
+        return main(["--config", str(cfg), "words", *args])
+
+    assert words("add", "hyperland", "Hyprland") == 0  # one more spoken form
+    assert words("add", "cube control", "kubectl") == 0
+    assert sent == ["reload", "reload"]
+    text = cfg.read_text()
+    assert text.startswith(
+        WORDS_CONFIG.split("[[words]]", maxsplit=1)[0]
+    )  # comments and layout kept
+    assert "# --- feedback ---\n[feedback]\nsounds = false\n" in text
+    assert [(w.word, w.spoken) for w in load(cfg).words] == [
+        ("Hyprland", ["hyper land", "hyperland"]),
+        ("kubectl", ["cube control"]),
+    ]
+    capsys.readouterr()
+    assert words("add", "pie", "pi") == 1  # 2 of 2
+    assert "the list is full (2 of 2" in capsys.readouterr().err
+    assert words("add", "--repo", "pie", "pi") == 1  # the repository's share the cap
+    assert words("remove", "Hyprland") == 0
+    assert words("remove", "Hyprland") == 1
+    assert words("add", "--repo", "pie", "pi") == 0
+    assert (repo / ".hark/words.toml").read_text() == '[[words]]\nword = "pi"\nspoken = ["pie"]\n'
+    assert sent == ["reload"] * 3  # the repository's list is read at each dictation
+    assert [w.word for w in load(cfg).words] == ["kubectl"]
+    assert "# --- feedback ---" in cfg.read_text()
+    capsys.readouterr()
+    assert words() == 0
+    out = capsys.readouterr().out
+    assert "  kubectl  <- 'cube control'" in out
+    assert "  pi  <- 'pie'" in out
+
+    cfg.write_text('words = [{word = "x"}]\n')  # not editable as [[words]] tables
+    assert words("add", "y") == 1
+    assert "not changed" in capsys.readouterr().err
+    assert cfg.read_text() == 'words = [{word = "x"}]\n'  # restored

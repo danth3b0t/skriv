@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
 import re
 from dataclasses import replace
+from pathlib import Path
 from typing import TYPE_CHECKING
 
+from hark_client.config import REPO_WORDS, ConfigError, load_words, words_limit
 from hark_client.context.aliases import spoken_forms
 from hark_client.context.types import Term, TermKind, TermSource
 
@@ -14,7 +17,24 @@ if TYPE_CHECKING:
 
     from hark_client.config import WordConfig
 
+log = logging.getLogger("hark.context")
+
 _TOKEN_RE = re.compile(r"[^\W_]+")
+
+
+def dictionary(
+    user: Sequence[WordConfig], repo_root: str | None, max_terms: int
+) -> list[WordConfig]:
+    """Your `[[words]]`, then the repository's (``<repo>/.hark/words.toml``) not already there;
+    at most a third of ``max_terms``. A broken repository file is logged and skipped."""
+    repo: list[WordConfig] = []
+    if repo_root is not None:
+        try:
+            repo = load_words(Path(repo_root) / REPO_WORDS, max_terms)
+        except ConfigError as e:
+            log.warning("repository words skipped: %s", e)
+    taken = {w.word for w in user}
+    return [*user, *(w for w in repo if w.word not in taken)][: words_limit(max_terms)]
 
 
 def _kind(word: str) -> TermKind:
