@@ -46,6 +46,9 @@ sudo pacman -S portaudio wl-clipboard wtype libnotify   # PortAudio for sounddev
 uv run hark run
 ```
 
+Installed from the `hark-git` package, `hark service install` runs the daemon as a systemd user service
+(`hark service status`, `hark service uninstall`); see [docs/linux.md](../docs/linux.md).
+
 Hyprland ≤ 0.54 (hyprlang), push-to-talk on F13 (`bindr` fires on release):
 
 ```ini
@@ -184,8 +187,8 @@ It never takes focus or clicks, so the paste still goes to the window you dictat
   event loop there; mic, hotkey listener, ctl socket and each dictation's finish run on their own threads.
 - Linux: GTK 4 + gtk4-layer-shell via PyGObject, if importable: an overlay layer surface anchored to the bottom (or
   top) edge, `KeyboardMode.NONE`, empty input region (Hyprland, sway, KDE). Needs `gtk4 gtk4-layer-shell` plus
-  PyGObject and pycairo visible to hark's Python (e.g. `uv pip install PyGObject pycairo` with the introspection
-  headers). Without them, or without layer-shell (GNOME), there is no indicator. **Untested on real hardware.**
+  PyGObject and pycairo in hark's Python: the `hark-git` package has them; from a checkout `uv sync --extra gi`
+  (builds them: `gobject-introspection cairo pkgconf base-devel`). Without them, or without layer-shell (GNOME), there is no indicator. **Untested on real hardware.**
 
 ## Recovery, history and re-insertion
 

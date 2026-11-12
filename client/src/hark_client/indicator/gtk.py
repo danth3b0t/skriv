@@ -4,8 +4,8 @@ hardware**).
 An overlay-layer surface anchored to the bottom (or top) edge of the output the compositor
 picks (the focused one on Hyprland), ``KeyboardMode.NONE`` (never gets keyboard focus) and an
 empty input region (clicks pass through). Needs the system packages gtk4, gtk4-layer-shell and
-PyGObject + pycairo importable by hark's Python (``uv pip install PyGObject pycairo`` with the
-introspection headers, or a venv with system site packages). Unavailable pieces => None.
+PyGObject + pycairo importable by hark's Python (the client's ``gi`` extra; the hark-git
+package includes it). Unavailable pieces => None.
 
 GTK runs on the main thread (:meth:`LayerShellBackend.run`); :meth:`LayerShellBackend.render`
 hands views over with ``GLib.idle_add`` (thread-safe). PyGObject is typed ``Any`` here.
