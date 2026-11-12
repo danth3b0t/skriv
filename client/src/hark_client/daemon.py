@@ -73,6 +73,7 @@ class Controller:
         self.current: Utterance | None = None
         self.busy = 0  # utterances still finishing
         self._max_hit = False
+        self._cue_pending = False  # the start sound waits for the recording's first audio
         # hark's pastes + the keys typed since: the caret when the app does not expose it
         self.shadow = ShadowBuffer(svc.cfg.paste.join_window_ms / 1000, _focus_token)
         self.last_result: tuple[float, Result] | None = None  # (unix time, result)
@@ -102,6 +103,9 @@ class Controller:
             over = utt.audio_ms - utt.preroll_ms >= self.svc.cfg.audio.max_ms and not self._max_hit
             if over:
                 self._max_hit = True
+            cue, self._cue_pending = self._cue_pending, False
+        if cue:  # capture is live: what is said after the sound is recorded
+            self.svc.feedback.sound("start")
         if self.indicator is not None:
             self.indicator.level(pcm)
         if over:
@@ -137,20 +141,15 @@ class Controller:
         with self._lock:
             if self.current is not None or self.finishing is not None:
                 return self._refuse("error busy", "busy")
-            cue = self._start_cue()
-            mask_ms = self.svc.cfg.feedback.cue_mask_ms if cue else 0
             profile, self.profile_override = self.profile_override, None  # used up by it
-            self.current = utt = Utterance(
-                self.svc, profile=profile, preroll=self.preroll.take(), mask_ms=mask_ms
-            )
+            self.current = utt = Utterance(self.svc, profile=profile, preroll=self.preroll.take())
             self._max_hit = False
+            self._cue_pending = self._start_cue()
             if self.on_recording is not None:
                 self.on_recording(True)  # noqa: FBT003 - Callable[[bool], None]
             self.started += 1
         if self.indicator is not None:
             self.indicator.recording(utt.id, _label("Listening", utt))
-        if cue:
-            self.svc.feedback.sound("start")
         log.info("recording...")
         self.report.touch()
         return "ok recording"
@@ -227,7 +226,8 @@ class Controller:
             log.info("mic reopened: %s @ %d Hz", mic.device_name, mic.rate)
 
     def _start_cue(self) -> bool:
-        """Play the start sound? (``auto``: not when the indicator already shows it.)"""
+        """Play the start sound (on the recording's first audio)? ``auto``: not when the
+        indicator already shows it. Off by default: the indicator is the signal."""
         cfg = self.svc.cfg.feedback
         mode = cfg.start_cue
         return cfg.sounds and (mode == "always" or (mode == "auto" and self.indicator is None))

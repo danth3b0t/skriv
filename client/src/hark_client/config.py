@@ -158,11 +158,10 @@ class PasteConfig:
 class FeedbackConfig:
     sounds: bool = True
     notify: bool = True
-    # The start sound would be recorded: auto plays it only when no recording indicator is
-    # shown; when it plays, this much audio after key-down is replaced by silence and left out
-    # of the speech gate.
-    start_cue: str = "auto"  # auto | always | never
-    cue_mask_ms: int = 250
+    # The start sound plays once the recording's first audio arrives (it is recorded, never
+    # masked: speech is never cut). Off by default: the indicator is the signal; auto plays it
+    # only when no recording indicator is shown.
+    start_cue: str = "never"  # never | auto | always
 
 
 @dataclass
@@ -392,7 +391,6 @@ def validate(cfg: Config) -> None:
         ("audio.min_speech_ms", cfg.audio.min_speech_ms),
         ("retry.keep", cfg.retry.keep),
         ("hotkey.tap_ms", cfg.hotkey.tap_ms),
-        ("feedback.cue_mask_ms", cfg.feedback.cue_mask_ms),
     ):
         if v < 0:
             raise ConfigError(f"{key} must be >= 0")

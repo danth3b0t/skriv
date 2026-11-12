@@ -169,8 +169,7 @@ spoken = ["hyper land"]       # optional; derived spoken forms are added anyway
 [feedback]
 sounds = true                 # afplay (macOS), pw-play/paplay (Linux)
 notify = true
-start_cue = "auto"            # start sound: auto (only without the indicator) | always | never
-cue_mask_ms = 250             # with a start sound: this much audio after key-down becomes silence (see below)
+start_cue = "never"           # start sound: never | auto (only without the indicator) | always (see below)
 
 [history]
 dir = "~/.local/share/hark"
@@ -206,10 +205,9 @@ unless one was picked by hand (below).
   typing is never held up. X11: a passive grab of Esc exists only while recording or finishing (**untested on
   real hardware**).
   Wayland: a compositor submap, see the Hyprland example above.
-- **Start sound**: the mic would record it. By default it plays only when no recording indicator is shown (the
-  pill already says Listening). When it plays (`start_cue = "always"`, or no indicator), the first `cue_mask_ms`
-  of audio after key-down is sent as silence and left out of the speech gate (silence would lower its noise
-  floor). Speech in those 250 ms is lost; the pre-roll before key-down is kept.
+- **Start sound**: off by default; the indicator (Listening) is the signal. With `start_cue = "always"` (or
+  `"auto"` and no indicator) it plays when the recording's first audio arrives, so anything said after it is
+  captured. The sound is recorded like everything else; no audio is ever replaced or dropped.
 - **Profile**: `hark ctl profile set NAME` picks the profile of the next dictation only; `hark ctl profile auto`
   goes back to choosing by app. The indicator shows **Profile: prose** briefly (never over a recording) and the
   recording as **Listening · prose**; `hark ctl profile` and `hark ctl --json status` (`profile_override`) report
