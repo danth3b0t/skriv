@@ -1,9 +1,9 @@
 """Tables for docs/bench/2026-11-13-eval-baseline.md from `hark eval run --report` files.
 
-    uv run python docs/bench/eval-baseline/analyze.py [--set eval/dev-v1] [CONDITION ...]
+    uv run python docs/bench/eval-baseline/analyze.py [--set eval/dev-v1] [--reports DIR] [CONDITION ...]
 
-CONDITION names a report docs/bench/eval-baseline/CONDITION.json (default: baseline no-context
-no-cleanup no-gate). Labels (said, critical, forbidden, accepted, the note's voice/noise/context
+CONDITION names a report DIR/CONDITION.json (DIR defaults to docs/bench/eval-baseline; CONDITION to
+baseline no-context no-cleanup no-gate). Labels (said, critical, forbidden, accepted, the note's voice/noise/context
 description) are read from the set, so `accepted` reflects the current reviews.
 
 Stages of a clip's text, in pipeline order: raw (recognized, biased) -> gated (anchor gate) ->
@@ -31,8 +31,8 @@ FILLERS = re.compile(r"\b(um+|uh+|erm|er|eh|mm+|hmm+|ah)\b", re.IGNORECASE)
 type Rec = dict[str, object]
 
 
-def load(set_dir: Path, condition: str) -> list[tuple[Rec, evalset.Label]]:
-    recs = cast("list[Rec]", json.loads((HERE / f"{condition}.json").read_text()))
+def load(set_dir: Path, reports: Path, condition: str) -> list[tuple[Rec, evalset.Label]]:
+    recs = cast("list[Rec]", json.loads((reports / f"{condition}.json").read_text()))
     out: list[tuple[Rec, evalset.Label]] = []
     for r in recs:  # scored again: reviews made after the run count
         lab = evalset.load_label(set_dir / str(r["clip"]))
@@ -214,6 +214,7 @@ def cleanup_stats(rows: list[tuple[Rec, evalset.Label]]) -> list[str]:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--set", default=str(ROOT / "eval" / "dev-v1"))
+    ap.add_argument("--reports", default=str(HERE), help="directory of CONDITION.json reports")
     ap.add_argument(
         "conditions", nargs="*", default=["baseline", "no-context", "no-cleanup", "no-gate"]
     )
@@ -226,7 +227,8 @@ def main() -> None:
         "| server end -> final ms p50 / p95 | cleanup ms p50 / p95 |"
     )
     print("|---|---|---|---|---|---|---|---|---|---|---|---|")
-    data = {c: load(set_dir, c) for c in args.conditions}
+    reports = Path(cast("str", args.reports))
+    data = {c: load(set_dir, reports, c) for c in args.conditions}
     for c, rows in data.items():
         print("\n".join(summary(c, rows)))
     for c, rows in data.items():
