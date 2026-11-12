@@ -212,37 +212,23 @@ SKRIV = Term("Skriv", ("get",), 0.9, TermKind.NAME, TermSource.REPO)
 
 
 @pytest.mark.parametrize(
-    ("enabled", "canonical", "decisions"),
+    ("enabled", "record"),
     [
-        (
-            True,
-            "please run kubectl get",
-            # adjacent hits form one region, judged against every combination of their forms
-            [("kubectl Skriv", "cube control get", "reverted", "in_anchor")],
-        ),
-        (False, "please run kubectl Skriv", None),
+        (True, {"status": "applied", "anchor_text": "please run cube control get", "reverted": []}),
+        (False, {"status": "off"}),
     ],
 )
-def test_anchor_gate_restores_the_anchor_words_and_records_why(
+def test_anchor_keeps_the_biased_text_and_records_its_own(
     tmp_path: Path,
     skriv_server: SkrivServer,
     fake_context: FakeContext,
     enabled: bool,
-    canonical: str,
-    decisions: list[tuple[str, str, str, str]] | None,
+    record: dict[str, object],
 ):
     fake_context.snapshots = [snapshot("com.apple.Notes", terms=(KUBECTL, SKRIV))]
     _, rec = run_once(
         tmp_path, skriv_server.target, config=f"[gate]\nenabled = {str(enabled).lower()}\n"
     )
-    assert rec["raw_text"] == "please run kubectl Skriv"
-    # gate on: both regions go back to the anchor's words; canonicalization then
-    # writes kubectl (multi-word alias) but not Skriv (single plain word)
-    assert rec["canonical_text"] == canonical
-    record = cast("dict[str, object]", rec["gate"])
-    if decisions is None:
-        assert record == {"status": "off"}
-        return
-    assert (record["status"], record["anchor_text"]) == ("applied", "please run cube control get")
-    got = cast("list[dict[str, object]]", record["decisions"])
-    assert [(d["biased"], d["anchor"], d["decision"], d["reason"]) for d in got] == decisions
+    # the anchor only lends its confidences: where the decodes differ, the biased words stay
+    assert (rec["raw_text"], rec["canonical_text"]) == ("please run kubectl Skriv",) * 2
+    assert rec["gate"] == record

@@ -29,8 +29,7 @@ keep_open = false
 [paste]
 method = "wtype"
 [gate]
-max_distance = 0
-confident_anchor = 0.9
+enabled = false
 [profiles.terminal]
 apps = ["my-term"]
 [profiles.agent]
@@ -48,9 +47,7 @@ def test_full_config_overrides_defaults_and_merges_profiles(tmp_path: Path):
     assert [p.address for p in cfg.providers] == ["desktop.tailnet:50051"]  # replaces the default
     assert (cfg.cleanup.enabled, cfg.cleanup.deadline_ms) == (False, 300)
     assert (cfg.audio.preroll_ms, cfg.audio.keep_open, cfg.paste.method) == (0, False, "wtype")
-    # floats accept TOML integers
-    assert (cfg.gate.max_distance, cfg.gate.confident_anchor) == (0.0, 0.9)
-    assert isinstance(cfg.gate.max_distance, float)
+    assert not cfg.gate.enabled
     assert cfg.context.deadline_ms == 150  # untouched default
     # Fields not given keep the built-in profile's values; new profiles are appended.
     assert cfg.profiles["terminal"].apps == ["my-term"]
@@ -81,8 +78,6 @@ def test_profile_selection(focus: FocusInfo, profile: str):
         ("[audio]\nmin_ms = true\n", "audio.min_ms: expected int, got bool"),
         ("[profiles.terminal]\napps = 'kitty'\n", "profiles.terminal.apps: expected list"),
         ("[paste]\nmethod = 'xdotool'\n", "paste.method must be one of"),
-        ("[gate]\nmax_distance = 'near'\n", "gate.max_distance: expected float, got str"),
-        ("[gate]\nmax_distance = 1.5\n", "gate.max_distance must be in"),
         ("[server]\naddress = 'a:1'\n", "unknown config key 'server.address'"),
         ("[[providers]]\naddress = 'a:1'\ntls_cert = 'a'\n", "].tls_key must be set together"),
         ("providers = []\n", "providers: at least one"),

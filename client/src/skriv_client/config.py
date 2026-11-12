@@ -119,14 +119,9 @@ class ContextConfig:
 
 @dataclass
 class GateConfig:
-    """Acoustic anchor gate on biased results (see skriv_client.gate)."""
+    """Anchor confidences on biased results (see skriv_client.gate)."""
 
     enabled: bool = True
-    # Keep a biased span only if the anchor heard something this close to the term
-    # (normalized edit distance on letters or a phonetic key, 0..1).
-    max_distance: float = 0.5
-    # ...and the anchor's least confident word there is below this (> 1: rule off).
-    confident_anchor: float = 0.97
 
 
 @dataclass
@@ -134,9 +129,6 @@ class CleanupConfig:
     enabled: bool = True  # global switch; profiles opt in individually
     # Whole Cleanup RPC; timeout => raw text. POC: ~0.6 s for ~200 edit tokens on Qwen3-1.7B.
     deadline_ms: int = 1000
-    # Remove restart self-corrections ("in C um no in Rust") deterministically before the
-    # model, in every profile (see skriv_client.corrections).
-    resolve_corrections: bool = True
 
 
 @dataclass
@@ -289,8 +281,6 @@ START_CUES = ("auto", "always", "never")
 def _type_ok(value: object, default: object) -> bool:
     if isinstance(default, bool):
         return isinstance(value, bool)
-    if isinstance(default, float):
-        return isinstance(value, (int, float)) and not isinstance(value, bool)
     if isinstance(default, int):
         return isinstance(value, int) and not isinstance(value, bool)
     if isinstance(default, str):
@@ -319,12 +309,7 @@ def _apply(obj: DataclassInstance, data: Mapping[str, object], where: str) -> No
                 raise ConfigError(f"{path}: expected a table")
             _apply(cast("DataclassInstance", current), cast("dict[str, object]", value), path)
         elif _type_ok(value, current):
-            # TOML `0` for a float setting
-            setattr(
-                obj,
-                key,
-                float(value) if isinstance(current, float) and isinstance(value, int) else value,
-            )
+            setattr(obj, key, value)
         else:
             raise ConfigError(
                 f"{path}: expected {type(current).__name__}, got {type(value).__name__}"
@@ -425,10 +410,6 @@ def validate(cfg: Config) -> None:
             raise ConfigError(f"{key} must be >= 0")
     _validate_providers(cfg.providers)
     _validate_words(cfg.words, cfg.context.max_terms)
-    if not 0 <= cfg.gate.max_distance <= 1:
-        raise ConfigError("gate.max_distance must be in [0, 1]")
-    if cfg.gate.confident_anchor < 0:
-        raise ConfigError("gate.confident_anchor must be >= 0")
 
 
 def load(path: str | Path | None = None) -> Config:

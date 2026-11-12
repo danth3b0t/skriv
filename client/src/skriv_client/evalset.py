@@ -192,7 +192,6 @@ def run_clip(svc: Services, clip: Path) -> Result:
 
 def report(s: Score, res: Result) -> dict[str, object]:
     """One clip for `skriv eval run --report`: the score and every stage's text and timing."""
-    gate = res.gate or {}
     return {
         "clip": s.clip,
         "failed": s.failed,
@@ -204,14 +203,12 @@ def report(s: Score, res: Result) -> dict[str, object]:
         "status": res.status,
         "provider": res.provider,
         "raw": res.raw_text,
-        "gated": gate.get("text", res.raw_text),
         "canonical": res.canonical_text,
-        "uncleaned": res.uncleaned_text,  # symbols, self-corrections and guardrails, no cleanup
+        "uncleaned": res.uncleaned_text,  # symbols and guardrails, no cleanup
         "final": res.final_text,
-        "gate": gate,
+        "gate": res.gate or {},
         "replacements": res.replacements,
         "symbols": res.symbols,
-        "corrections": res.corrections,
         "cleanup": asdict(res.cleanup) if res.cleanup else None,
         "guard_events": res.guard_events,
         "timings_ms": res.timings,

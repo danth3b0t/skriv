@@ -8,9 +8,9 @@ from the daemon's control socket and decide what to show.
 ```
 key down ──► record ─────────────► recognize with context ──────────► clean ──────────────► deliver
              mic, pre-roll          context.collect() ─► SessionStart   spoken symbols         guardrails
-             hotkey / skriv ctl      40 ms PCM chunks ─► Transcribe      self-corrections       focus re-check
-             one at a time          FinalResult ─► anchor gate          S1-mini rewrite        smart spacing
-                                    ─► canonicalize                     ─► fidelity check      paste / copy, history
+             hotkey / skriv ctl      40 ms PCM chunks ─► Transcribe      S1-mini rewrite        focus re-check
+             one at a time          FinalResult ─► anchor confidence    ─► fidelity check      smart spacing
+                                    ─► canonicalize                                            paste / copy, history
 ```
 
 `pipeline.py` (`Utterance`) runs the steps for one dictation, the same code for `skriv run`, `skriv once`, `skriv retry`
@@ -34,7 +34,7 @@ and `skriv eval`. Its `_finish` reads top to bottom in this order.
 | `context/words.py` | `[[words]]` (config and `<repo>/.skriv/words.toml`) ahead of the ranked terms; base shell commands for the terminal profile |
 | `providers.py` | which server takes the dictation: first healthy `[[providers]]` entry, cached health checks |
 | `asr.py` | the `Transcribe` stream: `SessionStart` with the bias list (unless `send_context = false`), audio, `FinalResult` |
-| `gate.py` | anchor gate: the server returns a biased and an unbiased decode; biased words the audio does not support are reverted |
+| `gate.py` | anchor confidence: the server returns a biased and an unbiased decode; the biased words get the unbiased decode's confidences for canonicalization |
 | `context/canon.py`, `context/aliases.py` | canonicalization: spoken forms of shortlist terms rewritten to their spelling, with everyday-word protection |
 | `guardrails.degenerate` | refuses `<unk>` runs and repeated patterns as a failed transcription (kept for `skriv retry`) |
 | server `session.py`, `backends/` | model routing by language, audio placement, finalize budget, bias (decode-time boosting on `parakeet_mlx`; none on `transcribe_cpp`), anchor, bias hits (`hits.py`), language fallback (`language.py`) |
@@ -44,8 +44,7 @@ and `skriv eval`. Its `_finish` reads top to bottom in this order.
 | Module | Owns |
 |---|---|
 | `symbols.py` | terminal profile only: "dash dash verbose" → `--verbose` |
-| `corrections.py` | explicit self-corrections ("three seconds, sorry, five seconds") resolved before the model |
-| `cleanup.py` | the `Cleanup` RPC under `cleanup.deadline_ms`; any failure keeps the uncleaned text |
+| `cleanup.py` | the `Cleanup` RPC under `cleanup.deadline_ms`; any failure keeps the uncleaned text (spoken self-corrections included) |
 | server `cleanup.py` | S1-mini through an OpenAI-compatible endpoint (llama-server), small per-profile touches; returns the rewrite, judges nothing |
 | `fidelity.py` | the one definition of a faithful rewrite: identifiers, numbers and negations kept, few content words changed. A rewrite that fails it is discarded (`rejected`). `skriv eval` scores with the same module. |
 

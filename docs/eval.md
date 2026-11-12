@@ -1,7 +1,7 @@
 # Accuracy baseline: `skriv eval`
 
 A small set of **real** dictations, re-run through the whole pipeline (recognition with the key-down context,
-canonicalization, symbols, self-corrections, cleanup, guardrails) after every change that can affect text. It is
+canonicalization, symbols, cleanup, guardrails) after every change that can affect text. It is
 regression coverage for the people who use skriv, not a benchmark and not proof that cleanup "never" changes a
 meaning.
 
@@ -37,7 +37,7 @@ history, but not only failures. One person owns the set: adds clips when somethi
 ```sh
 skriv eval run                 # exit 1 on a missing critical / forbidden string / lost negation
 skriv eval run --set DIR       # another set
-skriv eval run --report r.json # also every clip's stages (raw, gated, canonical, uncleaned, final), score, timings
+skriv eval run --report r.json # also every clip's stages (raw, canonical, uncleaned, final), score, timings
 skriv --config no-context.toml eval run   # ablation: [context] max_terms = 0 replays without the shortlist
 ```
 

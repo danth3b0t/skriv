@@ -60,9 +60,17 @@ and the dropped competitors. `ContextSnapshot.prefetched` says whether the slow 
 - Spoken forms also come from a pronunciation lexicon (`hyprctl` → "hyper control", `SQLite` → "sequel light",
   `ctl` → "control"), versions said with "point", and spoken path prefixes ("tilde slash").
 
+## Anchor confidence (`skriv_client/gate.py`)
+
+With bias terms the server also returns an unbiased decode of the same audio, the anchor. A boosted beam's word
+confidence is no acoustic evidence; the anchor's is. The biased words are aligned to the anchor's, and each gets
+the confidence of its anchor word (where the decodes differ: the anchor's least confident word there), which
+canonicalization reads. The text stays the biased text, except a lone all-caps non-word where the anchor heard
+one English word (`MT` / `empty`).
+
 ## Canonicalization (`canon.py`)
 
-After the gate, spoken forms of shortlist terms in the transcript are rewritten to their spelling. Only aliases
+After the anchor confidences are set, spoken forms of shortlist terms in the transcript are rewritten to their spelling. Only aliases
 already in the transcript are rewritten, whole words, never across a clause boundary, longest first, and only where
 the words' confidence allows. A match made only of everyday English words (`each other`, `wait for`; the list is
 `common_words.txt`) needs evidence that an identifier was meant: a spoken separator, a capital mid-sentence, or

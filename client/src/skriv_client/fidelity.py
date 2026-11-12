@@ -50,8 +50,8 @@ NEGATIONS = frozenset({
 FILLERS = frozenset({
     "um", "umm", "uh", "uhh", "uhm", "er", "erm", "eh", "ah", "hmm", "mm", "mmm", "mhm",
 })  # fmt: skip
-# Self-correction cues: "<retracted words>, no wait, <correction>". corrections.py resolves the
-# restarts before cleanup; the rewrite may resolve the rest (see check).
+# Self-correction cues: "<retracted words>, no wait, <correction>". The rewrite resolves them
+# (see check).
 CORRECTION_CUES = (
     ("no", "wait"), ("wait", "no"), ("no", "sorry"), ("sorry", "no"), ("i", "mean"),
     ("scratch", "that"), ("actually", "no"), ("no", "actually"), ("or", "rather"),

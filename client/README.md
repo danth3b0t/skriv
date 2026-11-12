@@ -7,8 +7,8 @@ Tap the key instead to dictate hands-free until the next tap.
 ```
 key down ─┬─ context.collect() (thread, 150 ms deadline) ──► SessionStart (bias list, if the provider may see it)
           └─ provider router picks a server (cached health) ──► Transcribe stream; 40 ms PCM16 chunks (+ pre-roll)
-key up ───► EndOfAudio ► FinalResult ► degenerate-output check ► anchor gate ► canonicalize ► spoken symbols (terminal)
-          ► self-corrections ► cleanup (deadline) + fidelity check ► guardrails
+key up ───► EndOfAudio ► FinalResult ► degenerate-output check ► anchor confidence ► canonicalize ► spoken symbols (terminal)
+          ► cleanup (deadline) + fidelity check ► guardrails
           ► focus re-check ► smart spacing ► paste (or clipboard + notification) ► history.jsonl (+ audio kept for `skriv retry`)
 ```
 
@@ -142,15 +142,12 @@ final_timeout_ms = 5000
 deadline_ms = 150             # SessionStart waits at most this long for context
 max_terms = 30
 
-[gate]                        # anchor gate: biased words the unbiased decode does not support are reverted
+[gate]                        # biased words get the unbiased decode's confidences (see Anchor gate)
 enabled = true
-max_distance = 0.5            # anchor must have heard something this close to the term (0..1)
-confident_anchor = 0.97       # ...and been less sure than this of its own word (> 1: rule off)
 
 [cleanup]
 enabled = true                # profiles opt in individually
 deadline_ms = 1000            # timeout/failure => uncleaned text
-resolve_corrections = true    # apply spoken self-corrections ("in C, no, in Rust") before the model, every profile
 
 [audio]
 device = ""                   # PortAudio name or index
@@ -234,6 +231,8 @@ exit 2). Delete them:
 | `paste.verify` | gone (no read-back after the paste) |
 | `history.save_recordings` | gone; the retry ring (`retry.keep`) is the only audio kept, `skriv eval add` copies a dictation into an eval set |
 | `feedback.cue_mask_ms` | gone; the start sound plays on the first recorded audio and masks nothing |
+| `cleanup.resolve_corrections` | gone; the cleanup model applies spoken self-corrections (the uncleaned text keeps them) |
+| `gate.max_distance`, `gate.confident_anchor` | gone with the gate's revert rules; the anchor only lends its confidences |
 
 The built-in `chat` profile is gone too. A `[profiles.chat]` table still loads, but as a new profile with every
 field at its default (no cleanup): give it `apps`, `cleanup = true` and `cleanup_profile = "chat"` (the server still
@@ -357,10 +356,10 @@ It is a new history entry; the kept audio stays.
 skriv history                  # last 20: time, id, app, status, release->paste latency, text preview
 skriv history -n 100 --json    # the full records
 skriv history show 9f3c1a2b    # one dictation: raw, canonical + replacements, cleanup status/reason,
-                              # gate decisions (if recorded), final, spacing decision, paste,
+                              # anchor record, final, spacing decision, paste,
                               # latency (key release -> text sent), timings
 skriv last                     # print the last dictated text; --copy puts it on the clipboard
-skriv last --raw --copy        # its text before cleanup (spoken symbols, self-corrections and guardrails
+skriv last --raw --copy        # its text before cleanup (spoken symbols and guardrails
                               # applied, no LLM rewrite), e.g. when the cleanup changed too much
 skriv ctl paste-last           # daemon: paste it again into the focused window (bind it to a key)
 ```
@@ -453,19 +452,17 @@ capped at a third of `context.max_terms` (10); `skriv words add` refuses past it
 ## Anchor gate
 
 With bias terms the server returns the biased decode and an unbiased anchor of the same audio
-(`skriv_client/gate.py`). Where they differ around a bias hit, the biased words survive only if the anchor heard
-something close to the term (`max_distance`) without being sure of its own word (`confident_anchor`), and the
-change adds/removes no negation or number, is not just an inflection and drops no function word; otherwise that
-region goes back to the anchor's words. A difference outside every hit keeps the biased words (the bias did not
-act there). Every biased word also gets the anchor's confidence, which canonicalization reads. `history.jsonl`
-records each region as `gate.decisions[] = {decision: kept|reverted, reason, biased, anchor, term, distance}`.
-Measurements: [acoustic gate](../docs/bench/2026-11-12-acoustic-gate.md) (thresholds) and
-[gate and self-corrections](../docs/bench/2026-11-13-acc-gate-corrections.md) (current behaviour).
+(`skriv_client/gate.py`). Every biased word gets the confidence of the anchor word aligned to it (where the decodes
+differ, the anchor's least confident word there), which canonicalization reads: a boosted beam's own confidence is
+no acoustic evidence. The text stays the biased text, with one exception: a lone all-caps token that is no English
+word and no shortlist word, where the anchor heard one English word, takes the anchor's word (`MT` → `empty`).
+`history.jsonl` records `gate = {status, anchor_text, reverted: ["MT -> empty", ...]}`.
+Measurement: [docs/bench/2026-11-13-w4-rules.md](../docs/bench/2026-11-13-w4-rules.md).
 
 ## History
 
 `history.jsonl` gets one line per dictation (not for presses shorter than `min_ms`): status, profile, app, raw/canonical/final text, replacements, cleanup
-outcome (with a rejected `rewrite`), `uncleaned_text`, guard events, paste result and `delivery`, the anchor gate's decisions (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
+outcome (with a rejected `rewrite`), `uncleaned_text`, guard events, paste result and `delivery`, the anchor gate's record (`gate`, see below), client timings per stage (`context_ms`, `session_start_ms`, `accepted_ms`,
 `keyup_to_final_ms`, `gate_ms`, `canonicalize_ms`, `cleanup_ms`, `guard_ms`, `focus_check_ms`, `spacing_ms`, `paste_ms`,
 `keyup_to_paste_ms`, and `release_to_paste_ms`: from the key release, monotonic clock, to the text sent; this is
 what you wait, including the recovery copy and the wait for the key-down context that the other stage timings
@@ -484,7 +481,7 @@ uv run pytest client/tests -q     # ~650 tests
 `skriv once` runs end to end against an in-process skriv server (mock backend, on its own event-loop thread) with a
 fake OpenAI-compatible cleanup endpoint behind it, and a scripted context engine: biasing, cleanup, terminal profile,
 cleanup timeout fallback, late context, focus change, unreachable server. Plus guardrail tables, the fidelity check
-against unfaithful rewrites, self-corrections, spoken symbols, canonicalization traps, config parsing and
+against unfaithful rewrites, spoken symbols, canonicalization traps, config parsing and
 `skriv words`, `skriv eval`, the ctl socket protocols (text + JSON v1
 contract), Linux paste commands incl. the Hyprland in-compositor re-check (fake runner), the Omarchy adapter (fake
 `skriv`/`systemctl`), the daemon controller (pre-roll, cancel, too short), dictionary terms reaching the server, the

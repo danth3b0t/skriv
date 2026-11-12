@@ -7,7 +7,7 @@ hotkey down -> Utterance():
     provider has send_context = false); audio recorded meanwhile is replayed first.
 audio -> Utterance.feed(): 40 ms chunks streamed while the key is held.
 hotkey up -> Utterance.finish():
-    EndOfAudio -> FinalResult -> anchor gate -> canonicalize -> spoken symbols (terminal profile) ->
+    EndOfAudio -> FinalResult -> anchor confidence -> canonicalize -> spoken symbols (terminal profile) ->
     optional cleanup (deadline, falls back to the canonical text) -> guardrails ->
     focus re-check -> caret context / shadow buffer -> smart spacing -> paste ->
     history.
@@ -30,7 +30,6 @@ from skriv_client import (
     cleanup,
     context,
     continuation,
-    corrections,
     gate,
     guardrails,
     history,
@@ -78,9 +77,7 @@ class Result:
     profile: str = ""
     raw_text: str = ""
     canonical_text: str = ""
-    uncleaned_text: str = (
-        ""  # what would be pasted without cleanup (symbols, corrections, guardrails)
-    )
+    uncleaned_text: str = ""  # what would be pasted without cleanup (symbols, guardrails)
     final_text: str = ""
     replacements: list[dict[str, object]] = field(default_factory=list[dict[str, object]])
     cleanup: CleanupOutcome | None = None
@@ -89,9 +86,8 @@ class Result:
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
-    corrections: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
-    gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
+    gate: dict[str, object] | None = None  # anchor status, its text and caps_oov reverts
     pasted_text: str = ""  # exactly what was pasted (smart spacing applied)
     stop_reason: str = ""  # key_up | limit ("" = never got that far)
     provider: str = ""  # the provider that transcribed it
@@ -499,12 +495,6 @@ class Utterance:
             if res.symbols:
                 self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
 
-        if cfg.cleanup.resolve_corrections:
-            canon, found = corrections.resolve(canon)
-            res.corrections = [asdict(c) for c in found]
-            if found:
-                self._report("correct", f"{canon!r} ({len(found)} self-correction(s))")
-
         res.cleanup = self._cleanup(canon, snap, profile_name, provider)
         t["cleanup_ms"] = round(res.cleanup.ms, 1)
         detail = f" [{res.cleanup.reason}]" if res.cleanup.reason else ""
@@ -598,8 +588,8 @@ class Utterance:
     def _gate(
         self, final: pb.FinalResult, hyp: pb.Hypothesis, res: Result
     ) -> gate.GateResult | None:
-        """Biased spans the anchor does not support get the anchor's words back (skriv_client.gate).
-        None: nothing to gate (off, no bias terms sent, no anchor) or the gate failed."""
+        """The biased words with the anchor's confidences (skriv_client.gate). None: nothing to
+        do (off, no bias terms sent, no anchor) or it failed."""
         cfg = self.svc.cfg.gate
         terms = self.start_message.context.bias.terms if self.start_message else ()
         anchor = final.anchor if final.HasField("anchor") else None
@@ -609,21 +599,15 @@ class Utterance:
             return None
         t1 = time.perf_counter()
         try:
-            out = gate.apply(hyp, anchor, final.bias_hits, terms, cfg)
-        except Exception as e:  # keep the biased text rather than lose the dictation
-            log.exception("anchor gate failed; using the biased text")
+            out = gate.apply(hyp, anchor, terms)
+        except Exception as e:  # keep the biased decode rather than lose the dictation
+            log.exception("anchor gate failed; using the biased decode")
             res.gate = {"status": "error", "error": f"{type(e).__name__}: {e}"}
             return None
         self.timings["gate_ms"] = _ms(t1)
-        res.gate = {
-            "status": "applied",
-            "anchor_text": anchor.text,
-            "text": out.text,
-            "decisions": [asdict(d) for d in out.decisions],
-        }
-        if out.decisions:
-            summary = ", ".join(f"{d.biased!r}:{d.decision}/{d.reason}" for d in out.decisions)
-            self._report("anchor", f"{out.text!r} ({summary})")
+        res.gate = {"status": "applied", "anchor_text": anchor.text, "reverted": out.reverted}
+        if out.reverted:
+            self._report("anchor", f"{out.text!r} ({', '.join(out.reverted)})")
         return out
 
     def _spacing(self, focus: FocusInfo, res: Result, shadow: ShadowBuffer | None) -> str:
@@ -711,7 +695,6 @@ class Utterance:
             "replacements": res.replacements,
             "gate": res.gate,
             "symbols": res.symbols,
-            "corrections": res.corrections,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,
