@@ -121,8 +121,9 @@ existing confidence rule; (d) CPU budget on the laptop (target ≤ 80 ms for 10 
 **Status (`feat/m1-cpu`).** Backend `transcribe_cpp` (worker child over JSON lines through transcribe.cpp's ctypes
 binding; crash → that decode fails and the next restarts it; hang → killed at `decode_timeout_s`), BUFFERED, bias
 `NONE` (transcribe.cpp 0.4 has no vocabulary input for Parakeet), anchor == primary. `scripts/fetch-transcribe` builds
-the pinned 0.4.2 from source (no prebuilt release archives exist; PyPI wheels lag at 0.4.1) and fetches the pinned
-GGUF; `scripts/cpu-server-up` + `packaging/systemd/hark-cpu-server.service` run it. Client: `[[providers]]` with
+the pinned 0.4.2 from source (tagged 2026-11-11 with a Parakeet mel-frontend fix, no release artifacts or PyPI wheels
+yet; 0.4.1 has prebuilt `transcribe-native-*` archives incl. linux-x86_64-cpu-vulkan, a possible no-compiler option
+for the laptop later) and fetches the pinned GGUF; `scripts/cpu-server-up` + `packaging/systemd/hark-cpu-server.service` run it. Client: `[[providers]]` with
 cached health checks, priority order, `send_context`, `max_latency_ms`; shown in `hark doctor` and history. Bench:
 `docs/bench/2026-11-12-transcribe-cpp-cpu.md`. Not done: the laptop bench itself, incremental decoding on CPU, a
 mid-dictation switch to the next provider.
