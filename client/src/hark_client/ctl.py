@@ -10,8 +10,9 @@ Two protocols on the same socket, one request line and one reply line per connec
   ``{"version": 1, "ok": false, "error": {"code": ..., "message": ...}}``.
   Spec: docs/protocol/ctl-v1.md (pinned by client/tests/test_client_ctl.py).
 
-Socket: $XDG_RUNTIME_DIR/hark/ctl.sock on Linux, ~/Library/Caches/hark/ctl.sock on
-macOS, else $TMPDIR/hark-<uid>/ctl.sock. The directory is 0700, the socket 0600.
+Socket: $HARK_CTL_SOCKET if set, else $XDG_RUNTIME_DIR/hark/ctl.sock on Linux,
+~/Library/Caches/hark/ctl.sock on macOS, else $TMPDIR/hark-<uid>/ctl.sock. The directory is
+0700, the socket 0600.
 """
 
 from __future__ import annotations
@@ -41,6 +42,9 @@ type JsonObject = dict[str, object]
 
 
 def socket_path() -> Path:
+    override = os.environ.get("HARK_CTL_SOCKET")
+    if override:
+        return Path(override)
     runtime = os.environ.get("XDG_RUNTIME_DIR")
     if runtime and sys.platform != "darwin":
         return Path(runtime) / "hark" / "ctl.sock"
