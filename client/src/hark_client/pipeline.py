@@ -30,6 +30,7 @@ from hark_client import (
     cleanup,
     context,
     continuation,
+    corrections,
     fields,
     gate,
     guardrails,
@@ -86,6 +87,7 @@ class Result:
     error: str = ""
     timings: dict[str, float] = field(default_factory=dict[str, float])
     symbols: list[str] = field(default_factory=list[str])  # spoken-symbol rules applied
+    corrections: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
     spacing: dict[str, object] | None = None  # smart-spacing decision (see _spacing)
     paste_verdict: str = "unknown"  # landed | missing | not_text | unknown (fields.verify)
     gate: dict[str, object] | None = None  # anchor gate status and per-region decisions
@@ -377,6 +379,12 @@ class Utterance:
             if res.symbols:
                 self._report("symbols", f"{canon!r} ({', '.join(res.symbols)})")
 
+        if cfg.cleanup.resolve_corrections:
+            canon, found = corrections.resolve(canon)
+            res.corrections = [asdict(c) for c in found]
+            if found:
+                self._report("correct", f"{canon!r} ({len(found)} self-correction(s))")
+
         res.cleanup = self._cleanup(canon, snap, profile_name, provider)
         t["cleanup_ms"] = round(res.cleanup.ms, 1)
         detail = f" [{res.cleanup.reason}]" if res.cleanup.reason else ""
@@ -591,6 +599,7 @@ class Utterance:
             "replacements": res.replacements,
             "gate": res.gate,
             "symbols": res.symbols,
+            "corrections": res.corrections,
             "cleanup": asdict(res.cleanup) if res.cleanup else None,
             "guard_events": res.guard_events,
             "paste": asdict(res.paste) if res.paste else None,

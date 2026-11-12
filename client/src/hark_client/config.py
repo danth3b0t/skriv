@@ -99,6 +99,9 @@ class CleanupConfig:
     enabled: bool = True  # global switch; profiles opt in individually
     # Whole Cleanup RPC; timeout => raw text. POC: ~0.6 s for ~200 edit tokens on Qwen3-1.7B.
     deadline_ms: int = 1000
+    # Remove restart self-corrections ("in C um no in Rust") deterministically before the
+    # model, in every profile (see hark_client.corrections).
+    resolve_corrections: bool = True
 
 
 @dataclass
