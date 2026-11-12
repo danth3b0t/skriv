@@ -88,7 +88,10 @@ class Mic:
 
     @property
     def active(self) -> bool:
-        return bool(self._stream.active)
+        try:
+            return bool(self._stream.active)
+        except sd.PortAudioError:  # closed after a failed reopen
+            return False
 
     def start(self) -> None:
         if not self.active:

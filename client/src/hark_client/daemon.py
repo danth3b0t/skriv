@@ -52,6 +52,7 @@ def _caret_context(focus: FocusInfo) -> CaretContext:
 
 CARET_CHECK_CHARS = 64  # context.caret reads at most this much before the caret
 MIC_SILENCE_S = 1.0  # a running stream that has not called back this long has stopped
+MIC_RETRY_S = 5.0  # a lost mic is reopened at most this often (no device: PortAudio re-init)
 TICK_S = 1.0  # mic watchdog, config and server checks (status changes for `subscribe`)
 # Applied by `reload` for the next dictation; every other table needs a restart.
 RELOADABLE = (
@@ -106,6 +107,7 @@ class Controller:
         # told when a dictation starts/stops finishing: the hotkey listener (Esc cancels it)
         self.on_finishing: Callable[[bool], None] | None = None
         self.mic_status = "off"  # ok | lost | off
+        self._mic_retry_at = 0.0  # time.monotonic() of the next reopen attempt
         self.config_path: Path | None = None  # what `reload` re-reads (None: not reloadable)
         self._config_mtime: float | None = None
         self.restart_needed: list[str] = []
@@ -248,11 +250,16 @@ class Controller:
             self._set_mic("off")
             return
         if mic.healthy(MIC_SILENCE_S):
+            self._mic_retry_at = 0.0
             self._set_mic("ok")
             return
         if utt is not None:
             utt.mic_interrupted = True
         self._set_mic("lost")
+        now = time.monotonic()
+        if now < self._mic_retry_at:
+            return
+        self._mic_retry_at = now + MIC_RETRY_S
         try:
             mic.reopen()
         except Exception as e:  # noqa: BLE001 - PortAudioError: still no device
