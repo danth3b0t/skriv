@@ -158,6 +158,8 @@ class Setup:
             label.setFrame_(Foundation.NSMakeRect(MARGIN, y + 28, 400, 18))
             detail = AppKit.NSTextField.wrappingLabelWithString_("")
             detail.setFont_(AppKit.NSFont.systemFontOfSize_(11))
+            detail.setMaximumNumberOfLines_(2)
+            detail.cell().setTruncatesLastVisibleLine_(True)
             detail.setFrame_(Foundation.NSMakeRect(MARGIN, y, WIDTH - 3 * MARGIN - BUTTON_W, 28))
             content.addSubview_(label)
             content.addSubview_(detail)
